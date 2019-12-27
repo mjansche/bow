@@ -28,6 +28,7 @@ double naivebayes_argp_m_est_m;
 extern int  naivebayes_score_returns_doc_pr;
 /* leave the scores in sorted order with regards to class indices */
 extern int  naivebayes_score_unsorted;
+extern double bow_naivebayes_anneal_temperature;
 
 void bow_naivebayes_set_weights (bow_barrel *barrel);
 

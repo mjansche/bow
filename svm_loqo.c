@@ -19,36 +19,40 @@
  * in sorted order */
 /* s is the s(t) from 11.36, the gradient of a(t) */
 /* n must be multiple of 4 */
-int get_ws(int *ws, int *y, double *a, double *s, double c, 
+int get_ws(int *ws, int *y, double *a, double *s, float *cvect, 
 	   int total, int old_n, int n, struct di *scratch) {
   int npicked;
   int nws;
-  int  *old;
+  int  *oldws;
   char *picked;
   double tmp;
   int i,j,k;
 
   npicked = 0;
-  old = alloca(sizeof(int)*n);
+  oldws = alloca(sizeof(int)*n);
   picked = alloca(sizeof(char)*total);
   bzero(picked, sizeof(char)*total);
+
+  for (i=0; i<n; i++) {
+    oldws[i] = ws[i];
+  }
 
   /* this fills in half - the half with the old ones... */
   for (j=1; j>(-2); j-=2) { /* go thru twice, each time filling up n/4 elements */
     for(i=0, nws=0; i<old_n; i++) {
       /* only add those elements which satisfy 11.21 & 22 */
-      tmp = j*y[ws[i]];
+      tmp = j*y[oldws[i]];
       /* follow DIRECTLY from the logic in 11.3 of adv. kernel methods */
       /* the d_i = y_i case happens first (where the elements with the LARGEST
        * V(_) are chosen, then the d_i = -y_i are chosen next, where the SMALLEST
        * are chosen */
-      if (((a[ws[i]]>svm_epsilon_a) && (a[ws[i]]<c-svm_epsilon_a)) 
-	  || ((a[ws[i]]<=svm_epsilon_a) && (tmp>0))
-	  || ((a[ws[i]]>=c-svm_epsilon_a) && (tmp<0))) {
+      if (((a[oldws[i]]>svm_epsilon_a) && (a[oldws[i]]<cvect[oldws[i]]-svm_epsilon_a)) 
+	  || ((a[oldws[i]]<=svm_epsilon_a) && (tmp>0))
+	  || ((a[oldws[i]]>=cvect[oldws[i]]-svm_epsilon_a) && (tmp<0))) {
 	/* use tmp instead of y[i] so that we can still pull things off of
 	 * the front of the list (like choosing a different sort fn) */
-	scratch[nws].d = tmp*(-1+y[ws[i]]*s[ws[i]]); /* look familiar? (g(a)) */
-	scratch[nws].i = ws[i];
+	scratch[nws].d = tmp*(-1+y[oldws[i]]*s[oldws[i]]); /* look familiar? (g(a)) */
+	scratch[nws].i = oldws[i];
 	nws++;
       }
     }
@@ -75,9 +79,9 @@ int get_ws(int *ws, int *y, double *a, double *s, double c,
       /* the d_i = y_i case happens first (where the elements with the LARGEST
        * V(_) are chosen, then the d_i = -y_i are chosen next, where the SMALLEST
        * are chosen */
-      if (((a[i]>svm_epsilon_a) && (a[i]<c-svm_epsilon_a)) 
+      if (((a[i]>svm_epsilon_a) && (a[i]<cvect[i]-svm_epsilon_a)) 
 	  || ((a[i]<=svm_epsilon_a) && (tmp>0))
-	  || ((a[i]>=c-svm_epsilon_a) && (tmp<0))) {
+	  || ((a[i]>=cvect[i]-svm_epsilon_a) && (tmp<0))) {
 	/* use tmp instead of y[i] so that we can still pull things off of
 	 * the front of the list (like choosing a different sort fn) */
 	scratch[nws].d = tmp*(-1+y[i]*s[i]); /* look familiar? (g(a)) */
@@ -108,11 +112,17 @@ int get_ws(int *ws, int *y, double *a, double *s, double c,
 
   if (svm_verbosity > 1) { 
     int ii; 
-    printf("working set: "); 
+    fprintf(stderr,"working set: "); 
     for (ii=0; ii<n;ii++) { 
-      printf("%d ",ws[ii]);
+      fprintf(stderr,"%d ",ws[ii]);
     } 
-    printf("\n"); 
+    fprintf(stderr,"\n"); 
+
+    fprintf(stderr,"s[ws[*]]: "); 
+    for (ii=0; ii<n;ii++) { 
+      fprintf(stderr,"%f ",s[ws[ii]]);
+    } 
+    fprintf(stderr,"\n"); 
   }
 
   return n;
@@ -174,9 +184,7 @@ int solve_qp(struct svm_qp *q, int n) {
     }
   }
 
-  /* stolen from svmlight - because i have no idea why the KT conditions would be violated */
-  /* Check the precision of the alphas. If results of current optimization */
-  /* violate KT-Conditions, relax the epsilon on the bounds on alphas. */
+  /* svmlight does this & it doesn't seem like a bad idea */
   epsilon_loqo=1E-10;
   for(i=0; i<n; i++) {
     dist=-q->dual[0]*q->ce[i];
@@ -187,20 +195,22 @@ int solve_qp(struct svm_qp *q, int n) {
     for(j=i; j<n; j++) {
       dist += (q->primal[j]*q->g[i*n+j]);
     }
-    if((q->primal[i]<(svm_C-epsilon_loqo)) && (dist < (1.0-svm_epsilon_crit))) {
-      epsilon_loqo=(svm_C-q->primal[i])*2.0;
-    }
-    else if((q->primal[i]>epsilon_loqo) && (dist > (1.0+svm_epsilon_crit))) {
+    if((q->primal[i]<(q->ubv[i]-epsilon_loqo)) && (dist < (1.0-svm_epsilon_crit))) {
+      fprintf(stderr, "relaxing epsilon_loqo (%f,%f)\n", q->primal[i],dist);
+      epsilon_loqo=(q->ubv[i]-q->primal[i])*2.0;
+    } else if((q->primal[i]>epsilon_loqo) && (dist > (1.0+svm_epsilon_crit))) {
+      fprintf(stderr, "relaxing epsilon_loqo (%f,%f)\n", q->primal[i],dist);
       epsilon_loqo = q->primal[i]*2.0;
     }
   }
 
   for(i=0; i<n; i++) {  /* clip alphas to bounds */
     if(q->primal[i]<=epsilon_loqo) {
+      //fprintf(stderr,"primal[i]=%f,eps=%f",q->primal[i],epsilon_loqo);
       q->primal[i] = 0;
-    }
-    else if(q->primal[i]>=svm_C-epsilon_loqo) {
-      q->primal[i] = svm_C;
+    } else if(q->primal[i]>=q->ubv[i]-epsilon_loqo) {
+      //fprintf(stderr,"primal[i]=%f,eps=%f",q->primal[i],epsilon_loqo);
+      q->primal[i] = q->ubv[i];
     }
   }
 
@@ -334,14 +344,33 @@ void setup_solve_sub_qp(int *ws, int *y, double *a, bow_wv **docs, struct svm_qp
 	if (a[ws[i]] <= svm_epsilon_a) {
 	  (*nsv)++;
 	}
-	if (qd->primal[i] >= svm_C-svm_epsilon_a) {
-	  a[ws[i]] = svm_C;
+	if (qd->primal[i] >= qd->ubv[i]-svm_epsilon_a) {
+	  a[ws[i]] = qd->ubv[i];
 	} else {
 	  a[ws[i]] = qd->primal[i];
 	}
       }
     }
   }
+}
+
+void recompute_gradient(double *s, bow_wv **docs, int *yvect, double *weights, 
+			double *old_weights, int *ws, int wss, int total) {
+  int i,j;
+
+  fprintf(stderr,"differences:");
+
+  for (i=0; i<total; i++) {
+    double tmp = 0.0;
+    for (j=0; j<total; j++) {
+      tmp += weights[j]*yvect[j]*svm_kernel_cache_lookup(docs[i],docs[j]);
+    }
+    if (s[i] - tmp > svm_epsilon_a) { 
+      fprintf(stderr, "%d diff = %f", i, tmp-s[i]);
+    }
+    s[i] = tmp;
+  }
+  fprintf(stderr,"\n");
 }
 
 void update_gradient(double *s, bow_wv **docs, int *yvect, double *weights, 
@@ -373,7 +402,7 @@ void update_gradient(double *s, bow_wv **docs, int *yvect, double *weights,
   kcache_age();
 }
 
-double calculate_b(double *s, int *yvect, double *a, int ndocs) {
+double calculate_b(double *s, int *yvect, double *a, float *cvect, int ndocs) {
   int i,j;
   double b, maxgrad, mingrad;
 
@@ -383,7 +412,7 @@ double calculate_b(double *s, int *yvect, double *a, int ndocs) {
   b = 0;
   for (j=i=0; i<ndocs; i++) {
     if (a[i] > svm_epsilon_a) {
-      if (a[i] < svm_C-svm_epsilon_a) {
+      if (a[i] < cvect[i]-svm_epsilon_a) {
 	b += s[i] - yvect[i];
 	j++;
       } else if (!j) {
@@ -404,7 +433,7 @@ double calculate_b(double *s, int *yvect, double *a, int ndocs) {
   }
 }
 
-int check_optimality(double *s, double *a, int *y, double b, int n) {
+int check_optimality(double *s, double *a, int *y, float *cvect, double b, int n) {
   double dist, adist, max_dist;
 
   int i;
@@ -426,7 +455,7 @@ int check_optimality(double *s, double *a, int *y, double b, int n) {
     adist = fabs(dist-1.0); /* how far is it from where it should be */
 
     if(adist > max_dist) {
-      if((a[i] < svm_C-svm_epsilon_a) && (dist < 1)) {
+      if((a[i] < cvect[i]-svm_epsilon_a) && (dist < 1)) {
 	//printf("max_dist=%f, (%f-%f)*%d\n", adist, s[i], b, y[i]);
 	max_dist = adist;
       }
@@ -444,149 +473,8 @@ int check_optimality(double *s, double *a, int *y, double b, int n) {
   }
 }
 
-int prune_misclassified(bow_wv ***a_docs, double **a_weights, int **a_yvect, 
-			int **a_tdocs, int *a_ndocs, int *a_nsv) {
-  bow_wv **docnew;
-  double   deq;  /* the amount that the equality constraint changes */
-  int      misclass;
-  double  *wnew;
-  int     *ynew;
-
-  double *weights = *a_weights;
-  int    *yvect   = *a_yvect;
-  bow_wv **docs    = *a_docs;
-  int    *tdocs   = *a_tdocs;
-
-  int ndocs = *a_ndocs;
-  int nsv   = *a_nsv;
-
-  int i,j;
-
-  deq = 0.0;
-
-  docnew = (bow_wv **) malloc(ndocs*sizeof(bow_wv *));
-  *a_tdocs = tdocs  = (int *) malloc(ndocs*sizeof(int));
-  wnew = (double *) malloc(ndocs*sizeof(double));
-  ynew = (int *) malloc(ndocs*sizeof(int));
-
-  for (misclass=i=j=0; i<ndocs; i++) {
-    if (weights[i] < svm_C-svm_epsilon_a) {
-      docnew[j] = docs[i];
-      wnew[j] = weights[i];
-      ynew[j] = yvect[j];
-      tdocs[j] = i;
-      j++;
-    } else {
-      /* recompute the gradient - if the example wasn't there */
-      deq += weights[i]*yvect[i];
-      misclass++;
-    }
-  }
-  if (misclass) {
-    *a_weights = weights = wnew;
-    *a_yvect = yvect = ynew;
-    *a_docs = docs = docnew;
-
-    ndocs -= misclass;
-    nsv -= misclass;
-
-    /* now everything is consistent, BUT, the equality constraint is off by deq */
-    /* don't know if this is or isn't a good idea - trim the same amount from all
-     * of the support vectors... */
-    {
-      int dir = (deq < 0) ? 1 : -1;
-	    
-      while (deq != 0.0) {
-	int    bounded = 0;
-	double diff    = 0.0;
-	double min     = MAXDOUBLE;
-
-	/* find out what the smallest change possible is... */
-	for (i=0; i<ndocs; i++) {
-	  if (weights[i] != 0.0 && weights[i] != svm_C) {
-	    if (yvect[i]*dir > 0) {  /* if y=value that makes absval(deq) smaller... */
-	      diff = svm_C - weights[i];
-	      if (!diff) {
-		bounded++;
-		diff = MAXDOUBLE;
-	      }
-	    } else if (weights[i] != 0.0) {
-	      diff = weights[i];
-	    }
-	    if (min > diff) {
-	      min = diff;
-	    }
-	  }
-	}
-
-	if (min * ((double)(nsv - bounded)) >= -1*dir*deq) {
-	  diff = -1*dir*deq/(nsv-bounded);
-	  deq = 0.0;
-	} else {
-	  diff = min;
-	  deq += dir*min*(nsv-bounded);
-	}
-
-	for (i=0; i<ndocs; i++) {
-	  if (weights[i] != 0.0 && weights[i] != svm_C) {
-	    if (yvect[i]*dir > 0) {
-	      weights[i] += diff;
-	    } else {
-	      weights[i] -= diff;
-	      if (weights[i] == 0.0) {
-		nsv --;
-	      }
-	    }
-	  }
-	}
-      }
-    }
-
-#ifdef 0
-    {
-      int dir = (deq < 0) ? 1 : -1;
-	    
-      for (i=0; deq != 0.0; i++) {
-	double ow = weights[i];
-	if (yvect[i]*dir > 0) {  /* if y=value that makes absval(deq) smaller... */
-	  if ((svm_C - weights[i]) >= (dir * deq)) { /* this will be enough */
-	    weights[i] = -1*dir*deq;
-	    deq = 0.0;
-	  } else {
-	    deq += dir * (svm_C - weights[i]);
-	    weights[i] = svm_C;
-	  }
-	} else if (weights[i] != 0.0) {
-	  if (weights[i] + (dir * deq) >= 0.0) {
-	    weights[i] -= dir * deq;
-	    deq = 0.0;
-	  } else {
-	    deq += dir * weights[i];
-	    weights[i] = 0.0;
-	    nsv --;
-	  }
-	}
-      }
-    }
-#endif
-
-    *a_nsv = nsv;
-    *a_ndocs = ndocs;
-
-    printf("%d training vectors bounded, throwing them out & restarting.\n",misclass);
-    return 1;
-  } else {
-    free(docnew);
-    free(tdocs);
-    free(wnew);
-    free(ynew);
-    *a_tdocs = NULL;
-    return 0;
-  }
-}
-
 int build_svm_guts(bow_wv **docs, int *yvect, double *weights, double *b, 
-		   double **W, int ndocs, double *s, int *nsv) {
+		   double **W, int ndocs, double *s, float *cvect, int *nsv) {
   double       tb;
   int          cwss;        /* current working set size */
   int          n2inc_prec;  /* # of iterations before we try to increase 
@@ -599,11 +487,17 @@ int build_svm_guts(bow_wv **docs, int *yvect, double *weights, double *b,
   struct svm_qp qdata;       
   int          qp_cnt;
   struct di   *scratch;     /* scratch area for 2*bsize doubles */
-  int         *tdocs;       /* trans table for weights if removing misclassifed */
   int         *ws;          /* bsize of these - the current working set */
+
+#ifdef GCSJPRC
+  int old_digits=-1;
+#endif
 
   int i,j;
 
+
+  //recompute_gradient(s, docs, yvect, weights, old_weights, ws, cwss, ndocs);
+  
   npr_loqo_failures=0;
 
   original_eps_crit = svm_epsilon_crit;
@@ -624,13 +518,12 @@ int build_svm_guts(bow_wv **docs, int *yvect, double *weights, double *b,
   qdata.ubv = (double *) alloca(sizeof(double)*svm_bsize/* should be m */);
   qdata.lbv = (double *) alloca(sizeof(double)*svm_bsize);
   
-  /* initialize lbv & ubv to non-restricting values */
+  /* initialize lbv to non-restricting values */
   /* also hit the bottom triangle of the hessian */
   for (i=0; i<svm_bsize; i++) {
     for (j=i;j<svm_bsize;j++) {
       qdata.g[i*svm_bsize+j] = 0.0;
     }
-    qdata.ubv[i] = svm_C;
     qdata.lbv[i] = 0.0;
   }
 
@@ -639,9 +532,6 @@ int build_svm_guts(bow_wv **docs, int *yvect, double *weights, double *b,
   qdata.digits = INIT_SIGDIGIT;
   qdata.margin = 0.15;
   qdata.init_iter = 500;
-
-  /* note - this is ONLY for the current model. */
-  tdocs = NULL;
   
   for (i=0; i<ndocs; i++) {
     old_weights[i] = weights[i];
@@ -661,55 +551,20 @@ int build_svm_guts(bow_wv **docs, int *yvect, double *weights, double *b,
      * it becomes a lot quicker - since a update_gradient may not need to be
      * called for a good number of iterations. */
     /* update b */
-    tb = calculate_b(s, yvect, weights, ndocs);
+
+    tb = calculate_b(s, yvect, weights, cvect, ndocs);
 
     /* check optimality */
-    if (check_optimality(s, weights, yvect, tb, ndocs)) {
-      if (svm_remove_misclassified && !tdocs) {
-	original_weights = weights;
-	if (prune_misclassified(&docs, &weights, &yvect, &tdocs, &ndocs, nsv)) {
- 
-	  /* recalculate our gradient friends... */
-	  for (i=0; i<ndocs; i++) {
-	    s[i] = 0.0;
-	    for (j=0; j<ndocs; j++) {
-	      if (weights[j]) {
-		s[i] += weights[j] * yvect[j] * svm_kernel_cache_lookup(docs[i],docs[j]);
-	      }
-	    }
-	  }
-
-	  /* make sure that get_ws starts over with a fresh set */
-	  cwss = 0;
-	  continue;
-	} else {
-	  break;
-	}
-      } else {
-	if (tdocs) {
-	  for (i=j=0; i<ndocs; i++) {
-	    if (weights[i] > svm_C-svm_epsilon_a) {
-	      j = 1;
-	      break;
-	    }
-	  }
-	  if (j) {
-	    fprintf(stderr,"Even after removing bound examples from the training set,\n"
-		    "other support vectors have now become bound.  You may want to\n"
-		    "increase C, as these examples need not be misclassified.\n");
-	    printf("Bound examples found after removal");
-	  }
-	}
-	break;
-      }
+    if (check_optimality(s, weights, yvect, cvect, tb, ndocs)) {
+      break;
     }
 
     qp_cnt++;
-    if (svm_verbosity > 1){
+    if (svm_verbosity > 1) {
       fprintf(stderr,"%dth iteration of solve_qp\n", qp_cnt);
     } else {
       if (!(qp_cnt % 200)) {
-	fprintf(stderr,"\r\t\t\t\t%dth iteration", qp_cnt);
+	fprintf(stderr,"\r\t\t\t\t\t\t%dth iteration", qp_cnt);
 	fflush(stdout);
       }
     }
@@ -718,24 +573,29 @@ int build_svm_guts(bow_wv **docs, int *yvect, double *weights, double *b,
     for (i=0; i<cwss; i++) {
       old_ws[i] = ws[i];
     }
-    cwss = get_ws(ws, yvect, weights, s, svm_C, ndocs, cwss, svm_bsize, scratch);    
+    cwss = get_ws(ws, yvect, weights, s, cvect, ndocs, cwss, svm_bsize, scratch);    
 
     for (i=j=0; i<cwss; i++) {
       if (old_weights[ws[i]] == weights[ws[i]] && ws[i] == old_ws[i]) {
 	j++;
       }
       old_weights[ws[i]] = weights[ws[i]];
+      qdata.ubv[i] = cvect[ws[i]];
     }
 
     /* this detects infinite loops - which shouldn't happen - but... */
-#ifdef GCSJPRC
-    if (j == cwss) {
+#ifdef 0
+    if (j == cwss && qdata.digits == old_digits) {
       fprintf(stderr, "Uh-oh - old weights identical to new weights");
       system("echo \"rainbow did a boo-boo - stopping!\" | /usr/sbin/sendmail gcs@jules.res.cmu.edu");
       svm_verbosity = 4;
       fflush(stderr);
       kill(getpid(),SIGSTOP);
     }
+#endif
+
+#ifdef GCSJPRC
+    old_digits = qdata.digits;
 #endif
 
     /* using the working set, solve the subproblem */
@@ -777,22 +637,6 @@ int build_svm_guts(bow_wv **docs, int *yvect, double *weights, double *b,
     }
   }
 
-  if (tdocs) {
-    for (i=j=0; i<ndocs; i++) {
-      if (tdocs[j] == i) {
-	original_weights[i] = weights[j];
-	j++;
-      } else {
-	original_weights[i] = 0.0;
-      }
-    }
-    free(docs);
-    free(yvect);
-    free(weights);
-    free(tdocs);
-  }
-
-
   if (svm_weight_style == WEIGHTS_PER_MODEL) {
     kcache_clear();
   }
@@ -802,4 +646,19 @@ int build_svm_guts(bow_wv **docs, int *yvect, double *weights, double *b,
   *b = tb;
 
   return qp_cnt;
+}
+
+/* if this gets called, the weight must have been bound */
+inline double svm_loqo_tval_to_err(double si, double b, int y) {
+  double ytest = si-b;
+  if (y == 1) {
+    if (ytest < y) {
+      return(y - ytest);
+    }
+  } else {
+    if (ytest > y) {
+      return(ytest - y);
+    }
+  }
+  return (0.0);
 }

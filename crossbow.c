@@ -1,6 +1,6 @@
 /* A clustering front-end to libbow. */
 
-/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999, 2000 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -31,6 +31,23 @@
 #include <bow/libbow.h>
 #include <argp.h>
 #include <bow/crossbow.h>
+
+/* For query serving on a socket */
+#include <errno.h>		/* needed on DEC Alpha's */
+#include <unistd.h>		/* for getopt(), maybe */
+#include <stdlib.h>		/* for atoi() */
+#include <string.h>		/* for strrchr() */
+#include <sys/types.h>
+#include <sys/socket.h>
+#ifndef WINNT
+#include <sys/un.h>
+#endif /* WINNT */
+#include <netinet/in.h>
+#include <netdb.h>
+#include <strings.h>
+#include <signal.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 /* For mkdir() and stat() */
 #include <sys/types.h>
@@ -485,6 +502,7 @@ crossbow_new_root_from_dir (const char *dirname0, treenode *parent)
       sprintf (child_dirname, "%s/%s", dirname, dirent_p->d_name);
       stat (child_dirname, &st);
       if (S_ISDIR (st.st_mode)
+	  && strcmp (dirent_p->d_name, "unlabeled")
 	  && strcmp (dirent_p->d_name, ".")
 	  && strcmp (dirent_p->d_name, ".."))
 	{
@@ -518,6 +536,7 @@ int crossbow_index_filename (const char *filename, void *context)
   crossbow_doc doc;
   int i;
   char dir[1024];
+  char munged_filename[1024];
   char *last_slash;
       
   fp = fopen (filename, "r");
@@ -532,10 +551,19 @@ int crossbow_index_filename (const char *filename, void *context)
     {
       text_file_count++;
       wv = bow_wv_new_from_text_fp (fp, filename);
+      if (strstr (filename, "unlabeled/"))
+	{
+	  const char *u = strstr (filename, "unlabeled/");
+	  int ulen = strlen ("unlabeled/");
+	  strncpy (munged_filename, filename, u - filename);
+	  strcpy (munged_filename + (u - filename), u + ulen);
+	}
+      else
+	strcpy (munged_filename, filename);
       if (wv)
 	{
 	  /* Create and add an entry for the doc-info array */
-	  doc.filename = strdup (filename);
+	  doc.filename = strdup (munged_filename);
 	  assert (doc.filename);
 	  doc.tag = bow_doc_train;
 	  doc.word_count = bow_wv_word_count (wv);
@@ -543,7 +571,7 @@ int crossbow_index_filename (const char *filename, void *context)
 	  doc.di = bow_array_next_index (crossbow_docs);
 	  /* Make DIR be the directory portion of FILENAME.
 	     It will be used as a classname. */
-	  strcpy (dir, filename);
+	  strcpy (dir, munged_filename);
 	  last_slash = strrchr (dir, '/');
 	  *last_slash = '\0';
 	  if (crossbow_arg_state.what_doing == crossbow_index_multiclass_list)
@@ -554,6 +582,8 @@ int crossbow_index_filename (const char *filename, void *context)
 	    {
 #if CLASSES_FROM_DIRS
 	    doc.ci = bow_str2int (crossbow_classnames, dir);
+	    bow_verbosify (bow_progress, "Putting file %s into class %s\n",
+			   filename, dir);
 #else
 	    doc.ci = *(int*)context;
 #endif
@@ -562,7 +592,7 @@ int crossbow_index_filename (const char *filename, void *context)
 	  doc.cis = NULL;
 	  i = bow_array_append (crossbow_docs, &doc);
 	  assert (i == doc.di);
-	  i = bow_str2int (crossbow_filename2di, filename);
+	  i = bow_str2int (crossbow_filename2di, munged_filename);
 	  assert (i == doc.di);
 	  /* Write the WV to disk. */
 	  bow_wv_write (wv, crossbow_wv_fp);
@@ -622,7 +652,7 @@ crossbow_index_multiclass_list ()
 	    continue;
 	  assert (strlen (line) < BOW_MAX_WORD_LENGTH-1);
 	  lineptr = line;
-	  fileptr = strsep (&lineptr, " \t\n\r");
+	  fileptr = strtok (lineptr, " \t\n\r");
 	  assert (fileptr);
 	  bow_words_add_occurrences_from_file (fileptr);
 	}
@@ -645,13 +675,13 @@ crossbow_index_multiclass_list ()
 	continue;
       assert (strlen (line) < BOW_MAX_WORD_LENGTH-1);
       lineptr = line;
-      fileptr = strsep (&lineptr, " \t\n\r");
+      fileptr = strtok (lineptr, " \t\n\r");
       assert (fileptr);
       crossbow_index_filename (fileptr, NULL);
       /* Get the DOC just created by CROSSBOW_INDEX_FILENAME */
       doc = bow_array_entry_at_index (crossbow_docs, crossbow_docs->length-1);
       /* Grab all the classnames, and set their CLASSPROBS to non-zero */
-      while ((classptr = strsep (&lineptr, " \t\n\r")))
+      while ((classptr = strtok (lineptr, " \t\n\r")))
 	{
 	  if (strlen (classptr) == 0)
 	    continue;
@@ -794,6 +824,41 @@ crossbow_index ()
   crossbow_archive (bow_data_dirname);
 }
 
+/* Return a bow_wa containing the classification scores (log
+   probabilities) of DOC indexed by the leaf indices */
+bow_wa *
+//crossbow_classify_doc_new_wa (crossbow_doc *doc)
+crossbow_classify_doc_new_wa (bow_wv *wv)
+{
+  int li, leaf_count;
+  double leaf_membership;
+  treenode **leaves, *iterator, *leaf;
+  bow_wa *wa;
+
+  /* Classify the documents in the TAG-set */
+  leaf_count = bow_treenode_leaf_count (crossbow_root);
+  leaves = alloca (leaf_count * sizeof (void*));
+
+  wa = bow_wa_new (leaf_count);
+
+  /* Get the membership probability of each leaf */
+  for (iterator = crossbow_root, li = 0;
+       (leaf = bow_treenode_iterate_leaves (&iterator)); 
+       li++)
+    {
+      if (crossbow_hem_shrinkage)
+	leaf_membership = bow_treenode_log_prob_of_wv (leaf, wv);
+      else
+	leaf_membership = bow_treenode_log_local_prob_of_wv (leaf, wv);
+      leaf_membership += log (leaf->prior);
+      bow_wa_append (wa, li, leaf_membership);
+      leaves[li] = leaf;
+    }
+
+  return wa;
+}
+
+
 int
 crossbow_classify_doc (crossbow_doc *doc, int verbose, FILE *out)
 {
@@ -808,6 +873,7 @@ crossbow_classify_doc (crossbow_doc *doc, int verbose, FILE *out)
   int rank;
   double score_diff_sum = 0;
 #endif
+  int word_count;
 
   /* Classify the documents in the TAG-set */
   leaf_count = bow_treenode_leaf_count (crossbow_root);
@@ -815,6 +881,7 @@ crossbow_classify_doc (crossbow_doc *doc, int verbose, FILE *out)
 
   wv = crossbow_wv_at_di (doc->di);
   assert (wv);
+  word_count = bow_wv_word_count (wv);
 
   wa = bow_wa_new (leaf_count);
 
@@ -828,6 +895,10 @@ crossbow_classify_doc (crossbow_doc *doc, int verbose, FILE *out)
       else
 	leaf_membership = bow_treenode_log_local_prob_of_wv (leaf, wv);
       leaf_membership += log (leaf->prior);
+#define DOC_LENGTH_SCORE_TRANSFORM 1
+#if DOC_LENGTH_SCORE_TRANSFORM
+      leaf_membership /= ((word_count + 1) / MIN(9,word_count));
+#endif
       bow_wa_append (wa, li, leaf_membership);
       leaves[li] = leaf;
     }
@@ -867,7 +938,6 @@ crossbow_classify_doc (crossbow_doc *doc, int verbose, FILE *out)
   return (ret);
 }
 
-
 void
 crossbow_classify_tagged_docs (int tag, int verbose, FILE *out)
 {
@@ -961,6 +1031,127 @@ crossbow_classify ()
       (crossbow_arg_state.classify_files_dirname, 1);
   else
     crossbow_classify_tagged_docs (bow_doc_test, 2, stdout);
+}
+
+
+/* Code for query serving */
+
+static int crossbow_sockfd;
+
+void
+crossbow_socket_init (const char *socket_name, int use_unix_socket)
+{
+  int servlen, type, bind_ret;
+  struct sockaddr_in in_addr;
+  struct sockaddr *sap;
+
+  type = use_unix_socket ? AF_UNIX : AF_INET;
+   
+  crossbow_sockfd = socket(type, SOCK_STREAM, 0);
+  assert(crossbow_sockfd >= 0);
+
+  if (type == AF_UNIX)
+    {
+#ifdef WINNT
+      servlen = 0;  /* so that the compiler is happy */
+      sap = 0;
+      assert(WINNT == 0);
+#else /* !WINNT */
+      struct sockaddr_un un_addr;
+      sap = (struct sockaddr *)&un_addr;
+      bzero((char *)sap, sizeof(un_addr));
+      strcpy(un_addr.sun_path, socket_name);
+      servlen = strlen(un_addr.sun_path) + sizeof(un_addr.sun_family) + 1;
+#endif /* WINNT */
+    }
+  else
+    {
+      sap = (struct sockaddr *)&in_addr;
+      bzero((char *)sap, sizeof(in_addr));
+      in_addr.sin_port = htons(atoi(socket_name));
+      in_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+      servlen = sizeof(in_addr);
+    }
+
+  sap->sa_family = type;     
+
+  bind_ret = bind (crossbow_sockfd, sap, servlen);
+  assert(bind_ret >= 0);
+
+  listen (crossbow_sockfd, 5);
+}
+
+/* Read a single document from the socket, classify it and return
+   classification */
+void
+crossbow_serve ()
+{
+  int newsockfd, clilen;
+  struct sockaddr cli_addr;
+  FILE *in, *out;
+  int ci;
+
+  clilen = sizeof(cli_addr);
+  newsockfd = accept(crossbow_sockfd, &cli_addr, &clilen);
+
+  bow_verbosify (bow_progress, "Accepted connection\n");
+  assert (newsockfd >= 0);
+
+  in = fdopen(newsockfd, "r");
+  out = fdopen(newsockfd, "w");
+
+  while (!feof(in))
+    {
+      bow_wv *wv = bow_wv_new_from_text_fp (in, NULL);
+      bow_wa *wa;
+
+      if (!wv)
+	{
+	  fprintf (out, ".\n");
+	  fflush (out);
+	  break;
+	}
+      wa = crossbow_classify_doc_new_wa (wv);
+      bow_wa_sort (wa);
+      for (ci = 0; ci < wa->length; ci++)
+	fprintf (out, "%s %g\n", 
+		 bow_int2str (crossbow_classnames, wa->entry[ci].wi),
+		 wa->entry[ci].weight);
+      fprintf (out, ".\n");
+      fflush (out);
+      bow_wa_free (wa);
+      bow_wv_free (wv);
+    }
+
+  fclose(in);
+  fclose(out);
+
+  close(newsockfd);
+  bow_verbosify (bow_progress, "Closed connection\n");
+}
+
+void
+crossbow_query_serving ()
+{
+  bow_verbosify (bow_progress, "Starting query server\n");
+
+  /* Don't add any new words from the queries to the vocabulary */
+  bow_word2int_do_not_add = 1;
+
+  /* Train the vertical mixture model with EM. */
+  if (!crossbow_hem_restricted_horizontal)
+    crossbow_hem_deterministic_horizontal = 1;
+
+  ((crossbow_method*)bow_argp_method)->train_classifier ();
+
+  bow_verbosify (bow_progress, "Ready to serve!\n");
+  crossbow_socket_init (crossbow_arg_state.server_port_num, 0);
+  while (1)
+    {
+      bow_verbosify (bow_progress, "Waiting for connection\n");
+      crossbow_serve();
+    }
+
 }
 
 void
@@ -1061,6 +1252,10 @@ static struct argp_option crossbow_options[] =
   {"classify-files", CLASSIFY_FILES_KEY, "DIRNAME", 0,
    "Classify documents in DIRNAME, outputing `filename classname' pairs "
    "on each line."},
+  {"query-server", QUERY_SERVER_KEY, "PORTNUM", 0,
+   "Run crossbow in server mode, listening on socket number PORTNUM.  "
+   "You can try it by executing this command, then in a different shell "
+   "window on the same machine typing `telnet localhost PORTNUM'."},
   {"print-word-probabilities", PRINT_WORD_PROBABILITIES_KEY, "FILEPREFIX", 0,
    "Print the word probability distribution in each leaf to files named "
    "FILEPREFIX-classname"},
@@ -1103,6 +1298,11 @@ crossbow_parse_opt (int key, char *arg, struct argp_state *state)
       crossbow_arg_state.classify_files_dirname = arg;
     case CLASSIFY_KEY:
       crossbow_arg_state.what_doing = crossbow_classify;
+      break;
+    case QUERY_SERVER_KEY:
+      crossbow_arg_state.what_doing = crossbow_query_serving;
+      crossbow_arg_state.server_port_num = arg;
+      bow_lexer_document_end_pattern = "\n.\r\n";
       break;
     case PRINT_WORD_PROBABILITIES_KEY:
       crossbow_arg_state.what_doing = crossbow_print_word_probabilities;

@@ -19,7 +19,6 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
 
 #include <bow/libbow.h>
-#include <nan.h>
 #include <values.h>
 
 static int _bow_barrel_version = -1;
@@ -338,7 +337,7 @@ bow_barrel_prune_words_in_map (bow_barrel *barrel,
   /* For each word in MAP. */
   for (i = 0; i < map->str_array_length; i++)
     {
-      if ((wi = bow_word2int (bow_int2str (map, i))) != -1)
+      if ((wi = bow_word2int_no_add (bow_int2str (map, i))) != -1)
 	{
 	  /* Word WI is in MAP.  Remove it from the BARREL. */
 	  bow_wi2dvf_hide_wi (barrel->wi2dvf, wi);
@@ -668,8 +667,10 @@ bow_barrel_new_from_printed_barrel_file (const char *filename,
 	  break;
 	case word_string:
 	  if (sscanf (*string, "%s %f%n", word, count, &num_chars_read) == 2)
+	  {
 	    ret = 1;
-	  *wi = bow_word2int (word);
+	    *wi = bow_word2int (word);
+	  }
 	  break;
 	case word_string_and_index:
 	  if (sscanf (*string,"%s %d %f%n",word,wi,count,&num_chars_read) == 3)
@@ -677,8 +678,10 @@ bow_barrel_new_from_printed_barrel_file (const char *filename,
 	  break;
 	case word_empty:
 	  if (sscanf (*string, "%f%n", count, &num_chars_read) == 1)
+	  {
 	    ret = 1;
-	  *wi = word_count_column;
+	    *wi = word_count_column;
+	  }
 	  break;
 	}
       if (word_count_format == binary_count)
@@ -891,13 +894,15 @@ bow_barrel_printf_selected (bow_barrel *barrel, FILE *fp,
     word_index,
     word_string,
     word_string_and_index,
-    word_empty
+    word_empty,
+    word_long
   } word_format = word_string_and_index;
   enum {
     binary_count,
     integer_count
   } word_count_format = integer_count;
   int doing_uci_format = 0;
+  int doing_ipl_format = 0;
   int sparse_format = 1;
   bow_dv_heap *heap;
   bow_wv *wv;
@@ -908,6 +913,9 @@ bow_barrel_printf_selected (bow_barrel *barrel, FILE *fp,
   int last_di;
   void print_word_count (int wi, int count)
     {
+      int oi;
+      const char *word;
+
       if (word_count_format == binary_count)
 	count = (count > 0);
       switch (word_format)
@@ -924,6 +932,10 @@ bow_barrel_printf_selected (bow_barrel *barrel, FILE *fp,
 	case word_empty:
 	  printf ("%d  ", count);
 	  break;
+	case word_long:
+	  word = bow_int2word (wi);
+	  for (oi = 0; oi < count; oi++)
+	    printf("%s ", word);
 	}
     }
 
@@ -934,6 +946,9 @@ bow_barrel_printf_selected (bow_barrel *barrel, FILE *fp,
       word_count_format = binary_count;
       word_format = word_empty;
     }
+
+  if (format && strchr (format, 'P'))
+    doing_ipl_format = 1;
 
   if (format && strchr (format, 'a'))
     sparse_format = 0;
@@ -947,6 +962,8 @@ bow_barrel_printf_selected (bow_barrel *barrel, FILE *fp,
     word_format = word_string;
   else if (format && strchr (format, 'e'))
     word_format = word_empty;
+  else if (format && strchr (format, 'l'))
+    word_format = word_long;
 
   if (doing_uci_format)
     {
@@ -964,9 +981,13 @@ bow_barrel_printf_selected (bow_barrel *barrel, FILE *fp,
     {
       /* Print documents that have no words in them. while (last_di ); */
       cdoc = bow_array_entry_at_index (barrel->cdocs, di);
-      if (!doing_uci_format)
+      if (!doing_uci_format && !doing_ipl_format)
 	printf ("%s %s  ", cdoc->filename, 
 		bow_barrel_classname_at_index (barrel, cdoc->class));
+      else if (doing_ipl_format)
+	printf ("%s %s  ", bow_barrel_classname_at_index (barrel, cdoc->class),
+		cdoc->filename);
+
       if (sparse_format)
 	{
 	  for (wvi = 0; wvi < wv->num_entries; wvi++)

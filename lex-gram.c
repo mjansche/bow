@@ -103,6 +103,12 @@ bow_lexer_gram_get_word (bow_lexer *self, bow_lex *lex,
   mprobe (lex);
 #endif /* BOW_MCHECK */
 
+  /* Don't distinguish between bi-grams in the middle of a document
+     and a tri-gram that only got two words before the end of the
+     document.  Do this by removing trailing `;'s */
+  for (i = strlen (buf)-1; i >= 0 && buf[i] == ';'; i--)
+    buf[i] = '\0';
+
   return strlen (buf);
 }
 

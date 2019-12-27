@@ -1,3 +1,408 @@
+2000-09-08  Kamal Nigam  <knigam@whizbang.com>
+
+	* primes.c (_bow_nextprime): Fix very peculiar memset bug.
+	Somehow it doesn't seem to matter...
+	* barrel.c (bow_barrel_new_from_printed_barrel_file): Fixed for
+	documents with no features.  Now they won't get a " " feature.
+	(bow_barrel_printf_selected): Added support for 'l' (print the word as
+	many times as it occurred) and for 'P' (print docs in IPL format).
+
+	* rainbow.c (rainbow_parse_opt): If using vocabulary from file, do
+	not add to this vocab later.
+	(main): Allow user to set vocab from file at indexing time.
+
+	* bow/libbow.h (word_map): made global
+
+	* int4word.c (word_map): make global
+	(bow_word2int_add_occurrence): grow word_map multiple times, if
+	necessary
+
+	* maxent.c (bow_maxent_new_vpc_with_weights_doc_then_word):
+	properly ignore all documents that have no features.  These
+	documents violate the constant document length assumption made by
+	doc_then_word.
+
+2000-05-21  Andrew McCallum  <mccallum@whizbang.com>
+
+	* dirk.c (bow_dirk_score): Initialize MAX_SCORE_DI to avoid gcc
+	warning.
+
+	* bpe.c: Don't include <huge_val.h>, it is no longer necessary in
+	RedHat 6.1.
+
+	* bow/crossbow.h (crossbow_classify_doc_new_wa): Declare new
+	function.
+	* bow/libbow.h: Declare new functions and variables.
+
+	* lex-simple.c (bow_lexer_max_num_words_per_document): New
+	variable.
+	(bow_lexer_simple_open_text_fp): Initialize it.
+	(bow_lexer_simple_open_str): Likewise.
+	(bow_lexer_simple_postprocess_word): Use it.  Also, handle
+	BOW_XXX_WORDS_ONLY.
+	(bow_lexer_infix_length): New variable, but unused.
+
+	* crossbow.c: Added code for query serving on a socket.
+	(crossbow_new_root_from_dir): When recursing directories, skip over
+	directories named "unlabeled".  Yipes, this is scary, arbitrary
+	behavior.
+	(crossbow_index_filename): If filename path includes the directory
+	"unlabeled", remove that directory from the file path.  Again,
+	scary arbitrary behavior!
+	(crossbow_index_filename): Verbosify the file path and class.
+	(crossbow_index_multiclass_list): Fix call of strtok.  Use strtok
+	instead of strsep, for the sake of Solaris.
+	(crossbow_classify_doc_new_wa): New function.
+	(crossbow_classify_doc) [DOC_LENGTH_SCORE_TRANSFORM]: Rescale the
+	score in a document-length specific way, as an aid to improved
+	estimation of confidence.. for the confidence-based selection
+	which unlabeled documents to label.
+	(crossbow_socket_init): New function.
+	(crossbow_serve): New function.
+	(crossbow_query_serving): New function.
+	(crossbow_options): New command-line option "query-server".
+
+	* rainbow.c: Include <strings.h> for bzero on Solaris.
+	(rainbow_options): New command-line arguments "forking-query-server"
+	and "use-saved-classifier".
+	(rainbow_parse_opt): Handle them.
+	(struct rainbow_arg_state): New member FORKING_SERVER.
+	(rainbow_query): Handle UNIX signal for broken pipe.  Code added by
+	Dan Rapp <drapp@whizbang.com>.  Remove words from QUERY_WV that
+	are not in the class barrel!  This fixes normalization by document
+	length.  Comment out a bunch of code that would re-set various
+	parameters specified on the command-line (such as the
+	classification method); this makes --query-server work much
+	better.; this will break old behavior, but I don't think it is
+	ever used.  Always set the weights and normalize the QUERY_WV
+	using the class barrel; previously there was a preference for
+	using the document barrel.
+	(SigPipeHandler): New function.
+	(rainbow_serve): Implement a forking server.
+	(rainbow_test): Remove from QUERY_WV words not in the class barrel.
+	(rainbow_test_files): Likewise.  If the test file can't be opened,
+	don't crash, just report so on stderr.
+	(main): Handle query forking server.  When testing saved model and
+	looping once for each test document, remove from QUERY_WV words
+	not in the class barrel.
+
+	* opts.c (bow_xxx_words_only): New variable.
+	(bow_options): New command line options "xxx-words-only" and
+	"max-num-words-per-document".
+	(parse_bow_opt): Handle them.
+
+	* wv.c (bow_wv_prune_words_not_in_wi2dvf): New function.
+	(bow_wv_fprintf): Print all on one line, just like --print-matrix.
+	(bow_wv_printf): New function.
+
+	* treenode.c (bow_treenode_descendant_matching_name) [WHIZBANG]:
+	Rely on tree being rooted at directory named "./data" and tree
+	depth being 2.  Without this code, we don't reliably find the
+	right descendant if there are several treenodes with the same
+	name.
+
+	* split.c (bow_set_docs_to_type): When duplicate tags are
+	requested for a document, just print a warning instead of exiting
+	with an error.
+
+	* random.c (bow_random_double): Use RAND_MAX if available.
+	* random.c (bow_random_double): Handle case in which RAND_MAX is
+	not defined, assuming its value is 2147483647, if necessary.
+
+	* maxent.c (bow_maxent_score): From query_wv remove words not in
+	the class_barrel; (I think this affects normalization).  Also, set
+	and normalize the weights---note that this might now be done
+	twice.
+
+	* lex-gram.c (bow_lexer_gram_get_word): Don't distinguish between
+	bi-grams in the middle of a document and a tri-gram that only got
+	two words before the end of the document.  Do this by removing
+	trailing `;'s
+
+	* hem.c (crossbow_hem_incremental_labeling): New variable.
+	(crossbow_hem_fixed_shrinkage): New variable, but unused.
+	(crossbow_hem_options): New command-line argument
+	"hem-incremental-labeling". 
+	(crossbow_hem_label_most_confident): New function.
+	(crossbow_hem_full_em): Call it.
+	(crossbow_hem_em_one_iteration): Handle incremental labeling.
+
+2000-05-19  Andrew McCallum  <mccallum@whizbang.com>
+
+	* wi2dvf.c (bow_wi2dvf_add_di_text_str): Assert LEX.
+
+	* rainbow.c (rainbow_options): New command-line option
+	"index-lines".
+	(rainbow_index_lines): New function.
+	(main): Call it.
+
+	* opts.c (bow_options): New command-line option
+	"use-unknown-word".
+	* int4word.c (bow_word2int_use_unknown_word): New global variable.
+	Use it in various functions.
+	* bow/libbow.h: Define new global variable.
+
+	* naivebayes.c (bow_naivebayes_score): Use a temporary annealing
+	weight that depends on the number of words in the query_wv.
+
+	* crossbow.c (crossbow_index_multiclass_list): Even though
+	strtok() is deprecated, switch to it from strsep() since the later
+	doesn't exist in Solaris.
+
+	* configure.in: Check for nsl library, needed by Solaris.
+
+	* cdmemr.c: New learning method "emr".  Change annealing
+	temperature from 1000 to 100.  Several other changes.
+	(cdmemr_calculate_perplexity): New function.
+
+	* barrel.c: Removed #include <nan.h>.  It's not necessary and
+	doesn't exist anymore in RedHat.
+
+	* archer-server.c: Remove #include signum.h.  It isn't necessary
+	and doesn't exist in Solaris.
+
+2000-04-28  Andrew McCallum  <mccallum@whizbang.com>
+
+	* cdm.c (bow_cdm_score): Normalize scores by document length.
+
+2000-02-28  Andrew McCallum  <mccallum@justresearch.com>
+
+	* barrel.c (bow_barrel_prune_words_in_map): Be sure not to add
+	words from MAP into the vocabulary.
+
+2000-02-23  Andrew McCallum  <mccallum@justresearch.com>
+
+	* primes.c (_bow_nextprime): Allocate space for the sieve in the
+	heap, not on the stack.  This helps when we need really, really
+	big prime numbers.
+
+2000-01-03  Andrew McCallum  <mccallum@justresearch.com>
+
+	* split.c (bow_split_options): Changed documentation of "test-set"
+	default from 0.3 to 0.0.  Reported by Jason Rennie.
+
+2000-02-25  Gregory C Schohn  <gcs@cmu.edu>
+
+	Final release of SVM code as part of rainbow - it will become its
+ 	own library now (a rainbow interface will always remain up to
+ 	date though).
+
+	* svm_trans.c (transduce_svm): fixed a bug in the temporary
+ 	updating code.  Changed some printing (for the simpler).
+
+	* svm_al.c (al_test_data): added fields for train and query
+ 	errors.
+	(al_svm_guts): now using hyp_vect and cur_hyp_yvect for ALL
+ 	labels.  
+	Made the transduction method skip training if the labels
+ 	queried == labels transduced and they weren't bound.  
+	Finished error reporting so that it doesn't always email me.
+	(al_svm_test_wrapper): added (& rearranged) appropriate code to
+ 	print out additional statistics (query & train accuracy).
+
+	* svm_base.c: changed some of the things that get printed, a
+ 	couple of constants and other very minor things.
+	(svm_score): fixed an uninitialized memory read.
+	(tlf_svm): fixed a bug with the random seed (it was sometimes
+ 	using uninitialized memory) for the splits.
+	
+
+2000-02-04  Kamal Nigam  <knigam@server5.jprc.com>
+
+	* vpc.c (bow_barrel_new_vpc_using_class_probs): New function.
+
+	* Makefile.local (RAINBOW_METHOD_C_FILES): Removed emda.c as a
+	file because it does not exist in the repository.
+
+	* genem.c: New file for genem method.  Requires a secondary method
+	that utilizes class_probs for train and unlabeled docs (emsimple
+	with rounds=1 will do, e.g.).
+
+	* gaussian.c: New file for gaussian method.  It's still very basic
+	and preliminary.
+
+	* Makefile.local (RAINBOW_METHOD_C_FILES): Added gaussian.c,
+	genem.c, cotrain.c
+
+	* cotrain.c: New file for cotrain method.  This version was used
+	for ICML-2000 submission.
+
+	* bow/libbow.h (bow_doc_type): Added types bow_doc_pool and
+	bow_doc_waiting for co-training.
+	(bow_str2type): Extended for new doc types.
+	(bow_type2str): New macro.
+
+	* wi2dvf.c (bow_wi2dvf_unhide_wi): New function.
+	(bow_wi2dvf_hide_words_with_prefix): New function.
+	(bow_wi2dvf_hide_words_without_prefix): New function.
+
+	* vpc.c (bow_barrel_set_vpc_priors_using_class_probs): New
+	function.
+	* stoplist.c (bow_stoplist_present): If an infix separator is
+	defined use only the part of the string after it for stopword
+	identification.
+
+	* stem.c (bow_stem_porter): If an infix key is defined, take only
+	the string after the infix key for stemming purposes.
+
+	* split.c (bow_tag_change_tags): Changed prototype.  Now returns
+	the number of docs changed instead of returning void.
+
+	* rainbow.c (rainbow_test): set the priors when building the class
+	barrel.  Is it really possible this bug has existed forever?
+
+	* opts.c (bow_options): Added code for --lex-infix-string
+	(parse_bow_opt): Likewise.
+
+	* next.c (bow_cdoc_is_pool): New function.
+	(bow_cdoc_is_waiting): New function.
+
+	* nbsimple.c
+	(bow_nbsimple_set_cdoc_word_count_from_wi2dvf_weights): store
+	number of terms per class in the normalizer, as well as the
+	word_count.  This way, we have access to the un-rounded number if
+	we prefer it.
+	(bow_nbsimple_score): Remove the "feature" that normalizes scores by
+	doc length for the document-then-word event model.  This will now
+	have longer documents have more extreme probabilities than shorter
+	documents.  Use the normalizer for the total number of words per
+	class instead of the word_count.  This should be slightly more
+	accurate, as it's not rounded.
+
+	* lex-simple.c (bow_lexer_infix_separator): new variable for word
+	infix recognition.
+	(bow_lexer_infix_length): Likewise.
+
+	* emsimple.c (bow_emsimple_num_em_runs): Changed default to 10.
+
+	* active.c (active_cdoc_is_used_for_density): New function.
+	(active_doc_barrel_set_entropy): Use train, unlabeled, and pool docs
+	for density-setting.  Used by cotrain.c.
+	(active_doc_barrel_set_density): Likewise.  Also, don't print density
+	of each document.
+	
+2000-01-12  Gregory C Schohn  <gcs@cmu.edu>
+
+	* svm_smo.c (smo): Added smart re-computation for *W.  If *W is
+ 	null & there are non-zero weights, then it is recomputed (since it
+ 	is necessary for the error evaluations).  This saves alot &
+ 	cache-thrashing if the tvals vector is already up-to-date (its not
+ 	much harder to keep W up to date too).
+	
+	(svm_smo_yflip_tvals):  Killed.  See svm_base.c log for details.
+
+	* bow/svm.h (svm_yflip_tvals): killed prototypes for this & the
+ 	smo/loqo functions.  See the svm_smo.c log for details.
+
+	* svm_loqo.c (svm_loqo_yflip_tvals): killed (see the log entry for
+ 	svm_trans).
+
+	* svm_trans.c (transduce_svm): fixed most of the inefficiencies
+ 	(all of the big ones).  When the smart_vals variable is set, no
+ 	extra recomputation is done, each svm sub-problem's output is used
+ 	as input along for the next sub-problem (very similar to the
+ 	active learning code, but here alot more recomputation needs to be
+ 	done since labels and bounds are changing).  The hyperplane
+ 	Null/non-null std is enforced, where the plane is set to zero
+ 	after it is freed, so that the solvers know not to look at it.
+	
+	Fixed a bug where all unlabeled documents have the same hyp. label
+ 	(only relevant when no-bias is also being used).
+	
+	There is also support for hyperplane stability management (see
+ 	svm_base & the refresh option).  Alot of debugging code is around
+ 	for future use.
+	
+	Killed the yflip functions.  That code just happens inside of the
+ 	loop since the hyperplane needs to also be updated, but only for
+ 	smo (so clean parameter passing wasn't going to happen).
+
+	TODO: get the tval-to-err functions working (though this is a very
+	petty thing, especially if hyperplanes are being used to do the 
+	error evaluations).
+	
+	* svm_base.c (svm_options[]): added options for
+ 	TRANS_HYP_REFRESH_ARG (the number of iterations to go in the
+ 	transduction loop before recalculating the hyperplane from scratch
+ 	(to undo precision problems)).  Probably never of any use, just a
+ 	way for the user to check his/her sanity.
+	
+	(tlf_svm): added line to also print the running time to stdout.
+	(tlf_svm): Added initialization of *W to NULL (since smo now uses the
+	data in the array if the array is non-null.
+	
+	(svm_vpc_merge): fixed a bug where documents were being re-loaded from
+	the barrel (when weights per barrel & pairwise voting was used).
+  	The unlabeled docs weren't coming back, but now they are.
+
+	* svm_al.c (al_svm_guts): Made the loop a little bit
+ 	smarter/efficient when transduction is used.  If the queried
+ 	labels are the same as those hypothesized & the weights are not
+ 	bound for those vectors, the next problem isn't solved (since the
+ 	solution will be exactly the same).  So far this doesn't seem to
+ 	help to often (since running time increases as step size
+ 	increases, making this less & less probable).  This will likely
+ 	help on very big datasets where transduction is very helpful
+
+>>>>>>> 1.487
+1999-12-30  Andrew McCallum  <mccallum@justresearch.com>
+
+	* bow/libbow.h: Declare new functions.
+	* wa.c (bow_wa_empty): New function.
+
+	* rainbow.c (rainbow_options): New command-line option
+	"print-doc-length".
+	(bow_print_log_odds_ratio): Don't trod on the IDF any more.
+	(rainbow_test): If requested, print the length of the document after
+	each classification.
+
+	* naivebayes.c: Add capability to return simply P(d|c) and the
+	ability to anneal the P(d|c) portion of the P(c|d).
+	(naivebayes_return_log_pr): New static variable.
+	(bow_naivebayes_anneal_temperature): New global variable.
+	(bow_naivebayes_score): Use the new variables.
+	* bow/naivebayes.h: Declare annealing global variable.
+
+	* info_gain.c (bow_word_count_wa): New function.
+	* em.c (bow_em_set_priors_using_class_probs): Don't set PRIOR_SUM
+	to MAX_CI.  This was a very odd bug.
+
+	* dirk.c (bow_dirk_score): Comment out printing of diagnostics.
+	(bow_dirk_new_vpc): Add code that uses the CDM.  I'm not sure if this
+	is working yet.
+
+	* cdmemr.c (use_cdm): New static variable, attend to it.
+	(bow_cdmemr_new_vpc_with_weights): Set the CDM anneal temperature and
+	the NAIVEBAYES anneal temperature to 1000.  If we aren't very
+	confident about the most confident classifications this round,
+	then don't label any more unlabeled documents.
+
+	* cdmemi.c: Comments added.
+	(bow_cdmemi_new_vpc_with_weights): Bug fix.  When
+	BOW_CDMEMI_BINARY_SCORING add to the WA the di from the 0th not
+	the 1st HITS.
+
+	* cdmem.c (bow_cdmem_new_vpc_with_weights): Only do one cdm round
+	instead of 5.  Fix bug by pre-decrementing the NUM_CDM_ROUNDS
+	instead of post-decrementing.
+
+	* cdm.c (bow_cdm_anneal_temperature): New global variable.
+	(bow_cdm_word_probs_using_ct_alphas): Get the number of classes from
+	the CLASS_COUNT_BARREL->CDOCS->LENGTH instead of from
+	bow_barrel_num_classes (class_count_barrel).  This way we can use
+	this code for a version of KNN with a CDM distance metric.
+	(bow_cdm_score): Calculate the number of words in the query; this was
+	previously used as the annealing temperature, but is no longer.
+	Divide the log-prob scores by the annealing temperature.
+
+	* archer.c (archer_index_lines): Try to make this work again after
+	the changes to archer_index() for incremental additions.  Still
+	not working.  For the canopies experiments, I just checked out an
+	old version of archer.
+
+	* Makefile.local (RAINBOW_METHOD_C_FILES): Added emda.c, cdmemi.c,
+	cdmemr.c.
+
 1999-11-22  Andrew McCallum  <mccallum@justresearch.com>
 
 	* Makefile.in (STANDARD_RAINBOW_METHOD_C_FILES): Added dirk.c.
@@ -22,6 +427,107 @@
 	(CDM_SCORE_ANNEAL_TEMPERATURE): New macro, currently defined not to be
 	used.
 	(bow_cdm_score): Handle it.
+
+1999-12-20  Kamal Nigam  <knigam@zeno.jprc.com>
+
+	* emsimple.c: added option --emsimple-no-init
+
+1999-12-18  Gregory C Schohn  <gcs@cmu.edu>
+
+	* svm_al.c: Updated to work with the new model (ie. this can 
+	be called only by svm_tlf (top-level-fn) & calls the trans fn.
+	or the setup & solve fn).  
+
+	So far the usage of transduction has no extra heuristics set up,
+	but the active learning module can be used to get stats about 
+	incrememtally randomly selected labels.
+
+	Rewrote the code to work with transduce_svm with as little hassle
+	as possible.  The code that handled the labeled & unlabeled arrays
+	significantly changed.  Now there is only 1 array (no more sub_*
+	vectors	with copies of data).
+	
+	* svm_base.c (svm_options[]): Alphabetized to improve readability.
+	(svm_parse_opt): Re-ordered to mostly alphabetical to improve 
+	readability.
+
+	(get_top_n): fixed a bug that popped up in obscure places & switched
+	to a more intelligent algorithm (don't know why it was dumb in the 
+	first place).
+
+	(svm_remove_bound_examples): changed the removal code around (again)
+	as part of the new svm model.  The fn now removes either bound, or 
+	misclassified documents & is called by solve_svm (the most inner 
+	svm fn. that calls a solver).
+
+	(svm_trans_or_chunk): removed chunk_svm for this.  Calls either 
+	transduce_svm or solve_svm depending on the parameters/data.
+
+	(svm_tlf): Top-Level-Fn.  Permutes data & outputs a hyperplane in 
+	bow_wv if possible.  This fn also chooses/sets up the proper fn 
+	(al, trans, removal, etc) to call.
+	
+	* svm_loqo.c: Updated to work with cvect instead of svm_C.  Now
+ 	all upper bounds come from the cvect parameter which MUST be
+ 	properly initialized.  (this is necessary for transduction &
+ 	possibly other things).
+
+        * svm_smo.c (opt_pair): fixed a blatant bug in the solver (the
+        examples were added to I0 set in cases where they shouldn't have
+        been [see keerthi, et al for exactly where the examples should be
+        added if they weren't already present]).
+
+        Now the upper bounds come from the cvect instead of svm_C.  The
+        algorithm is almost identical.  The only difference is a little
+        bit more notice to the exact upper bounds on each of the boxes.
+
+        * svm_trans.c: stable version.  Has new interface with the svm
+        model.  No known bugs.  The code does have some gross
+        inefficiencies (always zero-ing out temporary values & weights,
+        causing the solvers to restart each time), but all of the output
+        examined has been correct.
+
+        * bow/svm.h: Updated for a new svm interface.  The relationship
+        between the different solvers is much cleaner now that redundant
+        code has been mostly eliminated.
+
+        Note - the prototypes for most functions have changed, as the
+        structure of most of the higher-level svm code has changed.
+
+1999-12-01  Kamal Nigam  <knigam@zeno.jprc.com>
+
+	* .cvsignore: added rainbow-be to ignore list
+
+	* .cvsignore: added rainbow-rank to ignore list.
+
+	* em.c (bow_cdoc_is_train_or_unlabeled): moved to split.c
+	(bow_em_new_vpc_with_weights): removed usage of halt_using_perplexity.
+	This option is broken, and its code was hurting performance.
+
+	* bow/libbow.h (bow_cdoc_is_train_or_unlabeled): New prototype.
+
+	* split.c (bow_files_source_type): added code for the
+	bow_files_source_fraction_train and bow_files_source_number_train.
+	This is indicated by a following t which converts some number of
+	training documents.  For example, --unlabeled-set=500t takes 500
+	training docs and converts them to unlabeled docs.
+	(bow_split_options): Likewise.
+	(bow_split_parse_opt): Likewise.
+	(bow_set_doc_types_randomly_by_fraction_remaining): Likewise.
+	(bow_set_doc_types): Likewise.
+	(bow_set_doc_types_randomly_by_count_per_class): Added argument
+	source_tag.  To get previous behavior, call this with source_tag
+	equal to bow_doc_untagged.  Used for the new options
+	bow_files_source_number_train and bow_files_source_fraction_trai.
+	(bow_set_doc_types_randomly_by_count): Likewise.
+	(bow_set_doc_types_randomly_by_fraction): Likewise.
+	(bow_cdoc_is_train_or_unlabeled): New function.
+
+	* maxent.c (maxent_options): Added code for new options
+	--maxent-iteration-docs and --maxent-constraint-docs.
+	(maxent_parse_opt): Likewise.
+	(bow_maxent_new_vpc_with_weights_doc_then_word): Likewise.
+	(bow_maxent_new_vpc_with_weights): Likewise.
 
 1999-11-10  Andrew McCallum  <mccallum@justresearch.com>
 

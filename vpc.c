@@ -165,7 +165,8 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel)
 	}
       /* Set the IDF of the class's wi2dvf directly from the doc's wi2dvf */
       vpc_dv = bow_wi2dvf_dv (vpc_barrel->wi2dvf, wi);
-      if (vpc_dv)		/* xxx Why would this be NULL? */
+      if (vpc_dv)		/* this could be null if all of this word's
+				   occurrences are in non training docs */
 	vpc_dv->idf = dv->idf;
       if (max_wi - wi % 100 == 0)
 	bow_verbosify (bow_verbose, "\b\b\b\b\b\b%6d", max_wi - wi);
@@ -348,5 +349,264 @@ bow_barrel_set_vpc_priors_by_counting (bow_barrel *vpc_barrel,
   else
     {
       bow_verbosify (bow_progress, "WARNING: All classes have zero prior\n");
+    }
+}
+
+/* Like bow_barrel_new_vpc, but uses both labeled and unlabeled data.
+   It uses the class_probs of each doc to determine its class
+   membership. The counts in the wi2dvf are set to bogus numbers.  The
+   weights of the wi2dvf contain the real information. The normalizer
+   of each vpc cdoc is set to the fractional number of documents per
+   class.  The word_count of each vpc cdoc is rounded integer for the
+   number of documents per class.  The word_count of each document
+   cdoc is set to the sum of the counts of its corresponding word
+   vector.  This is to get correct numbers for the doc-then-word event
+   model.  */
+bow_barrel *
+bow_barrel_new_vpc_using_class_probs (bow_barrel *doc_barrel)
+{
+  bow_barrel* vpc_barrel;	/* The vector per class barrel */
+  int num_classes = bow_barrel_num_classes (doc_barrel);
+  int wi;
+  int max_wi;
+  int dvi;
+  int ci;
+  bow_dv *dv;
+  bow_dv *vpc_dv;
+  int di;
+  float num_docs_per_ci[num_classes];
+  bow_cdoc *cdoc;
+
+  assert (doc_barrel->classnames);
+
+  max_wi = MIN (doc_barrel->wi2dvf->size, bow_num_words ());
+
+  /* Create an empty barrel; we fill it with vector-per-class
+     data and return it. */
+  /* This assertion can fail when DOC_BARREL was read from a disk
+     archive that was created before CLASS_PROBS was added to BOW_CDOC */
+  assert (doc_barrel->cdocs->entry_size >= sizeof (bow_cdoc));
+  vpc_barrel = bow_barrel_new (doc_barrel->wi2dvf->size,
+			       num_classes,
+			       doc_barrel->cdocs->entry_size,
+			       doc_barrel->cdocs->free_func);
+  vpc_barrel->method = doc_barrel->method;
+  vpc_barrel->classnames = bow_int4str_new (0);
+  /* Make sure to set the VPC indicator */
+  vpc_barrel->is_vpc = 1;
+
+  bow_verbosify (bow_verbose, "Making vector-per-class... words ::       ");
+
+  /* Count the number of documents in each class using the class probs */
+  for (ci = 0; ci < num_classes; ci++)
+    num_docs_per_ci[ci] = 0.0;
+  for (di = 0; di < doc_barrel->cdocs->length; di++)
+    {
+      cdoc = bow_array_entry_at_index (doc_barrel->cdocs, di);
+      if (cdoc->type == bow_doc_train ||
+	  cdoc->type == bow_doc_unlabeled) {
+	for (ci = 0; ci < num_classes; ci++) 
+	  num_docs_per_ci[ci] += cdoc->class_probs[ci];
+      }
+    }
+
+  /* Update the CDOC->WORD_COUNT in the DOC_BARREL in order to match
+     the (potentially) pruned vocabulary. */
+  {
+    bow_wv *wv = NULL;
+    int wvi;
+    bow_dv_heap *heap = bow_test_new_heap (doc_barrel);
+    while ((di = bow_heap_next_wv (heap, doc_barrel, &wv,
+				   bow_cdoc_yes)) != -1)
+      {
+	cdoc = bow_array_entry_at_index (doc_barrel->cdocs, di);
+	cdoc->word_count = 0;
+	for (wvi = 0; wvi < wv->num_entries; wvi++)
+	  {
+	    if (bow_wi2dvf_dv (doc_barrel->wi2dvf, wv->entry[wvi].wi))
+	      cdoc->word_count += wv->entry[wvi].count;
+	  }
+      }
+  }
+
+  /* Initialize the WI2DVF part of the VPC_BARREL.  Sum together the
+     counts and weights for individual documents, grabbing only the
+     training documents. */
+  for (wi = 0; wi < max_wi; wi++)
+    {
+      dv = bow_wi2dvf_dv (doc_barrel->wi2dvf, wi);
+      if (!dv)
+	continue;
+      for (dvi = 0; dvi < dv->length; dvi++)
+	{
+	  di = dv->entry[dvi].di;
+	  cdoc = bow_array_entry_at_index (doc_barrel->cdocs, di);
+	  if (cdoc->type == bow_doc_train ||
+	      cdoc->type == bow_doc_unlabeled)
+	    {
+	      float weight;
+	      
+	      /* The old version of bow_wi2dvf_add_di_text_fp() initialized
+		 the dv WEIGHT to 0 instead of the word count.  If the weight 
+		 is zero, then use the count instead.  Note, however, that
+		 the TFIDF method might have set the weight, so we don't
+		 want to use the count all the time. */
+	      if (dv->entry[dvi].weight)
+		weight = dv->entry[dvi].weight;
+	      else
+		weight = dv->entry[dvi].count;
+
+	      for (ci = 0; ci < num_classes; ci++) 
+		{
+
+		  /* do the right thing based on the event model */
+		  if (bow_event_model == bow_event_document)
+		    {
+		      assert (dv->entry[dvi].count);
+		      bow_wi2dvf_add_wi_di_count_weight (&(vpc_barrel->wi2dvf), 
+							 wi, ci, 1, 
+							 cdoc->class_probs[ci]);
+		    }
+		  else if (bow_event_model == bow_event_document_then_word)
+		    {
+		      bow_wi2dvf_add_wi_di_count_weight
+			(&(vpc_barrel->wi2dvf), wi, ci, 1,
+			 (bow_event_document_then_word_document_length
+			  * weight * cdoc->class_probs[ci] / cdoc->word_count));
+		    }
+		  else
+		    {
+		      bow_wi2dvf_add_wi_di_count_weight (&(vpc_barrel->wi2dvf), 
+							 wi, ci, 
+							 1,
+							 weight * cdoc->class_probs[ci]);
+		    }
+		}
+	    }
+	}
+      /* Set the IDF of the class's wi2dvf directly from the doc's wi2dvf */
+      vpc_dv = bow_wi2dvf_dv (vpc_barrel->wi2dvf, wi);
+      if (vpc_dv) 
+	vpc_dv->idf = dv->idf;
+      if (max_wi - wi % 100 == 0)
+	bow_verbosify (bow_verbose, "\b\b\b\b\b\b%6d", max_wi - wi);
+    }
+
+  bow_verbosify (bow_verbose, "\b\b\b\b\b\b\n");
+
+  /* Initialize the CDOCS and CLASSNAMES parts of the VPC_BARREL.
+     Create BOW_CDOC structures for each class, and append them to the
+     VPC->CDOCS array. */
+  for (ci = 0; ci < num_classes; ci++)
+    {
+      bow_cdoc cdoc;
+      const char *classname = NULL;
+
+      cdoc.type = bow_doc_train;
+      cdoc.normalizer = num_docs_per_ci[ci];
+      /* Make WORD_COUNT be the number of documents in the class.
+         This is for the document event model.*/
+      cdoc.word_count = rint (num_docs_per_ci[ci]);
+      if (doc_barrel->classnames)
+	{
+	  classname = bow_barrel_classname_at_index (doc_barrel, ci);
+	  cdoc.filename = strdup (classname);
+	  if (!cdoc.filename)
+	    bow_error ("Memory exhausted.");
+	}
+      else
+	{
+	  cdoc.filename = NULL;
+	}
+      cdoc.class_probs = NULL;
+      cdoc.class = ci;
+      bow_verbosify (bow_verbose, "%20f model documents in class `%s'\n",
+		     num_docs_per_ci[ci], cdoc.filename);
+      /* Add a CDOC for this class to the VPC_BARREL */
+      bow_array_append (vpc_barrel->cdocs, &cdoc);
+      /* Add an entry for this class into the VPC_BARREL->CLASSNAMES map. */
+      bow_str2int (vpc_barrel->classnames, classname);
+    }
+
+  if (doc_barrel->method->vpc_set_priors)
+    {
+      /* Set the prior probabilities on classes, if we're doing
+	 NaiveBayes or something else that needs them.  */
+      (*doc_barrel->method->vpc_set_priors) (vpc_barrel, doc_barrel);
+    }
+  else
+    {
+      /* We don't need priors, so set them to obviously bogus values,
+	 so we'll notice if they accidently get used. */
+      for (ci = 0; ci < num_classes; ci++)
+	{
+	  bow_cdoc *cdoc;
+	  cdoc = bow_array_entry_at_index (vpc_barrel->cdocs, ci);
+	  cdoc->prior = -1;
+	}
+    }
+
+  return vpc_barrel;
+}
+
+/* Set the class prior probabilities by doing a weighted (by class
+   membership) count of the number of labeled and unlabeled documents
+   in each class.  This uses class_probs to determine class
+   memberships of the documents. */
+void
+bow_barrel_set_vpc_priors_using_class_probs (bow_barrel *vpc_barrel,
+					     bow_barrel *doc_barrel)
+     
+{
+  float prior_sum = 0;
+  int ci;
+  int max_ci = vpc_barrel->cdocs->length;
+  int di;
+
+  /* Zero them. */
+  for (ci = 0; ci < max_ci; ci++)
+    {
+      bow_cdoc *cdoc;
+      cdoc = bow_array_entry_at_index (vpc_barrel->cdocs, ci);
+      cdoc->prior = 0;
+    }
+
+  /* Count each document for each class according to the
+     class_probs. */
+  for (di = 0; di < doc_barrel->cdocs->length; di++)
+    {
+      bow_cdoc *doc_cdoc = bow_array_entry_at_index (doc_barrel->cdocs, di);
+      bow_cdoc *vpc_cdoc;
+      
+      if (doc_cdoc->type == bow_doc_train ||
+	  doc_cdoc->type == bow_doc_unlabeled)
+	{
+	  for (ci = 0; ci < max_ci; ci++)
+	    {
+	      vpc_cdoc = bow_array_entry_at_index (vpc_barrel->cdocs, ci); 
+	      vpc_cdoc->prior += doc_cdoc->class_probs[ci];
+	    }
+	}
+    }
+  
+  /* Sum them all. */
+  for (ci = 0; ci < max_ci; ci++)
+    {
+      bow_cdoc *cdoc;
+      cdoc = bow_array_entry_at_index (vpc_barrel->cdocs, ci);
+      prior_sum += cdoc->prior;
+    }
+
+  /* Normalize to set the prior. */
+  for (ci = 0; ci < max_ci; ci++)
+    {
+      bow_cdoc *cdoc;
+      cdoc = bow_array_entry_at_index (vpc_barrel->cdocs, ci);
+      cdoc->prior /= prior_sum;
+      if (cdoc->prior == 0)
+	bow_verbosify (bow_progress, 
+		       "WARNING: class `%s' has zero prior\n",
+		       cdoc->filename);
+      assert (cdoc->prior >= 0.0 && cdoc->prior <= 1.0);
     }
 }

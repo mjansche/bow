@@ -24,7 +24,7 @@
 
 
 /* Get the total number of terms in each class; store this in
-   CDOC->WORD_COUNT. */
+   CDOC->WORD_COUNT and CDOC->NORMALIZER*/
 void
 bow_nbsimple_set_cdoc_word_count_from_wi2dvf_weights (bow_barrel *barrel)
 {
@@ -56,6 +56,7 @@ bow_nbsimple_set_cdoc_word_count_from_wi2dvf_weights (bow_barrel *barrel)
   for (ci = 0; ci < barrel->cdocs->length; ci++)
     {
       cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
+      cdoc->normalizer = num_words_per_ci[ci];
       cdoc->word_count = (int) rint (num_words_per_ci[ci]);
     }
 }
@@ -122,11 +123,15 @@ bow_nbsimple_score (bow_barrel *barrel, bow_wv *query_wv,
   /* Set the weights of the QUERY_WV, according to the event model. */
   for (wvi = 0; wvi < query_wv->num_entries; wvi++)
     {
+
+      /* temporary fix to allow longer docs be more confident */
+#if 0
       if (bow_event_model == bow_event_document_then_word)
 	query_wv->entry[wvi].weight = 
 	  bow_event_document_then_word_document_length
 	  * ((float)query_wv->entry[wvi].count) / num_words_in_query;
       else
+#endif
 	query_wv->entry[wvi].weight = query_wv->entry[wvi].count;
     }
 
@@ -162,7 +167,7 @@ bow_nbsimple_score (bow_barrel *barrel, bow_wv *query_wv,
 
 	  /* Estimate P(w|c) using Laplace smoothing */
 	  pr_w_given_c = ((1.0 + count_w_in_c)
-			  / (vocabulary_size + cdoc->word_count));
+			  / (((float) vocabulary_size) + cdoc->normalizer));
 
 	  scores[ci] += query_wv->entry[wvi].weight * log (pr_w_given_c);
 

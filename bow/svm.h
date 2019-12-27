@@ -75,6 +75,7 @@
 #define WEIGHTS_PER_MODEL  2
 
 #define INIT_KKT      0.001 /* initial val for epsilon_crit */
+#define EPSILON_CSTAR 1E-2
 
 struct di {
   double d;
@@ -111,7 +112,7 @@ struct svm_smo_model {
   double     *weights;
   double     *W;
   double     *error;
-  int        *valid;       /* bitmap for the error cache */
+  float      *cvect;
   int        *yvect;
   double      bup,blow;
   int         iup,ilow;
@@ -133,6 +134,7 @@ extern int svm_nkc_calls;
 
 extern int svm_init_al_tset;
 extern int svm_al_qsize;
+extern int svm_al_do_trans;
 
 extern int svm_use_smo;
 extern int svm_verbosity;
@@ -140,16 +142,21 @@ extern int svm_random_seed;
 
 /* for transduction */
 extern double svm_trans_cstar;
+extern int svm_trans_nobias;
 extern int svm_trans_npos;
+extern int svm_trans_hyp_refresh;
+extern int svm_trans_smart_vals;
 
 /* comparison functions for qsort */
 int di_cmp(const void *v1, const void *v2);
 int i_cmp(const void *v1, const void *v2);
+int d_cmp(const void *v1, const void *v2);
 int s_cmp(const void *v1, const void *v2);
 
 /* utility fns */
 void svm_permute_data(int *permute_table, bow_wv **docs, int *yvect, int ndocs);
 void svm_unpermute_data(int *permute_table, bow_wv **docs, int *yvect, int ndocs);
+bow_wv *svm_darray_to_wv(double *W);
 
 /* util fn when qsort is not necessary */
 void get_top_n(struct di *arr, int len, int n);
@@ -162,9 +169,17 @@ double svm_kernel_cache(bow_wv *wv1, bow_wv *wv2);
 double svm_kernel_cache_lookup(bow_wv *wv1, bow_wv *wv2);
 
 int build_svm_guts(bow_wv **docs, int *yvect, double *weights, double *b, 
-		   double **W, int ndocs, double *s, int *nsv);
+		   double **W, int ndocs, double *s, float *cvect, int *nsv);
 int smo(bow_wv **docs, int *yvect, double *weights, double *a_b, double **W, 
-	int ndocs, double *error, int *nsv);
+	int ndocs, double *error, float *cvect, int *nsv);
+
+
+inline int solve_svm(bow_wv **docs, int *yvect, double *weights, double *tb,
+		     double **W, int nlabeled, double *tvals, float *cvect, int *nsv);
+int svm_trans_or_chunk(bow_wv **docs, int *yvect, int *trans_yvect, 
+		       double *weights, double *tvals, double *ab, double **W,
+		       int ntrans, int ndocs, int *nsv);
+
 
 inline double evaluate_model_hyperplane(double *W, double b, bow_wv *query_wv);
 inline double evaluate_model_cache(bow_wv **docs, double *weights, int *yvect, double b, 
@@ -173,21 +188,27 @@ inline double evaluate_model(bow_wv **docs, double *weights, int *yvect, double 
 			     bow_wv *query_wv, int nsv);
 double smo_evaluate_error(struct svm_smo_model *model, int ex);
 
+inline double svm_loqo_tval_to_err(double si, double b, int y);
+inline double svm_smo_tval_to_err(double si, double b, int y);
+double svm_tval_to_err(double si, double b, int y);
 
 
-int al_svm(bow_wv **docs, int *yvect, double *weights, double *b, bow_wv **W, 
-	   int ndocs, int do_rlearn);
+int al_svm(bow_wv **docs, int *yvect, double *weights, double *b, double **W, 
+	   int ntrans, int ndocs, int do_rlearn);
 int al_svm_test_wrapper(bow_wv **docs, int *yvect, double *weights, 
-			double *b, bow_wv **W, int ndocs, int do_ts, int do_rlearn);
+			double *b, double **W, int ntrans, int ndocs, 
+			int do_ts, int do_rlearn, int *pt);
 
-
-int transduce_svm(bow_wv **sub_docs, int *yvect, double *weights, double *b, 
-		  bow_wv **W_wv, int ndocs, int ntrans);
+int transduce_svm(bow_wv **docs, int *yvect, int *trans_yvect, 
+		  double *weights, double *tvals, double *a_b, 
+		  double **W, int ndocs, int ntrans, int *up_nsv);
+int svm_remove_bound_examples(bow_wv **docs, int *yvect, double *weights,
+			   double *b, double **W, int ndocs, double *tvals,
+			   float *cvect, int *nsv);
 
 
 void svm_set_fisher_barrel_weights(bow_wv **docs, int ndocs);
 void svm_setup_fisher(bow_barrel *old_barrel, bow_wv **docs, int nclasses, int ndocs);
 double svm_kernel_fisher(bow_wv *wv1, bow_wv *wv2);
-
 
 #endif /* __BOW_SVM_H */

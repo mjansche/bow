@@ -8,7 +8,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-
+#include <string.h>
 
 /* Global variables whose value is set by bow_argp functions, but
    which must be examined by some other function (called later) in
@@ -82,6 +82,8 @@ int bow_event_document_then_word_document_length = 200;
 /* Smooth words that occur k or fewer times for Good-Turing smoothing */
 int bow_smoothing_goodturing_k = 7;
 
+/* Only tokenize words containing `xxx' */
+int bow_xxx_words_only = 0;
 
 /* Value added to key to get the key of the opposite option.  For
    example "do not use stoplist" has key 's'; "use stoplist" has key
@@ -100,6 +102,7 @@ enum {
   LEX_WHITE_KEY,
   LEX_ALPHANUM_KEY,
   LEX_SUFFIXING_KEY,
+  LEX_INFIX_KEY,
   SHORTEST_WORD_KEY,
   FLEX_MAIL_KEY,
   FLEX_TAGGED_KEY,
@@ -112,7 +115,10 @@ enum {
   INFOGAIN_EVENT_MODEL_KEY,
   SMOOTHING_GOODTURING_K,
   HDB_KEY,
-  ANNOTATION_KEY
+  XXX_WORDS_ONLY_KEY,
+  ANNOTATION_KEY,
+  MAX_NUM_WORDS_PER_DOCUMENT_KEY,
+  USE_UNKNOWN_WORD_KEY,
 };
 
 static struct argp_option bow_options[] =
@@ -171,6 +177,13 @@ static struct argp_option bow_options[] =
    "and say no if there are many lines of the same length."},
   {"lex-pipe-command", LEX_PIPE_COMMAND_KEY, "SHELLCMD", 0,
    "Pipe files through this shell command before lexing them."},
+  {"xxx-words-only", XXX_WORDS_ONLY_KEY, 0, 0,
+   "Only tokenize words with `xxx' in them"},
+  {"max-num-words-per-document", MAX_NUM_WORDS_PER_DOCUMENT_KEY, "N", 0,
+   "Only tokenize the first N words in each document."},
+  {"use-unknown-word", USE_UNKNOWN_WORD_KEY, 0, 0,
+   "When used in conjunction with -O or -D, captures all words with "
+   "occurrence counts below threshold as the `<unknown>' token"},
 
   {0, 0, 0, 0,
    "Mutually exclusive choice of lexers", 3},
@@ -188,6 +201,9 @@ static struct argp_option bow_options[] =
    "only by non-alphanumeric characters."},
   {"lex-suffixing", LEX_SUFFIXING_KEY, 0, 0,
    "Use a special lexer that adds suffixes depending on Email-style headers."},
+  {"lex-infix-string", LEX_INFIX_KEY, "ARG", 0,
+   "Use only the characters after ARG in each word for stoplisting and "
+   "stemming.  If a word does not contain ARG, the entire word is used."},
   {"flex-mail", FLEX_MAIL_KEY, 0, 0,
    "Use a mail-specific flex lexer"},
   {"flex-tagged", FLEX_TAGGED_KEY, 0, 0,
@@ -338,6 +354,10 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
 	bow_default_lexer = lex;
 	break;
       }
+    case LEX_INFIX_KEY:
+      bow_lexer_infix_separator = arg;
+      bow_lexer_infix_length = strlen (arg);
+      break;
     case FLEX_MAIL_KEY:
       bow_flex_option = USE_MAIL_FLEXER;
       break;
@@ -394,6 +414,15 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
       break;
     case ISTEXT_AVOID_UUENCODE_KEY:
       bow_istext_avoid_uuencode = 1;
+      break;
+    case XXX_WORDS_ONLY_KEY:
+      bow_xxx_words_only = 1;
+      break;
+    case MAX_NUM_WORDS_PER_DOCUMENT_KEY:
+      bow_lexer_max_num_words_per_document = atoi (arg);
+      break;
+    case USE_UNKNOWN_WORD_KEY:
+      bow_word2int_use_unknown_word = 1;
       break;
 
       /* Feature selection options. */

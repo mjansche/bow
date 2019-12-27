@@ -62,7 +62,6 @@ void bow_em_print_word_distribution (bow_barrel *vpc_barrel,
 double em_calculate_perplexity (bow_barrel *doc_barrel, 
 				 bow_barrel *class_barrel);
 float em_calculate_accuracy (bow_barrel *doc_barrel, bow_barrel *class_barrel);
-int bow_cdoc_is_train_or_unlabeled (bow_cdoc *cdoc);
 void bow_em_set_weights (bow_barrel *barrel);
 
 /* Global Variables */
@@ -361,14 +360,6 @@ bow_cdoc_is_multi_hump_doc (bow_cdoc *cdoc)
 }
 
 
-/* return 1 for all training and unlabeled docs */
-int
-bow_cdoc_is_train_or_unlabeled (bow_cdoc *cdoc)
-{
-  return ((cdoc->type == bow_doc_unlabeled) ||
-	  (cdoc->type == bow_doc_train));
-}
-
 
 /* Given a fully-specified file path name (all the way from `/'),
    return just the last filename part of it. */
@@ -583,7 +574,6 @@ bow_em_new_vpc_with_weights (bow_barrel *doc_barrel)
   int ci;                   /* class index */
   bow_dv *dv;               /* document vector */
   int di;                   /* document index */
-  float num_words_per_ci[200];
   int binary_neg_ci = -1;
   bow_dv_heap *test_heap=NULL;	/* we'll extract test WV's from here */
   bow_wv *query_wv;
@@ -623,6 +613,9 @@ bow_em_new_vpc_with_weights (bow_barrel *doc_barrel)
   assert (!(bow_em_perturb_starting_point && em_anneal));
   assert (em_stat_method == nb_score || bow_em_multi_hump_neg == 0);
 
+  /* this option is broken */
+  assert (!em_halt_using_perplexity);
+
   /* initialize some variables */
   bow_em_making_barrel = 1;
 
@@ -635,9 +628,6 @@ bow_em_new_vpc_with_weights (bow_barrel *doc_barrel)
 
   if (bow_em_multi_hump_neg > 1)
     bow_cdoc_next_em_doc = bow_cdoc_is_multi_hump_doc;
-  
-  for (ci = 0; ci < max_new_ci; ci++)
-    num_words_per_ci[ci] = 0;
   
   max_wi = MIN (doc_barrel->wi2dvf->size, bow_num_words ());
   /*  assert(doc_barrel->wi2dvf->size == bow_num_words ()); */
@@ -893,6 +883,16 @@ bow_em_new_vpc_with_weights (bow_barrel *doc_barrel)
 	assert (!bow_uniform_class_priors);
 	(*doc_barrel->method->vpc_set_priors) (vpc_barrel, doc_barrel);
       }
+    else
+      {
+	for (ci = 0; ci < max_new_ci; ci++)
+	  {
+	    bow_cdoc *cdoc = bow_array_entry_at_index(vpc_barrel->cdocs, ci);
+
+	    cdoc->prior = 0.0;
+	  }
+      }
+
 
     /* set the class probs of all the unlabeled docs to determine the EM
        starting point */
@@ -1005,12 +1005,14 @@ bow_em_new_vpc_with_weights (bow_barrel *doc_barrel)
 	  if (!dv)
 	    continue;
 
+#if 0
 	  /* create the dv in the class barrel if there's an
 	     entry in the doc barrel.  This ensures that
 	     perplexity calculations happen correctly. */
 	  vpc_barrel->wi2dvf->entry[wi].dv = bow_dv_new (0);
 	  vpc_barrel->wi2dvf->entry[wi].seek_start = 2;
 	  (vpc_barrel->wi2dvf->num_words)++;
+#endif
 
 	  for (dvi = 0; dvi < dv->length; dvi++)
 	    {
@@ -1753,7 +1755,7 @@ bow_em_set_priors_using_class_probs (bow_barrel *vpc_barrel,
       cdoc->prior = 1;
     }
 
-  prior_sum = max_ci;
+  //prior_sum = max_ci;
 
   /* Add in document class_probs. */
   for (di = 0; di < doc_barrel->cdocs->length; di++)
@@ -1778,6 +1780,7 @@ bow_em_set_priors_using_class_probs (bow_barrel *vpc_barrel,
     {
       bow_cdoc *cdoc;
       cdoc = bow_array_entry_at_index (vpc_barrel->cdocs, ci);
+      assert (cdoc->prior == cdoc->prior);
       prior_sum += cdoc->prior;
     }
 

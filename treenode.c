@@ -262,15 +262,15 @@ bow_treenode_iterate_all (treenode **context)
   else
     {
       while ((*context)->parent
-	     && ((*context)->ci_in_parent
-		 == (*context)->parent->children_count-1))
-	{
-	  *context = (*context)->parent;
-	}
+						 && ((*context)->ci_in_parent
+								 == (*context)->parent->children_count-1))
+			{
+				*context = (*context)->parent;
+			}
       if ((*context)->parent)
-	*context = (*context)->parent->children[(*context)->ci_in_parent+1];
+				*context = (*context)->parent->children[(*context)->ci_in_parent+1];
       else
-	*context = NULL;
+				*context = NULL;
     }
   return ret;
 }
@@ -333,9 +333,16 @@ bow_treenode_descendant_matching_name (treenode *root, const char *name)
 {
   int ci;
   treenode *tr;
-
+#if WHIZBANG
+  char buf[256];
+  
+  strcpy (buf, "./data");
+  strcat (buf, root->name);
+  if (strstr (name, buf) != name)
+#else
   if (!strstr (name, root->name))
     return NULL;
+#endif
 
   for (ci = 0; ci < root->children_count; ci++)
     {
@@ -343,6 +350,9 @@ bow_treenode_descendant_matching_name (treenode *root, const char *name)
 	   (root->children[ci], name)))
 	return tr;
     }
+#if WHIZBANG
+  assert (root->depth == 2);
+#endif
   return root;
 }
 

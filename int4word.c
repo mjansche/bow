@@ -1,6 +1,6 @@
 /* A convient interface to int4str.c, specifically for words. */
 
-/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999, 2000 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -24,7 +24,7 @@
 #include <stdio.h>
 
 /* The int/string mapping for bow's vocabulary words. */
-static bow_int4str *word_map = NULL;
+bow_int4str *word_map = NULL;
 
 /* An array, holding the occurrence counts of all words in vocabulary. */
 static int *word_map_counts = NULL;
@@ -33,6 +33,11 @@ static int word_map_counts_size = 0;
 /* If this is non-zero, then bow_word2int() will return -1 when asked
    for the index of a word that is not already in the mapping. */
 int bow_word2int_do_not_add = 0;
+
+/* If this is non-zero and bow_word2int_do_not_add is non-zero, then
+   bow_word2int() will return the index of the "<unknown>" token when
+   asked for the index of a word that is not already in the mapping. */
+int bow_word2int_use_unknown_word = 0;
 
 static inline void
 _bow_int4word_initialize ()
@@ -45,6 +50,11 @@ _bow_int4word_initialize ()
   word_map_counts = bow_malloc (word_map_counts_size * sizeof (int));
   for (wi = 0; wi < WORD_MAP_COUNTS_INITIAL_SIZE; wi++)
     word_map_counts[wi] = 0;
+  if (bow_word2int_use_unknown_word)
+    {
+      int unknown_word_index = bow_word2int (BOW_UNKNOWN_WORD);
+      assert (unknown_word_index != -1);
+    }
 }
 
 /* Replace the current word/int mapping with MAP. */
@@ -83,7 +93,7 @@ bow_word2int (const char *word)
   if (!word_map)
     _bow_int4word_initialize ();
   if (bow_word2int_do_not_add)
-    return bow_str2int_no_add (word_map, word);
+    return bow_word2int_no_add (word);
   return bow_str2int (word_map, word);
 }
 
@@ -109,9 +119,13 @@ bow_word2int_inc (const char *word, FILE *fp)
 int
 bow_word2int_no_add (const char *word)
 {
+  int wi;
   if (!word_map)
     _bow_int4word_initialize ();
-  return bow_str2int_no_add (word_map, word);
+  if ((wi = bow_str2int_no_add (word_map, word)) == -1
+      && bow_word2int_use_unknown_word)
+    wi = bow_str2int (word_map, BOW_UNKNOWN_WORD);
+  return wi;
 }
 
 /* Like bow_word2int(), except it also increments the occurrence count 
@@ -123,7 +137,7 @@ bow_word2int_add_occurrence (const char *word)
   
   if (ret < 0)
     return ret;
-  if (word_map->str_array_length >= word_map_counts_size)
+  while (word_map->str_array_length >= word_map_counts_size)
     {
       /* WORD_MAP_COUNTS must grow to accomodate the new entry */
       int wi, old_size = word_map_counts_size;
@@ -255,6 +269,8 @@ bow_words_remove_occurrences_less_than (int occur)
     }
   max_wi = word_map->str_array_length;
   new_map = bow_int4str_new (0);
+  if (bow_word2int_use_unknown_word)
+    bow_str2int (new_map, BOW_UNKNOWN_WORD);
   for (wi = 0; wi < max_wi; wi++)
     {
       /* If there are enough occurrences, add it to the new map. */
@@ -312,6 +328,8 @@ bow_words_keep_top_by_infogain (int num_words_to_keep,
     num_words_to_keep = wi2ig_size;
 
   /* Add NUM_WORDS_TO_KEEP words to the new vocabulary. */
+  if (bow_word2int_use_unknown_word)
+    bow_str2int (new_map, BOW_UNKNOWN_WORD);
   for (wi = 0; wi < num_words_to_keep; wi++)
     if (bow_wi2dvf_dv (barrel->wi2dvf, wiig_list[wi].wi))
       bow_str2int (new_map, bow_int2word (wiig_list[wi].wi));

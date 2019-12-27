@@ -171,6 +171,26 @@ bow_wv_new_from_text_string (char *the_string)
   return ret;
 }
 
+/* Remove words that don't occur in WI2DVF */
+void
+bow_wv_prune_words_not_in_wi2dvf (bow_wv *wv, bow_wi2dvf *wi2dvf)
+{
+  int wvi;
+
+  for (wvi = 0; wvi < wv->num_entries; wvi++)
+    {
+      /* If the word isn't in WI2DVF remove this entry from WV. */
+      if (bow_wi2dvf_dv (wi2dvf, wv->entry[wvi].wi) == NULL)
+	{
+	  int wvi2;
+	  for (wvi2 = wvi; wvi2 < wv->num_entries-1; wvi2++)
+	    wv->entry[wvi2] = wv->entry[wvi2+1];
+	  wv->num_entries--;
+	  wvi--;
+	}
+    }
+}
+
 /* Return the number of word occurrences in the WV */
 int
 bow_wv_word_count (bow_wv *wv)
@@ -311,7 +331,21 @@ bow_wv_fprintf (FILE *fp, bow_wv *wv)
   int i;
 
   for (i = 0; i < wv->num_entries; i++)
-    fprintf (fp, "%4d %30s %4d\n",
+    fprintf (fp, "%s %d %d  ",
+	     bow_int2word (wv->entry[i].wi),
+	     wv->entry[i].wi,
+	     wv->entry[i].count);
+  fprintf (fp, "\n");
+}
+
+/* Print "word vector" WV on stream FP in a human-readable format. */
+void
+bow_wv_printf (bow_wv *wv)
+{
+  int i;
+
+  for (i = 0; i < wv->num_entries; i++)
+    fprintf (stdout, "%4d %30s %4d\n",
 	     wv->entry[i].wi,
 	     bow_int2word (wv->entry[i].wi),
 	     wv->entry[i].count);

@@ -61,6 +61,9 @@ static int (*maxent_accuracy_docs)(bow_cdoc *) = NULL;
 static int (*maxent_logprob_docs)(bow_cdoc *) = NULL;
 static int (*maxent_halt_accuracy_docs)(bow_cdoc *) = NULL;
 
+/* which documents to use for maxent iterations */
+static int (*maxent_iteration_docs)(bow_cdoc *) = bow_cdoc_is_train;
+
 
 /* the number of iterations of iterative scaling to perform */
 static int maxent_num_iterations = 40;
@@ -70,6 +73,15 @@ static int maxent_words_per_class = 0;
 
 /* the minimum count for a word/class feature */
 static int maxent_prune_features_by_count = 0;
+
+/* whether or not to use unlabeled docs in setting the constraints */
+static int maxent_constraint_use_unlabeled = 0;
+
+#if 0
+static int maxent_print_constraints = 1;
+static int maxent_print_lambdas = 1;
+#endif
+
 
 enum {
   MAXENT_PRINT_ACCURACY = 6000,
@@ -86,6 +98,8 @@ enum {
   MAXENT_GAUSSIAN_PRIOR_ZERO_CONSTRAINTS,
   MAXENT_PRIOR_VARY_BY_COUNT,
   MAXENT_PRIOR_VARY_BY_COUNT_LINEAR,
+  MAXENT_ITERATION_DOCS,
+  MAXENT_CONSTRAINT_DOCS,
 };
 
 static struct argp_option maxent_options[] =
@@ -127,6 +141,13 @@ static struct argp_option maxent_options[] =
    "at least NUM occurrences in the training set."},
   {"maxent-vary-prior-by-count-linearly", MAXENT_PRIOR_VARY_BY_COUNT_LINEAR, 0, 0,
    "Mulitple N(w,c) times variance when using a Gaussian prior."},
+  {"maxent-iteration-docs", MAXENT_ITERATION_DOCS, "TYPE", 0,
+   "The types of documents to use for maxent iterations.  The default is train.  "
+   "TYPE is type of documents to test.  See `--em-halt-using-perplexity` "
+   "for choices for TYPE"},
+  {"maxent-constraint-docs", MAXENT_CONSTRAINT_DOCS, "TYPE", 0, 
+   "The documents to use for setting the constraints.  The default is train. "
+   "The other choice is trainandunlabeled."}, 
   {0, 0}
 };
 
@@ -135,6 +156,24 @@ maxent_parse_opt (int key, char *arg, struct argp_state *state)
 {
   switch (key)
     {
+    case MAXENT_ITERATION_DOCS:
+      if (!strcmp (arg, "train"))
+	maxent_iteration_docs = bow_cdoc_is_train;
+      else if (!strcmp (arg, "unlabeled"))
+	maxent_iteration_docs = bow_cdoc_is_unlabeled;
+      else if (!strcmp (arg, "trainandunlabeled"))
+	maxent_iteration_docs = bow_cdoc_is_train_or_unlabeled;
+      else
+	bow_error("Unknown document type for --maxent-iteration-docs");
+      break;
+    case MAXENT_CONSTRAINT_DOCS:
+      if (!strcmp (arg, "train"))
+	maxent_constraint_use_unlabeled = 0;
+      else if (!strcmp (arg, "trainandunlabeled"))
+	maxent_constraint_use_unlabeled = 1;
+      else
+	bow_error("Unknown document type for --maxent-constraint-docs");
+      break;
     case MAXENT_PRINT_ACCURACY:
       if (!strcmp (arg, "validation"))
 	maxent_accuracy_docs = bow_cdoc_is_validation;
@@ -348,7 +387,7 @@ maxent_prune_vocab_by_mutual_information (bow_barrel *barrel, int num_per_class)
   for (ci = 0; ci < max_ci; ci++)
     {
       bow_verbosify (bow_progress, "\n%s\n", bow_barrel_classname_at_index (barrel, ci));
-      for (wi = 0; wi < 5; wi++)
+      for (wi = 0; wi < 10; wi++)
 	bow_verbosify (bow_progress, "%20.10f %s\n", mis[ci][wi].ig,
 		       bow_int2word (mis[ci][wi].wi));
     }
@@ -587,6 +626,8 @@ bow_maxent_new_vpc_with_weights_doc_then_word (bow_barrel *doc_barrel)
   float old_accuracy = -1;
   float new_accuracy = 0;
   maxent_polynomial *newton_poly;
+  int num_unlabeled = 0;
+  int *unlabeled_dis = NULL;
     
 
   bow_maxent_model_building = 1;
@@ -611,8 +652,42 @@ bow_maxent_new_vpc_with_weights_doc_then_word (bow_barrel *doc_barrel)
   newton_poly->entry[1].power = bow_event_document_then_word_document_length;
   newton_poly->entry[2].power = -1;
 
-  /* get a barrel where the weights and counts are set to word counts */
+  /* if we're using unlabeled data to set the constraints, then we
+     need to temporarily convert these into training documents. */
+  if (maxent_constraint_use_unlabeled) 
+    {
+      unlabeled_dis = bow_malloc (sizeof (int) * doc_barrel->cdocs->length);
+      for (di = 0; di < doc_barrel->cdocs->length; di++) 
+	{
+	  bow_cdoc *cdoc = bow_array_entry_at_index(doc_barrel->cdocs, di);
+	  if (cdoc->type == bow_doc_unlabeled)
+	    {
+	      unlabeled_dis[num_unlabeled] = di;
+	      num_unlabeled++;
+	      cdoc->type = bow_doc_train;
+	    }
+	}
+    }
+
+  /* get a barrel where the weights and counts are set to word counts
+     based on the labeled data only */
   vpc_barrel = bow_barrel_new_vpc (doc_barrel);
+
+
+  /* switch back the unlabeled documents to have their original tag */
+  if (maxent_constraint_use_unlabeled)
+    {
+      int ui;
+
+      for (ui = 0; ui < num_unlabeled; ui++)
+	{
+	  bow_cdoc *cdoc = bow_array_entry_at_index(doc_barrel->cdocs, 
+						    unlabeled_dis[ui]);
+	  cdoc->type = bow_doc_unlabeled;
+	}
+
+      bow_free (unlabeled_dis);
+    }
 
 
   /* re-initialize the weights to 0.
@@ -624,6 +699,21 @@ bow_maxent_new_vpc_with_weights_doc_then_word (bow_barrel *doc_barrel)
       total_num_docs += cdoc->word_count;
     }
 
+  
+  /* Count how many training documents there are.  Exclude documents
+     that have no features, as we need to ignore them for
+     doc_then_word */
+  query_wv = NULL;
+  test_heap = bow_test_new_heap (doc_barrel);
+  
+  /* Iterate over each document. */
+  while (-1 != (di = bow_heap_next_wv (test_heap, doc_barrel, &query_wv, 
+				       bow_cdoc_is_train)))
+    {
+      if (query_wv->num_entries == 0)
+	total_num_docs--;
+    }
+  
 
   constraint_wi2dvf = bow_wi2dvf_new (doc_barrel->wi2dvf->size);
   for (wi = 0; wi < max_wi; wi++) 
@@ -725,6 +815,36 @@ bow_maxent_new_vpc_with_weights_doc_then_word (bow_barrel *doc_barrel)
 	}
     }
 
+#if 0
+  if (maxent_print_constraints)
+    {
+      bow_verbosify (bow_progress, "foo");
+
+      for (ci = 0; ci < max_ci; ci++)
+	bow_verbosify (bow_progress, " %s", bow_barrel_classname_at_index (doc_barrel, ci));
+      bow_verbosify (bow_progress, "\n");
+    
+      for (wi = 0; wi < max_wi; wi++)
+	{
+	  bow_verbosify (bow_progress, "%s", bow_int2word (wi));
+	  dv = bow_wi2dvf_dv (constraint_wi2dvf, wi);
+	  dvi = 0;
+	
+	  for (ci = 0; ci < max_ci; ci++)
+	    {
+	      while ((ci > dv->entry[dvi].di) && (dvi < dv->length))
+		dvi++;
+	      if ((ci == dv->entry[dvi].di) && (dvi < dv->length))
+		bow_verbosify (bow_progress, " %f", dv->entry[dvi].weight);
+	      else
+		bow_verbosify (bow_progress, " 0");
+	    }
+	  bow_verbosify (bow_progress, "\n");
+	}
+    }
+#endif
+
+  
   /* Lets start some maximum entropy iteration */
   while (maxent_logprob_docs ? 
 	 new_log_prob > old_log_prob : 
@@ -755,14 +875,19 @@ bow_maxent_new_vpc_with_weights_doc_then_word (bow_barrel *doc_barrel)
      /* Loop once for each training document, scoring it and recording its
 	 contribution to all the E[f_{w,c}] */
       while ((di = bow_heap_next_wv (test_heap, doc_barrel, &query_wv, 
-				     bow_cdoc_is_train))
+				     maxent_iteration_docs))
 	     != -1)
 	{
-	  num_tested++;
 	  doc_cdoc = bow_array_entry_at_index (doc_barrel->cdocs, 
 					       di);
 	  bow_wv_set_weights (query_wv, vpc_barrel);
 	  bow_wv_normalize_weights (query_wv, vpc_barrel);
+
+	  // skip documents with no words
+	  if (query_wv->num_entries == 0)
+	    continue;
+	  
+	  num_tested++;
 	  actual_num_hits = 
 	    bow_barrel_score (vpc_barrel, 
 			      query_wv, hits,
@@ -798,7 +923,11 @@ bow_maxent_new_vpc_with_weights_doc_then_word (bow_barrel *doc_barrel)
 	  constraint_dv = bow_wi2dvf_dv (constraint_wi2dvf, wi);
 	  exp_dv = bow_wi2dvf_dv (exp_wi2dvf, wi);
 
-	  if (!constraint_dv)
+	  /* the exp_dv can be null if we're using only some of the
+             documents for the iteration step.  If there are no
+             iteration docs that have this word, then we don't need to
+             worry about its weight... leave it at zero */
+	  if (!constraint_dv || !exp_dv)
 	    continue;
 
 	  /* the dvi goes over the constraint and the vpc; the
@@ -889,6 +1018,37 @@ bow_maxent_new_vpc_with_weights_doc_then_word (bow_barrel *doc_barrel)
   bow_free (newton_poly);
   bow_wi2dvf_free (constraint_wi2dvf);
   bow_maxent_model_building = 0;
+
+#if 0
+  if (maxent_print_lambdas)
+    {
+      bow_verbosify (bow_progress, "foo");
+
+      for (ci = 0; ci < max_ci; ci++)
+	bow_verbosify (bow_progress, " %s", bow_barrel_classname_at_index (doc_barrel, ci));
+      bow_verbosify (bow_progress, "\n");
+    
+      for (wi = 0; wi < max_wi; wi++)
+	{
+	  bow_verbosify (bow_progress, "%s", bow_int2word (wi));
+	  dv = bow_wi2dvf_dv (vpc_barrel->wi2dvf, wi);
+	  dvi = 0;
+	
+	  for (ci = 0; ci < max_ci; ci++)
+	    {
+	      while ((ci > dv->entry[dvi].di) && (dvi < dv->length))
+		dvi++;
+	      if ((ci == dv->entry[dvi].di) && (dvi < dv->length))
+		bow_verbosify (bow_progress, " %f", dv->entry[dvi].weight);
+	      else
+		bow_verbosify (bow_progress, " 0");
+	    }
+	  bow_verbosify (bow_progress, "\n");
+	}
+    }
+#endif
+
+  
   return (vpc_barrel);      
 }
 
@@ -946,6 +1106,8 @@ bow_maxent_new_vpc_with_weights (bow_barrel *doc_barrel)
   assert (!maxent_words_per_class || !maxent_logprob_constraints);
   assert (!maxent_logprob_constraints);
   assert (!maxent_prior_vary_by_count);
+  assert (!maxent_constraint_use_unlabeled);
+
 
   max_wi = MIN (doc_barrel->wi2dvf->size, bow_num_words ());
   max_ci = bow_barrel_num_classes (doc_barrel);
@@ -1228,7 +1390,7 @@ bow_maxent_new_vpc_with_weights (bow_barrel *doc_barrel)
      /* Loop once for each training document, scoring it and recording its
 	class probs */
       while ((di = bow_heap_next_wv (test_heap, doc_barrel, &query_wv, 
-				     bow_cdoc_is_train))
+				     maxent_iteration_docs))
 	     != -1)
 	{
 	  double *double_class_probs;
@@ -1426,6 +1588,19 @@ bow_maxent_score (bow_barrel *barrel, bow_wv *query_wv,
   max_wi = MIN (barrel->wi2dvf->size, bow_num_words());
   max_ci = bow_barrel_num_classes (barrel);
 
+  /* Remove words not in the class_barrel */
+  bow_wv_prune_words_not_in_wi2dvf (query_wv, barrel->wi2dvf);
+
+  /* Yipes, now we are doing this twice, but we have to make sure that 
+     it is re-done after any pruning of words in the QUERY_WV */
+  bow_wv_set_weights (query_wv, barrel);
+  bow_wv_normalize_weights (query_wv, barrel);
+
+#if 0
+  /* WhizBang Print the WV, just for debugging */
+  bow_wv_fprintf (stderr, query_wv);
+  fflush (stderr);
+#endif
 
   /* Initialize the SCORES to 0. */
   for (ci=0; ci < bow_barrel_num_classes (barrel); ci++)

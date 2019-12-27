@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <bow/libbow.h>
 
 /* These used as return values. */
 #define FALSE  0
@@ -376,6 +377,12 @@ int
 bow_stem_porter (char *word)
 {
   int rule;    /* which rule is fired in replacing an end */
+  char *post_infix;
+
+  /* skip past the infix separator if it's there */
+  if (bow_lexer_infix_separator &&
+      (post_infix = strstr (word, bow_lexer_infix_separator)))
+    word = post_infix + bow_lexer_infix_length;
 
   /* Part 1: Check to ensure the word is all alphabetic */
   for (end = word; *end != EOS; end++)

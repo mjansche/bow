@@ -9,6 +9,8 @@
  */
  
 #include <bow/svm.h>
+/* the debugging information is out of date since it uses svm_C as its bound
+ * instead of values in cvect */
 //#define DEBUG
 
 inline int make_set(int bmap_size, int max_list_size, struct set *s) {
@@ -101,7 +103,7 @@ void check_inv(struct svm_smo_model *m,int ndocs) {
 static int m1=0,m2=0,m3=0,m4=0;
 
 #define PRINT_SMO_PROGRESS(f,ms) (fprintf((f),                          \
-       "\r\t\t\t\tmajor: %d   opt_single: %d/%d   opt_pair: %d/%d     ",\
+       "\r\t\t\t\t\t\tmajor: %d   opt_single: %d/%d   opt_pair: %d/%d     ",\
        (ms)->n_outer, (ms)->n_single_suc, (ms)->n_single_tot,           \
        (ms)->n_pair_suc, (ms)->n_pair_tot))
 
@@ -112,7 +114,6 @@ double smo_evaluate_error(struct svm_smo_model *model, int ex) {
   if (svm_kernel_type == 0) {
     return (evaluate_model_hyperplane(model->W, 0.0, model->docs[ex]) - model->yvect[ex]);
   } else {
-    /* not quite the same - the weights list also contains weights == 0 */
     bow_wv **docs;
     int      ndocs;
     double   sum;
@@ -205,6 +206,7 @@ double calc_eta_hi(int ex1, int ex2, double L, double H, double k11, double k12,
 int opt_pair(int ex1, int ex2, struct svm_smo_model *ms) {
   double   a1, a2;
   double   ao1, ao2;
+  float    C1, C2, C_min;
   bow_wv **docs;
   double   diff1, diff2;
   double   e1, e2;
@@ -231,6 +233,10 @@ int opt_pair(int ex1, int ex2, struct svm_smo_model *ms) {
   weights = ms->weights;
   yvect = ms->yvect;
 
+  C1 = ms->cvect[ex1];
+  C2 = ms->cvect[ex2];
+  C_min = MIN(C1, C2);
+
   y1 = yvect[ex1];
   y2 = yvect[ex2];
   a1 = weights[ex1];
@@ -238,14 +244,14 @@ int opt_pair(int ex1, int ex2, struct svm_smo_model *ms) {
 
   if (y1 == y2) {
     H = a1 + a2;
-    L = H - svm_C;
+    L = H - C1;
     L = (0 > L) ? 0 : L;
-    H = (svm_C < H) ? svm_C : H;
+    H = (C2 < H) ? C2 : H;
   } else {
     L = a2 - a1;
-    H = L + svm_C;
+    H = L + C1;
     L = (0 > L) ? 0 : L;
-    H = (svm_C < H) ? svm_C : H;
+    H = (C2 < H) ? C2 : H;
   }
 
   if (L >= H) {
@@ -277,8 +283,8 @@ int opt_pair(int ex1, int ex2, struct svm_smo_model *ms) {
 
     if (a2 < svm_epsilon_a) {
       a2 = 0;
-    } else if (a2 > svm_C - svm_epsilon_a) {
-      a2 = svm_C;
+    } else if (a2 > C2 - svm_epsilon_a) {
+      a2 = C2;
     }
   } else {
     a2 = calc_eta_hi(ex1, ex2, L, H, k11, k12, k22, ms);
@@ -286,7 +292,7 @@ int opt_pair(int ex1, int ex2, struct svm_smo_model *ms) {
       return 0;
   }
 
-  if (fabs(a2 - ao2) < svm_epsilon_a) {//*(a2 + ao2 + svm_epsilon_crit)) {
+  if (fabs(a2 - ao2) < svm_epsilon_a) { //*(a2 + ao2 + svm_epsilon_crit)) {
     m4 ++;
     return 0;
   }
@@ -301,8 +307,8 @@ int opt_pair(int ex1, int ex2, struct svm_smo_model *ms) {
    * precision problems - there's no reason to alter a2 */
   if (a1 < svm_epsilon_a) {
     a1 = 0.0;
-  } else if (a1 > svm_C - svm_epsilon_a) {
-    a1 = svm_C;
+  } else if (a1 > C1 - svm_epsilon_a) {
+    a1 = C1;
   }
 
   weights[ex1] = a1;
@@ -324,20 +330,41 @@ int opt_pair(int ex1, int ex2, struct svm_smo_model *ms) {
     }
   }
 
+  /* update the sets (& start to re-evaluate bup & blow) */
   { 
     int j, i, y;
-    double a, aold;
+    double a, aold, C, e;
     struct set *s;
 
-    for (j=0, i=ex1, a=a1, aold=ao1, y=y1; j<2; j++, i=ex2, a=a2, aold=ao2, y=y2) {
+    ms->bup = MAXDOUBLE;
+    ms->blow = -1*MAXDOUBLE;
+
+    for (j=0, i=ex1, a=a1, aold=ao1, y=y1, C=C1, e=e1; 
+	 j<2; 
+	 j++, i=ex2, a=a2, aold=ao2, y=y2, C=C2, e=e2) {
+      /* the following block also sets bup & blow to preliminary values.
+       * this is so that we don't need to repeat these checks when we're 
+       * trying to figure out whether or not some */
       if (a < svm_epsilon_a) {
-	if (y == 1)  s = &(ms->I1);
-	else         s = &(ms->I4);
-      } else if (a > svm_C - svm_epsilon_a) {
-	if (y == 1)  s = &(ms->I3);
-	else         s = &(ms->I2);
+	if (y == 1)  {
+	  s = &(ms->I1);
+	  if (ms->bup > e) { ms->bup = e; ms->iup = i; }
+	} else {
+	  s = &(ms->I4);
+	  if (ms->blow < e) { ms->blow = e; ms->ilow = i; }
+	}
+      } else if (a > C - svm_epsilon_a) {
+	if (y == 1)  {
+	  s = &(ms->I3);
+	  if (ms->blow < e) { ms->blow = e; ms->ilow = i; }
+	} else {
+	  s = &(ms->I2);
+	  if (ms->bup > e) { ms->bup = e; ms->iup = i; }
+	}
       } else {
 	s = &(ms->I0);
+	if (ms->blow < e) { ms->blow = e; ms->ilow = i; }
+	if (ms->bup > e) { ms->bup = e; ms->iup = i; }	
       }
 
       if (set_insert(i, s)) { /* if this was actually inserted, 
@@ -373,6 +400,7 @@ int opt_pair(int ex1, int ex2, struct svm_smo_model *ms) {
 
   /* much like the build_svm algorithm's s(t) vector, error needs 
    * to be updated every time we set some new alphas */
+  /* also finish update bup & blow */
   {
     double *error = ms->error;
     int    *items;
@@ -386,44 +414,34 @@ int opt_pair(int ex1, int ex2, struct svm_smo_model *ms) {
       a = svm_kernel_cache(docs[ex1],docs[items[i]]);
       b = svm_kernel_cache(docs[ex2],docs[items[i]]);
       error[items[i]]  +=  diff1*a + diff2*b;
-      //      printf("a=%f, b=%f\n",a,b);
     }
 
-    /* ex1 & ex2 may not have been, or still are not in I0 
-     * if this is the case - temporarily add them */
-    if (!set_lookup(ex1, &(ms->I0))) {
-      error[ex1] = smo_evaluate_error(ms, ex1);	
-      items[nitems] = ex1;
-      nitems ++;
-    }
-    if (!set_lookup(ex2, &(ms->I0))) {
-      error[ex2] = smo_evaluate_error(ms, ex2);
-      items[nitems] = ex2;
-      nitems ++;
-    }
-
-    /* compute the new bup & blow */
     {
       int efrom;
       double e;
 
-      for (i=0, e=-1*MAXDOUBLE; i<nitems; i++) {
-	if (e < error[items[i]]) {
-	  e = error[items[i]];
-	  efrom = items[i];
-	}
-      }
-      ms->blow = e;
-      ms->ilow = efrom;
-
-      for (i=0, e=MAXDOUBLE; i<nitems; i++) {
+      /* compute the new bup & blow */
+      for (i=0, e=ms->bup; i<nitems; i++) {
 	if (e > error[items[i]]) {
 	  e = error[items[i]];
 	  efrom = items[i];
 	}
       }
-      ms->bup = e;
-      ms->iup = efrom;
+      if (e != ms->bup) {
+	ms->bup = e;
+	ms->iup = efrom;
+      }
+
+      for (i=0, e=ms->blow; i<nitems; i++) {
+	if (e < error[items[i]]) {
+	  e = error[items[i]];
+	  efrom = items[i];
+	}
+      }
+      if (ms->blow != e) {
+	ms->blow = e;
+	ms->ilow = efrom;
+      }
     }
   }
 
@@ -469,15 +487,7 @@ int opt_single(int ex2, struct svm_smo_model *ms) {
       if (e2 > ms->blow) {
 	ms->ilow = ex2;
 	ms->blow = e2;
-      }
-    } else { /* in I0 */
-      abort();
-      if (e2 < ms->bup) {
-	ms->bup = e2;
-      }
-      if (e2 > ms->blow) {
-	ms->blow = e2;
-      }      
+      }     
     }
   }
 
@@ -524,25 +534,25 @@ int opt_single(int ex2, struct svm_smo_model *ms) {
     if (opt_pair(ex1, ex2, ms)) {
       ms->n_single_suc ++;
       return 1;
+    } else {
+      return 0;
     }
   }
 }
 
 int smo(bow_wv **docs, int *yvect, double *weights, double *a_b, double **W, 
-	int ndocs, double *error, int *nsv) {
+	int ndocs, double *error, float *cvect, int *nsv) {
   int          changed;
   int          inspect_all;
   struct svm_smo_model model;
   int          nchanged;
   int          num_words;
   double      *original_weights;
-  int         *tdocs;
 
   int i,j,k,n;
 
   num_words = bow_num_words();
 
-  tdocs = NULL;
   m1 = m2 = m3 = m4 = 0;
 
   model.n_pair_suc = model.n_pair_tot = model.n_single_suc = 
@@ -551,9 +561,12 @@ int smo(bow_wv **docs, int *yvect, double *weights, double *a_b, double **W,
   model.docs = docs;
   model.error = error;
   model.ndocs = ndocs;
+  model.cvect = cvect;
   original_weights = NULL;
-  if (svm_kernel_type == 0) {
+  if (svm_kernel_type == 0 && !(*W)) {
     *W = model.W = (double *) malloc(sizeof(double)*num_words);
+  } else {
+    model.W = NULL;
   }
   model.weights = weights;
   model.yvect = yvect;
@@ -574,15 +587,11 @@ int smo(bow_wv **docs, int *yvect, double *weights, double *a_b, double **W,
   make_set(ndocs,ndocs-j,&(model.I2));
   make_set(ndocs,j,&(model.I3));
   make_set(ndocs,ndocs-j,&(model.I4));
-  
-  model.blow = 1;
-  model.bup  = -1;
-  model.iup  = k;
-  model.ilow = n;
 
+  /* this is the code which initializes the sets according to the weights values */
   for (i=0; i<ndocs; i++) {
     struct set *s;
-    if (weights[i] > svm_epsilon_a && weights[i] < svm_C - svm_epsilon_a) {
+    if (weights[i] > svm_epsilon_a && weights[i] < cvect[i] - svm_epsilon_a) {
       s = &(model.I0);
     } else if (yvect[i] == 1) {
       if (weights[i] < svm_epsilon_a)   s = &(model.I1);
@@ -594,14 +603,70 @@ int smo(bow_wv **docs, int *yvect, double *weights, double *a_b, double **W,
     set_insert(i, s);
   }
 
-  /* if the errors for ilow & iup values are not set, initialize them */
-  if (!set_lookup(model.ilow, &(model.I0)))
-    error[model.ilow] = 1;
-  if (!set_lookup(model.iup, &(model.I0)))
-    error[model.iup] = -1;
-  
-  for (i=0; i<num_words; i++) {
-    model.W[i] = 0.0;
+  if (model.W) {
+    for (i=0; i<num_words; i++) {
+      model.W[i] = 0.0;
+    }
+  }
+
+  if (model.I0.ilength == 0) {
+    model.blow = 1;
+    model.bup  = -1;
+    model.iup  = k;
+    model.ilow = n;
+    error[k] = -1;
+    error[n] = 1;
+  } else { /* compute bup & blow */
+    int    efrom, nitems;
+    int   *items;
+    double e;
+
+    nitems = model.I0.ilength;
+    items = model.I0.items;
+
+    for (i=0, e=-1*MAXDOUBLE; i<nitems; i++) {
+      if (e < error[items[i]]) {
+	e = error[items[i]];
+	efrom = items[i];
+      }
+    }
+    model.blow = e;
+    model.ilow = efrom;
+    
+    for (i=0, e=MAXDOUBLE; i<nitems; i++) {
+      if (e > error[items[i]]) {
+	e = error[items[i]];
+	efrom = items[i];
+      }
+    }
+    model.bup = e;
+    model.iup = efrom;
+
+    if (model.W) {
+      for (i=0; i<nitems; i++) {
+	for (j=0; j<docs[items[i]]->num_entries; j++) {
+	  model.W[docs[items[i]]->entry[j].wi] += 
+	    yvect[items[i]] * weights[items[i]] * docs[items[i]]->entry[j].weight;
+	}
+      }
+      
+      /* also need to include bound sv's (I2 & I3) */
+      for (k=0, nitems=model.I2.ilength, items=model.I2.items; 
+	   k<2; 
+	   k++, nitems=model.I3.ilength, items=model.I3.items) {
+	
+	for (i=0; i<nitems; i++) {
+	  for (j=0; j<docs[items[i]]->num_entries; j++) {
+	    model.W[docs[items[i]]->entry[j].wi] += 
+	      yvect[items[i]] * weights[items[i]] * docs[items[i]]->entry[j].weight;
+	  }
+	}
+      }
+    }
+  }
+
+  if (!model.W) {
+    model.W = *W;
   }
 
   if (svm_weight_style == WEIGHTS_PER_MODEL) {
@@ -645,13 +710,9 @@ int smo(bow_wv **docs, int *yvect, double *weights, double *a_b, double **W,
 	/* here's the continuous iup/ilow loop */
 	while (1) {
 	  if (!set_lookup(model.iup, &(model.I0))) {
-	    //fprintf(stderr, "iup not in I0\n");
-	    //fflush(stderr);
 	    error[model.iup] = smo_evaluate_error(&model,model.iup);
 	  }
 	  if (!set_lookup(model.ilow, &(model.I0))) {
-	    //fprintf(stderr, "ilow not in I0\n");
-	    //fflush(stderr);
 	    error[model.ilow] = smo_evaluate_error(&model,model.ilow);
 	  }
 	  if (opt_pair(model.iup, model.ilow, &model)) {
@@ -718,23 +779,6 @@ int smo(bow_wv **docs, int *yvect, double *weights, double *a_b, double **W,
 
   *a_b = (model.bup + model.blow) / 2;
 
-  /* this code won't get touched - its here as a starting point for 
-   * removing misclassified docs */
-  if (tdocs) {
-    for (i=j=0; i<ndocs; i++) {
-      if (tdocs[j] == i) {
-	original_weights[i] = weights[j];
-	j++;
-      } else {
-	original_weights[i] = 0.0;
-      }
-    }
-    free(docs);
-    free(yvect);
-    free(weights);
-    free(tdocs);
-  }
-
   if (svm_kernel_type == 0) {
     for (i=j=0; i<num_words; i++) {
       if (model.W[i] != 0.0) 
@@ -742,8 +786,13 @@ int smo(bow_wv **docs, int *yvect, double *weights, double *a_b, double **W,
     }
   }
 
-  printf("m1: %d, m2: %d, m3: %d, m4: %d\n", m1,m2,m3,m4);
+  //printf("m1: %d, m2: %d, m3: %d, m4: %d", m1,m2,m3,m4);
   *nsv = model.nsv;
 
   return (changed);
+}
+
+/* defunct fn. */
+inline double svm_smo_tval_to_err(double si, double b, int y) {
+  return 0.0;
 }

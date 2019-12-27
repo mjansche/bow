@@ -1,5 +1,5 @@
 /* libbow.h - public declarations for the Bag-Of-Words Library, libbow.
-   Copyright (C) 1997, 1998, 1999 Andrew McCallum
+   Copyright (C) 1997, 1998, 1999, 2000 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -159,6 +159,9 @@ extern int (*bow_lexer_stoplist_func)(const char *);
 extern int (*bow_lexer_stem_func)(char *);
 extern int bow_lexer_toss_words_longer_than;
 extern int bow_lexer_toss_words_shorter_than;
+extern char *bow_lexer_infix_separator;
+extern int bow_lexer_infix_length;
+extern int bow_lexer_max_num_words_per_document;
 
 /* The parameters that control lexing.  Many of these may be changed
    with command-line options. */
@@ -609,11 +612,21 @@ int bow_word2int_no_add (const char *word);
    associated with WORD. */
 int bow_word2int_add_occurrence (const char *word);
 
+/* The int/string mapping for bow's vocabulary words. */
+extern bow_int4str *word_map;
+
 /* If this is non-zero, then bow_word2int() will return -1 when asked
    for the index of a word that is not already in the mapping.
    Essentially, setting this to non-zero makes bow_word2int() and
    bow_word2int_add_occurrence() behave like bow_str2int_no_add(). */
 extern int bow_word2int_do_not_add;
+
+/* If this is non-zero and bow_word2int_do_not_add is non-zero, then
+   bow_word2int() will return the index of the "<unknown>" token when
+   asked for the index of a word that is not already in the mapping. */
+extern int bow_word2int_use_unknown_word;
+
+#define BOW_UNKNOWN_WORD "<unknown>"
 
 /* Add to the word occurrence counts from the documents in FILENAME. */
 int bow_words_add_occurrences_from_file (const char *filename);
@@ -833,21 +846,47 @@ typedef enum {
   bow_doc_unlabeled,    /* the "unlabeled" docs in EM and active learning */
   bow_doc_untagged,	/* Not yet assigned a tag */
   bow_doc_validation,   /* docs used for a validation set */
-  bow_doc_ignore	/* docs left unused */
+  bow_doc_ignore,	/* docs left unused */
+  bow_doc_pool,         /* the cotraining candidate pool */
+  bow_doc_waiting       /* the "unlabeled" docs not used by cotraining yet */
 } bow_doc_type;
 
-#define bow_str2type(STR)			\
-((strcmp (STR, "train") == 0)			\
- ? bow_doc_train				\
- : ((strcmp (STR, "test") == 0)			\
-    ? bow_doc_test				\
-    : ((strcmp (STR, "unlabeled") == 0)		\
-       ? bow_doc_unlabeled			\
-       : ((strcmp (STR, "validation") == 0)	\
-	  ? bow_doc_validation			\
-	  : ((strcmp (STR, "ignore") == 0)	\
-	     ? bow_doc_ignore                   \
-	     : -1)))))
+#define bow_str2type(STR) \
+((strcmp (STR, "train") == 0) \
+ ? bow_doc_train \
+ : ((strcmp (STR, "test") == 0) \
+    ? bow_doc_test \
+    : ((strcmp (STR, "unlabeled") == 0) \
+       ? bow_doc_unlabeled \
+       : ((strcmp (STR, "validation") == 0) \
+	  ? bow_doc_validation \
+	  : ((strcmp (STR, "ignore") == 0) \
+	     ? bow_doc_ignore \
+	     : ((strcmp (STR, "pool") == 0) \
+		? bow_doc_pool \
+		: ((strcmp (STR, "waiting") == 0) \
+		   ? bow_doc_waiting \
+		   : -1)))))))
+     
+#define bow_type2str(T) \
+((T == bow_doc_train)                                \
+ ? "train"                                          \
+ : ((T == bow_doc_test)                             \
+    ? "test"                                        \
+    : ((T == bow_doc_unlabeled)                     \
+       ? "unlabeled"                                \
+       : ((T == bow_doc_untagged)                   \
+	  ? "untagged"                              \
+	  : ((T == bow_doc_validation)              \
+	     ? "validation"                         \
+	     : ((T == bow_doc_ignore)               \
+		? "ignore"                          \
+		: ((T == bow_doc_pool)            \
+		   ? "pool"                         \
+		   : ((T == bow_doc_waiting)        \
+		      ? "waiting"                  \
+		      : "UNKNOWN DOC TYPE"))))))))
+
 
 /* A generic "document" entry, useful for setting document types.  
    All other "document" entries should begin the same as this one. */
@@ -864,6 +903,8 @@ int bow_doc_is_unlabeled (bow_doc *doc);
 int bow_doc_is_untagged (bow_doc *doc);
 int bow_doc_is_validation (bow_doc *doc);
 int bow_doc_is_ignore (bow_doc *doc);
+int bow_doc_is_pool (bow_doc *doc);
+int bow_doc_is_waiting (bow_doc *doc);
 
 
 /* A "document" entry useful for standard classification tasks. */
@@ -1115,6 +1156,9 @@ void bow_wi2dvf_remove_wi (bow_wi2dvf *wi2dvf, int wi);
    for this WI, but */
 void bow_wi2dvf_hide_wi (bow_wi2dvf *wi2dvf, int wi);
 
+/* unhide a specific word index */
+void bow_wi2dvf_unhide_wi (bow_wi2dvf *wi2dvf, int wi);
+
 /* Hide all words occuring in only COUNT or fewer number of documents.
    Return the number of words hidden. */
 int bow_wi2dvf_hide_words_by_doc_count (bow_wi2dvf *wi2dvf, int count);
@@ -1122,6 +1166,14 @@ int bow_wi2dvf_hide_words_by_doc_count (bow_wi2dvf *wi2dvf, int count);
 /* Hide all words occuring in only COUNT or fewer times.
    Return the number of words hidden. */
 int bow_wi2dvf_hide_words_by_occur_count (bow_wi2dvf *wi2dvf, int count);
+
+/* hide all words where the prefix of the word matches the given
+   prefix */
+int bow_wi2dvf_hide_words_with_prefix (bow_wi2dvf *wi2dvf, char *prefix);
+
+/* hide all words where the prefix of the word doesn't match the given
+   prefix */
+int bow_wi2dvf_hide_words_without_prefix (bow_wi2dvf *wi2dvf, char *prefix);
 
 /* Make visible all DVF's that were hidden with BOW_WI2DVF_HIDE_WI(). */
 void bow_wi2dvf_unhide_all_wi (bow_wi2dvf *wi2dvf);
@@ -1147,6 +1199,9 @@ void bow_wi2dvf_print_stats (bow_wi2dvf *map);
 
 /* Free the memory held by the map WI2DVF. */
 void bow_wi2dvf_free (bow_wi2dvf *wi2dvf);
+
+/* Remove words that don't occur in WI2DVF */
+void bow_wv_prune_words_not_in_wi2dvf (bow_wv *wv, bow_wi2dvf *wi2dvf);
 
 /* xxx Move these to prind.c */
 
@@ -1334,6 +1389,25 @@ bow_barrel_new_vpc_weight_then_merge (bow_barrel *doc_barrel);
    documents of each class. */
 void bow_barrel_set_vpc_priors_by_counting (bow_barrel *vpc_barrel,
 					    bow_barrel *doc_barrel);
+
+/* Like bow_barrel_new_vpc, but uses both labeled and unlabeled data.
+   It uses the class_probs of each doc to determine its class
+   membership. The counts in the wi2dvf are set to bogus numbers.  The
+   weights of the wi2dvf contain the real information. The normalizer
+   of each vpc cdoc is set to the fractional number of documents per
+   class.  The word_count of each vpc cdoc is rounded integer for the
+   number of documents per class.  The word_count of each document
+   cdoc is set to the sum of the counts of its corresponding word
+   vector.  This is to get correct numbers for the doc-then-word event
+   model.  */
+bow_barrel * bow_barrel_new_vpc_using_class_probs (bow_barrel *doc_barrel);
+
+/* Set the class prior probabilities by doing a weighted (by class
+   membership) count of the number of labeled and unlabeled documents
+   in each class.  This uses class_probs to determine class
+   memberships of the documents. */
+void bow_barrel_set_vpc_priors_using_class_probs (bow_barrel *vpc_barrel,
+						  bow_barrel *doc_barrel);
 
 
 /* Multiply each weight by the Quinlan `Foilgain' of that word. */
@@ -1836,8 +1910,8 @@ void bow_set_doc_types_for_barrel (bow_barrel *barrel);
 void bow_tag_docs (bow_array *docs, int tag);
 
 /* Change documents in the array DOCS of type TAG1 to be of type
-   TAG2. */
-void bow_tag_change_tags (bow_array *docs, int tag1, int tag2);
+   TAG2. Returns the number of tags changed */
+int bow_tag_change_tags (bow_array *docs, int tag1, int tag2);
 
 
 /* This function sets up the data structure so we can step through the word
@@ -1879,6 +1953,14 @@ int bow_cdoc_is_validation (bow_cdoc *cdoc);
 
 /* Return nonzero iff CDOC has type == bow_doc_unlabeled */
 int bow_cdoc_is_unlabeled (bow_cdoc *cdoc);
+
+/* Return nonzero iff CDOC has type == bow_doc_pool */
+int bow_cdoc_is_pool (bow_cdoc *cdoc);
+
+/* Return nonzero iff CDOC has type == bow_doc_waiting */
+int bow_cdoc_is_waiting (bow_cdoc *cdoc);
+
+int bow_cdoc_is_train_or_unlabeled (bow_cdoc *cdoc);
 
 int bow_test_next_wv(bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
 
@@ -2037,6 +2119,9 @@ extern int bow_smoothing_goodturing_k;
 
 /* Remove words that occur in this many or fewer documents. */
 extern int bow_prune_words_by_doc_count_n;
+
+/* Only tokenize words containing `xxx' */
+extern int bow_xxx_words_only;
 
 /* Random seed to use for srand, if not equal to -1 */
 extern int bow_random_seed;

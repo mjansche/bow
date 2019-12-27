@@ -43,7 +43,14 @@ int (*bow_lexer_stem_func)(char *) = NULL;
 int bow_lexer_toss_words_longer_than = 99;
 int bow_lexer_toss_words_shorter_than = 2;
 
+/* Only return the first N words in the document */
+int bow_lexer_max_num_words_per_document = 0;
+/* Yucky, yucky, horible, temporary global variable. */
+int bow_lexer_num_words_in_document = 0;
 
+/* to stem and stopword correctly for words like inlinkxxxhowever */
+char *bow_lexer_infix_separator = NULL;
+int bow_lexer_infix_length = 0;
 
 #define PARAMS (bow_default_lexer_parameters)
 
@@ -62,6 +69,7 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
   int byte;			/* a character read from FP */
   FILE *pre_pipe_fp = NULL;
 
+  bow_lexer_num_words_in_document = 0;
   if (feof (fp))
     return NULL;
 
@@ -117,6 +125,10 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
 	     && *end_pattern_ptr == byte && *(end_pattern_ptr+1) == '\0'));
        len++)
     {
+#if 0
+      fprintf (stderr, "%c", byte);
+      fflush (stderr);
+#endif
       if (len >= document_size-1)
 	{
 	  /* The RET->DOCUMENT buffer must grow to accommodate more chars. */
@@ -211,6 +223,7 @@ bow_lexer_simple_open_str (bow_lexer *self,
   int bufpos = 0;
   int start_pos = 0;
   
+  bow_lexer_num_words_in_document = 0;
   if (!buf)
     return NULL;
   
@@ -431,6 +444,15 @@ bow_lexer_simple_postprocess_word (bow_lexer *self, bow_lex *lex,
   wordlen = strlen (buf);
   if (wordlen < bow_lexer_toss_words_shorter_than
       || wordlen > bow_lexer_toss_words_longer_than)
+    return 0;
+
+  if (bow_xxx_words_only && strstr (buf, "titlexxx") == NULL)
+    return 0;
+
+  bow_lexer_num_words_in_document++;
+  if (bow_lexer_max_num_words_per_document
+      && (bow_lexer_num_words_in_document
+	  > bow_lexer_max_num_words_per_document))
     return 0;
   
   /* Return the length of the word we found. */

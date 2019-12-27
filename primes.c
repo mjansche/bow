@@ -73,7 +73,7 @@ _bow_nextprime (unsigned n)
 
       assert (sieve);
 
-      memset (sieve, (end - start) * sizeof (*sieve), 0);
+      memset (sieve, 0, (end - start) * sizeof (*sieve));
 
       /* Make the sieve indexed by prime number, rather than
 	 distance-from-start-to-the-prime-number.  When we're done,

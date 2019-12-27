@@ -22,6 +22,7 @@ AC_PROG_LEX
 
 # Needed by Solaris machines (most other machines have socket stuff in libc)
 AC_CHECK_LIB(socket,main)
+AC_CHECK_LIB(nsl,main)
 
 # Needed by hdb.c
 AC_CHECK_FUNCS(strerror)

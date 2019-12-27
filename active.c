@@ -1398,6 +1398,16 @@ active_select_stream_kl (bow_barrel *doc_barrel, active_scores *scores,
 
 /* Functions for calculating document density. */
 
+
+int
+active_cdoc_is_used_for_density (bow_cdoc *cdoc)
+{
+  return ((cdoc->type == bow_doc_train) ||
+	  (cdoc->type == bow_doc_unlabeled) ||
+	  (cdoc->type == bow_doc_pool) ||
+	  (cdoc->type == bow_doc_waiting));
+}
+
 /* Given a document barrel, set the CDOC->NORMALIZER to the document
    word entropy.  Return the sum of the background cross entropies of
    all the documents.  Assumes that IDF has already been set to Pr(w) */
@@ -1420,7 +1430,7 @@ active_doc_barrel_set_entropy (bow_barrel *barrel)
 
   /* xxx Make sure to update CDOC->WORD_COUNT for a new vocabulary! */
 
-  while ((di = bow_heap_next_wv (heap, barrel, &wv, bow_cdoc_is_train)) != -1)
+  while ((di = bow_heap_next_wv (heap, barrel, &wv, active_cdoc_is_used_for_density)) != -1)
     {
       cdoc = bow_array_entry_at_index (barrel->cdocs, di);
       entropy = 0;
@@ -1529,8 +1539,10 @@ active_wv_density (bow_wv *wv, bow_barrel *barrel,
 
 
 
-/* Given a document barrel, set the CDOC->PRIOR to the document 
-   density, using a KL divergence distance to all other documents. */
+/* Given a document barrel, set the CDOC->PRIOR to the document
+   density, using a KL divergence distance to all other
+   documents. Uses train and unlabeled documents.  Also sets the
+   CDOC->NORMALIZER to the document entropy */
 void
 active_doc_barrel_set_density (bow_barrel *barrel)
 {
@@ -1545,12 +1557,12 @@ active_doc_barrel_set_density (bow_barrel *barrel)
   background_kl = active_doc_barrel_set_entropy (barrel);
 
   heap = bow_test_new_heap (barrel);
-  while ((di = bow_heap_next_wv (heap, barrel, &wv, bow_cdoc_is_train)) != -1)
+  while ((di = bow_heap_next_wv (heap, barrel, &wv, active_cdoc_is_used_for_density)) != -1)
     {
       cdoc = bow_array_entry_at_index (barrel->cdocs, di);
       cdoc->prior = active_wv_density (wv, barrel, background_kl);
       cdoc->prior = exp (- active_beta * cdoc->prior / barrel->cdocs->length);
-      printf ("%10g %s\n", cdoc->prior, cdoc->filename);
+      /*      printf ("%10g %s\n", cdoc->prior, cdoc->filename); */
     }
 }
 

@@ -74,8 +74,10 @@ bow_random_double (double low, double high)
 
   assert (high - low > 0);
   r = random();
-#ifdef RAND_MAX /* for SunOS */
+#if /* 0 && for SunOS */ RAND_MAX
   rd = ((double)r) / ((double)RAND_MAX);
+#elif INT_MAX
+  rd = ((double)r) / ((double)INT_MAX);
 #else
   rd = ((double)r) / ((double)2147483647);
 #endif  

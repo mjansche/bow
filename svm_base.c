@@ -4,10 +4,6 @@
  * pass through some function here */
 #include <bow/svm.h>
 
-#if !HAVE_SQRTF
-#define sqrtf sqrt
-#endif
-
 #define BARREL_GET_MAX_NSV(barrel) (*((int *) &((GET_CDOC_ARRAY_EL(barrel,0))->normalizer)))
 #define BARREL_GET_NCLASSES(barrel) (*((int *) &((GET_CDOC_ARRAY_EL(barrel,0))->prior)))
 #define BARREL_GET_NMETA_DOCS(barrel) (*((int *) &((GET_CDOC_ARRAY_EL(barrel,1))->normalizer)))
@@ -28,8 +24,8 @@
 #define LNAME_ARG                      14014
 #define DO_ACTIVE_LEARNING             14015
 #define ACTIVE_LEARNING_CHUNK_SIZE_ARG 14016
-#define TEST_IN_TRAIN_ARG              14017
-#define BASELINE_AL                    14018
+#define AL_TEST_IN_TRAIN_ARG           14017
+#define AL_BASELINE                    14018
 #define START_AT_ARG                   14019
 #define RANDOM_SEED_ARG                14020
 #define SUPPRESS_SCORE_MAT_ARG         14021
@@ -38,9 +34,16 @@
 #define TRANS_CSTAR_ARG                14024
 #define TRANS_NPOS_ARG                 14025
 #define SVM_BASENAME_ARG               14026
+#define AL_WITH_TRANS_ARG              14027
+#define TRANS_IGNORE_BIAS_ARG          14028
+#define TRANS_HYP_REFRESH_ARG          14029
+#define TRANS_SMART_VALS_ARG           14030
 
 #define AGAINST_ALL 0
 #define PAIRWISE    1
+
+#define REMOVE_BOUND 1
+#define REMOVE_WRONG 2
 
 static int weight_type=RAW;   /* 0=raw_freq, 1=tfidf, 2=infogain */
 static int tf_transform_type=RAW;  /* 0=raw, 1=log, 2?... */
@@ -52,11 +55,11 @@ static int test_in_train=0;
 static int suppress_score_mat=0;
 static int al_pick_random=0;
 static int model_starting_no=0;
+/* here's a C hack - it uses the actual of the enum to do the shift
+ * make sure when passing arguments, you know what the actuals are */
 static int transduce_class=(1 << bow_doc_unlabeled);
 static int transduce_class_overriding=0; /* gets set to 1 when args are 
 					  * passed to override */
-static int svm_trans_npos;
-static double svm_trans_cstar;
 static char *svml_basename=NULL;
 FILE *svml_test_file=NULL;
 
@@ -77,8 +80,15 @@ int svm_remove_misclassified=0;
 int svm_weight_style;
 int svm_nkc_calls;
 
+int svm_trans_npos;
+int svm_trans_nobias=0;
+int svm_trans_hyp_refresh=40;
+int svm_trans_smart_vals=1;
+double svm_trans_cstar=200;
+
 int svm_init_al_tset=8;
 int svm_al_qsize;
+int svm_al_do_trans=0;
 
 int svm_random_seed=0; /* for al - gets filled in with time */
 int svm_verbosity=0;
@@ -88,7 +98,7 @@ static int df_transform=LOG;
 static int df_counts=bow_tfidf_occurrences;
 
 /* these are dangerous optimizations for svm_score... - but they save a lot of time... */
-/* dangerous because they waste a lot of memory (about the size of the original barel)
+/* dangerous because they waste a lot of memory (about the size of the original barrel)
  * & if the vpc barrel gets played with, then its all wrong & there's no totally
  * error proof way to do that without checking all of the barrel, which i don't do. */
 struct model_bucket {
@@ -128,54 +138,59 @@ static double (*kernel)(bow_wv *, bow_wv *) = dprod;
 static struct argp_option svm_options[] = {
   {0,0,0,0,
    "Support Vector Machine options, --method=svm:", 50},
-  {"svm-kernel", KERNEL_TYPE, "", 0,
-   "type of kernel to use (0=linear, 1=polynomial, 2=gassian, 3=sigmoid, 4=fisher kernel)."},
-  {"svm-remove-misclassified", REMOVE_MISCLASS_TYPE, 0, 0,
-   "Remove all of the misclassified examples and retrain."},
-  {"svm-weight", WEIGHT_TYPE, "", 0,
-   "type of function to use to set the weights of the documents' words "
-   "(0=raw_frequency, 1=tfidf, 2=infogain."},
-  {"svm-tf-transform", TF_TRANSFORM_TYPE, "", 0,
-   "0=raw, 1=log..."},
-  {"svm-epsilon_a", EA_TYPE, "", 0,
-   "tolerance for the bounds of the lagrange multipliers (default 0.0001)."},
-  {"svm-cost", COST_TYPE, "", 0,
-   "cost to bound the lagrange multipliers by (default 1000)."},
-  {"svm-bsize", BSIZE_TYPE, "", 0,
-   "maximum size to construct the subproblems."},
-  {"svm-vote", VOTE_TYPE, "", 0,
-   "Type of voting to use (0=singular, 1=pairwise; default 0)."},
-  {"svm-cache-size", CACHE_SIZE_ARG, "", 0,
-   "Number of kernel evaluations to cache."},
-  {"svm-quick-scoring", QUICK_SCORE, 0, 0,
-   "Turn quick scoring on."},
-  {"svm-active-learning", DO_ACTIVE_LEARNING, "", 0,
-   "Use active learning to query the labels & incrementally (by arg_size) build the barrels."},
-  {"svm-al_init_tsetsize", INITIAL_AL_TSET_ARG, "", 0,
-   "Number of random documents to start with in active learning."},
-  {"svm-active-learning-baseline", BASELINE_AL, "", 0,
+  {"svm-active-learning-baseline", AL_BASELINE, "", 0,
    "Incrementally add documents to the training set at random."},
-  {"svm-test-in-train", TEST_IN_TRAIN_ARG, 0, 0,
+  {"svm-test-in-train", AL_TEST_IN_TRAIN_ARG, 0, 0,
    "do active learning testing inside of the training...  a hack "
    "around making code 10 times more complicated."},
-  {"svm-suppress-score-matrix", SUPPRESS_SCORE_MAT_ARG, 0, 0,
-   "Do not print the scores of each test document at each AL iteration."},
+  {"svm-al-transduce", AL_WITH_TRANS_ARG, 0, 0,
+   "do transduction over the unlabeled data during active learning."},
+  {"svm-bsize", BSIZE_TYPE, "", 0,
+   "maximum size to construct the subproblems."},
+  {"svm-cache-size", CACHE_SIZE_ARG, "", 0,
+   "Number of kernel evaluations to cache."},
+  {"svm-cost", COST_TYPE, "", 0,
+   "cost to bound the lagrange multipliers by (default 1000)."},
   {"svm-df-counts", DF_COUNTS_ARG, "", 0,
    "Set df_counts (0=occurrences, 1=words)."},
+  {"svm-active-learning", DO_ACTIVE_LEARNING, "", 0,
+   "Use active learning to query the labels & incrementally (by arg_size) build the barrels."},
+  {"svm-epsilon_a", EA_TYPE, "", 0,
+   "tolerance for the bounds of the lagrange multipliers (default 0.0001)."},
+  {"svm-kernel", KERNEL_TYPE, "", 0,
+   "type of kernel to use (0=linear, 1=polynomial, 2=gassian, 3=sigmoid, 4=fisher kernel)."},
+  {"svm-al_init_tsetsize", INITIAL_AL_TSET_ARG, "", 0,
+   "Number of random documents to start with in active learning."},
+  {"svm-quick-scoring", QUICK_SCORE, 0, 0,
+   "Turn quick scoring on."},
+  {"svm-rseed", RANDOM_SEED_ARG, "", 0,
+   "what random seed should be used in the test-in-train splits"},
+  {"svm-remove-misclassified", REMOVE_MISCLASS_TYPE, "", 0,
+   "Remove all of the misclassified examples and retrain (default none (0), 1=bound, 2=wrong."},
   {"svm-start-at", START_AT_ARG, "", 0,
    "which model should be the first generated."},
+  {"svm-suppress-score-matrix", SUPPRESS_SCORE_MAT_ARG, 0, 0,
+   "Do not print the scores of each test document at each AL iteration."},
+  {"svml-basename", SVM_BASENAME_ARG, "", OPTION_HIDDEN, ""},
+  {"svm-tf-transform", TF_TRANSFORM_TYPE, "", 0,
+   "0=raw, 1=log..."},
   {"svm-transduce-class", TRANSDUCE_CLASS_ARG, "", 0,
    "override default class(es) (int) to do transduction with "
    "(default bow_doc_unlabeled)."},
   {"svm-trans-cost", TRANS_CSTAR_ARG, "", 0,
    "value to assign to C* (default 200)."},
+  {"svm-trans-hyp-refresh", TRANS_HYP_REFRESH_ARG, "", 0,
+   "how often the hyperplane should be recomputed during transduction.  "
+   "Only applies to SMO.  (default 40)"},
+  {"svm-trans-nobias", TRANS_IGNORE_BIAS_ARG, 0, 0,
+   "Do not use a bias when marking unlabeled documents.  Use a "
+   "threshold of 0 to determine labels instead of some threshold to"
+   "mark a certain number of documents for each class."},
   {"svm-trans-npos", TRANS_NPOS_ARG, "", 0,
    "number of unlabeled documents to label as positive "
    "(default: proportional to number of labeled positive docs)."},
-  {"svm-rseed", RANDOM_SEED_ARG, "", 0,
-   "what random seed should be used in the test-in-train splits"},
-  {"svml-basename", SVM_BASENAME_ARG, "", OPTION_HIDDEN,
-   ""},
+  {"svm-trans-smart-vals", TRANS_SMART_VALS_ARG, "", 0,
+   "use previous problem's as a starting point for the next. (default true)"},
   {"svm-use-smo", USE_SMO_ARG, "", 0,
 #ifdef HAVE_LOQO
    "default 0 (don't use SMO)"
@@ -183,6 +198,11 @@ static struct argp_option svm_options[] = {
    "default 1 (use SMO) - PR_LOQO not compiled"
 #endif
   },
+  {"svm-vote", VOTE_TYPE, "", 0,
+   "Type of voting to use (0=singular, 1=pairwise; default 0)."},
+  {"svm-weight", WEIGHT_TYPE, "", 0,
+   "type of function to use to set the weights of the documents' words "
+   "(0=raw_frequency, 1=tfidf, 2=infogain."},
   {0, 0}
 };
 
@@ -239,8 +259,11 @@ error_t svm_parse_opt (int key, char *arg, struct argp_state *state) {
     default:
     }
     break;
-  case EA_TYPE:
-    svm_epsilon_a = atof(arg);
+  case AL_TEST_IN_TRAIN_ARG:
+    test_in_train = 1;
+    break;
+  case AL_WITH_TRANS_ARG:
+    svm_al_do_trans = 1;
     break;
   case BSIZE_TYPE:
     svm_bsize = atoi(arg);
@@ -270,7 +293,10 @@ error_t svm_parse_opt (int key, char *arg, struct argp_state *state) {
       return ARGP_ERR_UNKNOWN;
     }
     break;
-  case BASELINE_AL:
+  case EA_TYPE:
+    svm_epsilon_a = atof(arg);
+    break;
+  case AL_BASELINE:
     test_in_train = 1;
     al_pick_random = 1;
   case DO_ACTIVE_LEARNING:
@@ -285,12 +311,10 @@ error_t svm_parse_opt (int key, char *arg, struct argp_state *state) {
     svm_init_al_tset = atoi(arg);
     break;
   case REMOVE_MISCLASS_TYPE:
-    svm_remove_misclassified = 1;
+    svm_remove_misclassified = atoi(arg);
     break;
   case RANDOM_SEED_ARG:
     svm_random_seed = atoi(arg);
-    if (bow_verbosity_level > bow_progress)
-      printf("random seed to chop test/train split: %d\n",svm_random_seed);
     break;
   case QUICK_SCORE:
     quick_scoring = 1;
@@ -300,9 +324,6 @@ error_t svm_parse_opt (int key, char *arg, struct argp_state *state) {
     break;
   case SVM_BASENAME_ARG:
     svml_basename = arg;
-    break;
-  case TEST_IN_TRAIN_ARG:
-    test_in_train = 1;
     break;
   case TF_TRANSFORM_TYPE:
     tf_transform_type = atoi(arg);
@@ -329,6 +350,16 @@ error_t svm_parse_opt (int key, char *arg, struct argp_state *state) {
       }
     }
     break;
+  case TRANS_HYP_REFRESH_ARG:
+    svm_trans_hyp_refresh = atoi(arg);
+    if (svm_trans_hyp_refresh < 1) {
+      fprintf(stderr, "svm_trans_hyp_refresh (hyperplane refresh rate)"
+	      " must be greater than 0\n");
+    }
+    break;
+  case TRANS_IGNORE_BIAS_ARG:
+    svm_trans_nobias = 1;
+    break;
   case TRANS_NPOS_ARG:
     svm_trans_npos = atoi(arg);
     if (svm_trans_npos < 1) {
@@ -338,6 +369,9 @@ error_t svm_parse_opt (int key, char *arg, struct argp_state *state) {
     break;
   case TRANS_CSTAR_ARG:
     svm_trans_cstar = atof(arg);
+    break;
+  case TRANS_SMART_VALS_ARG:
+    svm_trans_smart_vals = atoi(arg);
     break;
   case USE_SMO_ARG:
     svm_use_smo = atoi(arg);
@@ -536,6 +570,7 @@ static unsigned int max_age;
 void kcache_init(int nwide) {
   int i;
   max_age = 1;
+  svm_nkc_calls = 0;
   rlength = nwide;
   if ((harray = (kc_el *) malloc(sizeof(kc_el)*cache_size)) == NULL) {
     cache_size = cache_size/2;
@@ -559,7 +594,7 @@ void kcache_age() {
 }
 
 #define NHASHES   3
-static int sub_nkcc=0; /* this makes nkc_calls = actual calls * 100 */
+static int sub_nkcc=0; /* this makes nkc_calls = actual calls / 100 */
 double svm_kernel_cache(bow_wv *wv1, bow_wv *wv2) {
   int h_index;
   int k;
@@ -648,9 +683,23 @@ int di_cmp(const void *v1, const void *v2) {
 }
 
 int i_cmp(const void *v1, const void *v2) {
-  double d1, d2;
+  int d1, d2;
   d1 = *((int *) v1);
   d2 = *((int *) v2);
+
+  if (d1 < d2) {
+    return (-1);
+  } else if (d1 > d2) {
+    return (1);
+  } else {
+    return 0;
+  }
+}
+
+int d_cmp(const void *v1, const void *v2) {
+  double d1, d2;
+  d1 = *((double *) v1);
+  d2 = *((double *) v2);
 
   if (d1 < d2) {
     return (-1);
@@ -684,7 +733,8 @@ int s_cmp(const void *v1, const void *v2) {
 /* useful alternative to qsort or radix sort */
 /* stick the top n values in the first n slots of arr */
 void get_top_n(struct di *arr, int len, int n) {
-  struct di min;
+  double mind, tmpd;
+  int    minfrom, tmpi;
 
   int i,j;
 
@@ -693,21 +743,24 @@ void get_top_n(struct di *arr, int len, int n) {
   }
 
   for (i=0; i<n && i<len; i++) {
-    min.d = arr[i].d;
+    mind = arr[i].d;
+    minfrom = i;
     
     for (j=i+1; j<len; j++) {
-      if (arr[j].d < min.d) {
-	min.d = arr[j].d;
-	min.i = arr[j].i;
-
-	arr[j].d = arr[i].d;
-	arr[j].i = arr[i].i;
-
-	
-	arr[i].d = min.d;
-	arr[i].i = min.i;
-      }      
+      if (arr[j].d < mind) {
+	mind = arr[j].d;
+	minfrom = j;
+      }
     }
+
+    tmpi = arr[minfrom].i;
+    tmpd = arr[minfrom].d;
+    
+    arr[minfrom].d = arr[i].d;
+    arr[minfrom].i = arr[i].i;
+    
+    arr[i].d = tmpd;
+    arr[i].i = tmpi;
   }
 
   return;
@@ -978,74 +1031,283 @@ static void svm_set_wv_weights(bow_wv *qwv, float *oweights, float *weight_vect)
   }
 }
 
+/* the below comment is correct - but there are instances (& in some
+ * cases a substantial proportion) where some data may create an 
+ * excellent starting point for the algorithms, even though so much has changed 
+ * --- therefore, this should be changed to be more intelligent */
+
+/* since removing bound support vectors is hard
+ * (since each bound support vector removed drastically
+ *  changes the constraints) I don't bother to do it 
+ * intuitively for each algorithm (that was tried & 
+ * performance did not improve (see above)) - this 
+ * function is nice because its modular & independent
+ * of any implementation. */
+/* tvals is ignored, but the values filled in by the
+ * algorithm are not changed. */
+int svm_remove_bound_examples(bow_wv **docs, int *yvect, double *weights,
+			   double *b, double **W, int ndocs, double *tvals,
+			   float *cvect, int *nsv) {
+  int      nbound=0;
+  int     *tdocs;     /* trans table */
+  float   *sub_cvect;
+  bow_wv **sub_docs;
+  int      sub_ndocs=0;
+  int     *sub_yvect;
+  int i,j,x;
+
+  sub_docs = (bow_wv **) alloca(sizeof(bow_wv *)*ndocs); 
+  sub_yvect = (int *) alloca(sizeof(int)*ndocs);
+  tdocs = (int *) alloca(sizeof(int)*ndocs);
+  sub_cvect = (float *) alloca(sizeof(float)*ndocs);
+
+  if (svm_remove_misclassified==REMOVE_BOUND) {
+    for (i=nbound=sub_ndocs=0; i<ndocs; i++) {
+      if (weights[i] > cvect[i] - svm_epsilon_a) {
+	nbound ++;
+      } else {
+	sub_docs[sub_ndocs] = docs[i];
+	sub_yvect[sub_ndocs] = yvect[i];
+	tdocs[sub_ndocs] = i;
+	sub_ndocs++;
+      }
+    }
+  } else if (svm_remove_misclassified==REMOVE_WRONG) {
+    if (svm_kernel_type == 0) {
+      for (i=nbound=sub_ndocs=0; i<ndocs; i++) {
+	if (yvect[i]*evaluate_model_hyperplane(*W, *b, docs[i]) < 0.0) {
+	  nbound ++;
+	} else {
+	  sub_docs[sub_ndocs] = docs[i];
+	  sub_yvect[sub_ndocs] = yvect[i];
+	  tdocs[sub_ndocs] = i;
+	  sub_ndocs++;
+	}
+      }
+    } else {
+      for (i=nbound=sub_ndocs=0; i<ndocs; i++) {
+	if (yvect[i]*evaluate_model_cache(docs, weights, yvect, *b, docs[i], *nsv) < 0.0) {
+	  nbound ++;
+	} else {
+	  sub_docs[sub_ndocs] = docs[i];
+	  sub_yvect[sub_ndocs] = yvect[i];
+	  tdocs[sub_ndocs] = i;
+	  sub_ndocs++;
+	}
+      }
+    }
+  }
+
+  if (nbound) {
+    fprintf(stderr, "Removing %d bound examples\n",nbound);
+    fprintf(stdout, "Removing %d bound examples\n",nbound);
+  } else {
+    return 0;
+  }
+  /* prb not worthwile to resize arrays */
+  
+  /* "unbound" everything & set weights & tvals... */
+  for (i=0; i<sub_ndocs; i++) {
+    tvals[i] = 0.0;
+    weights[i] = 0.0;
+    sub_cvect[i] = MAXFLOAT;
+  }
+
+  *nsv = 0;
+
+  if (svm_use_smo) {
+    x = smo(sub_docs, sub_yvect, weights, b, W, sub_ndocs, tvals, sub_cvect, nsv);
+  } else {
+#ifdef HAVE_LOQO
+    x = build_svm_guts(sub_docs, sub_yvect, weights, b, W, sub_ndocs, tvals, 
+		       sub_cvect, nsv);
+#else
+    bow_error("Must build rainbow with pr_loqo to use this solver!\n");
+#endif
+  }
+
+  /* place the weights in the proper slots */
+  for (i=ndocs-1, j=sub_ndocs-1; i>0; i--) {
+    if (tdocs[j] == i) {
+      weights[i] = weights[j];
+      tvals[i] = tvals[j];
+      j--;
+    } else {
+      weights[i] = 0.0;
+      tvals[i] = 0.0;
+    }
+  }
+
+  return x;
+}
+
+/* returns whether or not x has changed */
+inline int solve_svm(bow_wv **docs, int *yvect, double *weights, double *ab, 
+		     double **W, int ndocs, double *tvals, float *cvect, 
+		     int *nsv) {
+  int x;
+
+  if (svm_use_smo) {
+    x = smo(docs, yvect, weights, ab, W, ndocs, tvals, cvect, nsv);
+  } else {
+#ifdef HAVE_LOQO
+    x = build_svm_guts(docs, yvect, weights, ab, W, ndocs, tvals, cvect, nsv);
+#else
+    bow_error("Must build rainbow with pr_loqo to use this solver!\n");
+#endif
+  }
+
+  if (svm_remove_misclassified) {
+    x |= svm_remove_bound_examples(docs,yvect,weights,ab,W,ndocs,tvals,
+				  cvect,nsv);
+  }
+
+  return x;
+}
+
+/* returns if the weights have changed */
+int svm_trans_or_chunk(bow_wv **docs, int *yvect, int *trans_yvect, 
+		       double *weights, double *tvals, double *ab, 
+		       double **W, int ntrans, int ndocs, int *nsv) {
+  if (ntrans) {
+    return (transduce_svm(docs, yvect, trans_yvect, weights, tvals, ab, 
+			  W, ndocs, ntrans, nsv));
+  } else {
+    int i;
+    float *cvect = (float *) alloca(sizeof(float)*ndocs);
+    for (i=0; i<ndocs; i++) {
+      cvect[i] = svm_C;
+    }
+    return(solve_svm(docs, yvect, weights, ab, W, ndocs, tvals, cvect, nsv));
+  }
+}
+
+/* cover for all the functions */
 /* this function does a small amount of pre & post-processing for the
  * algorithm independent stuff (like randomly permuting everything &
- * outputting a hyperplane if possible */
-int chunk_svm(bow_wv **docs, int *yvect, double *weights, double *b, 
-	      bow_wv **W_wv, int ndocs) {
+ * outputting a hyperplane if possible) */
+int tlf_svm(bow_wv **docs, int *yvect, double *weights, double *ab, 
+	    bow_wv **W_wv, int ntrans, int ndocs) {
+  int          nlabeled;
+  int          misclass;
   int          nsv;
   int         *permute_table;
   double      *tvals;
-  double      *W;
+  double      *W=NULL;
 
   int i,j;
 
-  tvals = (double *) malloc(sizeof(double)*ndocs);
+  struct tms t1, t2;
 
-  if (svm_random_seed == 0) {
+  if (svm_random_seed) {
+    srandom(svm_random_seed);
+  } else {
     svm_random_seed = (int) time(NULL);
-    if (bow_verbosity_level > bow_progress)
-      printf("random seed to chop test/train split: %d\n",svm_random_seed);
+    srandom(svm_random_seed);
+    printf("random seed to chop test/train split: %d\n",svm_random_seed);
     fprintf(stderr,"random seed to chop test/train split: %d\n",svm_random_seed);
-  }
-
-  /* initialize... */
-  nsv = 0;
-  for (i=0; i<ndocs; i++) {
-    weights[i] = 0.0;
-    /* this won't matter for smo - it won't look at them anyway... */
-    tvals[i] = 0.0;
   }
 
   permute_table = (int *) malloc(sizeof(int)*ndocs);
 
-  svm_permute_data(permute_table, docs, yvect, ndocs);
+  nlabeled = ndocs - ntrans;
 
-  if (svm_use_smo) {
-    smo(docs, yvect, weights, b, &W, ndocs, tvals, &nsv);
+  /* permute each part, but don't mudge them together, because the 
+   * solvers are going to expect all unlabeled data (data with a 
+   * different C* to be in the latter half) */
+  svm_permute_data(permute_table, docs, yvect, nlabeled);
+  svm_permute_data(&(permute_table[nlabeled]), &(docs[nlabeled]), &(yvect[nlabeled]), ntrans);
+
+  /* lets try to reduce determinism... */
+  srandom((int) time(NULL));
+
+  times(&t1);
+      
+  if (do_active_learning) {
+    if (test_in_train) {
+      nsv = al_svm_test_wrapper(docs, yvect, weights, ab, &W, ntrans, ndocs,
+				(suppress_score_mat ? 0 : 1),
+				al_pick_random, permute_table);
+    } else {
+      nsv = al_svm(docs, yvect, weights, ab, &W, ntrans, ndocs, al_pick_random);
+    }
   } else {
-#ifdef HAVE_LOQO
-    build_svm_guts(docs, yvect, weights, b, &W, ndocs, tvals, &nsv);
-#else
-    fprintf(stderr, "Must build rainbow with pr_loqo to use this solver!\n");
-#endif
+    /* initialize... */
+    tvals = (double *) alloca(sizeof(double)*ndocs);
+    nsv = 0;
+    for (i=0; i<ndocs; i++) {
+      weights[i] = 0.0;
+      tvals[i] = 0.0;
+    }
+
+    svm_trans_or_chunk(docs, yvect, NULL, weights, tvals, ab, &W, ntrans, ndocs, &nsv);
   }
+
+  times(&t2);
+  fprintf(stderr,"user: %d, system:%d, kernel_calls:%d\n", (int)(t2.tms_utime-t1.tms_utime),
+	  (int) (t2.tms_stime - t1.tms_stime), svm_nkc_calls);
+  printf("user: %d, system:%d, kernel_calls:%d\n", (int)(t2.tms_utime-t1.tms_utime),
+	  (int) (t2.tms_stime - t1.tms_stime), svm_nkc_calls);
+
   
-  svm_unpermute_data(permute_table, docs, yvect, ndocs);
+  /* unpermute data */
+  svm_unpermute_data(permute_table, docs, yvect, nlabeled);
+  svm_unpermute_data(&(permute_table[nlabeled]), &(docs[nlabeled]), &(yvect[nlabeled]), ntrans);
 
   free(permute_table);
-  free(tvals);
   
   if (svm_kernel_type == 0) {
-    int num_words = bow_num_words();
-    for (i=j=0; i<num_words; i++) {
-      if (W[i] != 0.0) 
-	j++;
-    }
-
-    (*W_wv) = bow_wv_new(j);
-    for (i=j=0; j<(*W_wv)->num_entries; i++) {
-      if (W[i] != 0.0) {
-	(*W_wv)->entry[j].wi = i;
-	(*W_wv)->entry[j].count = 1; /* just so that an assertion doesn't throw up later */
-	(*W_wv)->entry[j].weight = W[i];
-	j++;
-      }
-    }
+    *W_wv = svm_darray_to_wv(W);
     free(W);
   }
 
+  printf("support vectors: ");
+  for (i=j=0; j<nsv; i++) {
+    if (weights[i] > svm_epsilon_a) {
+      printf("%d(%f) ",i,weights[i]);
+      j++;
+    }
+  }
+  misclass = 0;
+  if (!svm_remove_misclassified) {
+    for (i=misclass=0; i<nlabeled; i++) {
+      if (weights[i] > svm_C-svm_epsilon_a) {
+	misclass++;
+      }
+    }
+    for (i=0; i<ntrans; i++) {
+      if (weights[nlabeled+i] > svm_trans_cstar-svm_epsilon_a) {
+	misclass++;
+      }
+    }
+  }
+  printf("\n%d support vectors (%d bounded)\n", nsv, misclass);
+
   return nsv;
+}
+
+bow_wv *svm_darray_to_wv(double *W) {
+  bow_wv *W_wv;
+  int     num_words, i, j;
+  
+  num_words = bow_num_words();
+
+  for (i=j=0; i<num_words; i++) {
+    if (W[i] != 0.0) 
+      j++;
+  }
+  
+  W_wv = bow_wv_new(j);
+  for (i=j=0; j<W_wv->num_entries; i++) {
+    if (W[i] != 0.0) {
+      W_wv->entry[j].wi = i;
+      W_wv->entry[j].count = 1; /* just so that an assertion doesn't throw up later */
+      W_wv->entry[j].weight = W[i];
+      j++;
+    }
+  }
+
+  return (W_wv);
 }
 
 /* note - these 2 fn's are not MEANT to be inverses of each
@@ -1111,6 +1373,7 @@ int make_doc_array(bow_barrel *barrel, bow_wv **docs, int *tdocs, int(*dec_fn)(b
 
     docs[ndocs] = wv_tmp;
   }
+  
   return ndocs;
 }
 
@@ -1133,7 +1396,6 @@ int add_sv_barrel(bow_barrel *new_barrel,double *weights, int *yvect, int *tdocs
   bow_cdoc  cdoc_pos, cdoc_neg;
   bow_wv   *dummy_wv_neg;
   bow_wv   *dummy_wv_pos;
-  int       misclass;
   int       n_meta_docs=0;
 
   int ni, pi, i, j, num_words;
@@ -1171,13 +1433,9 @@ int add_sv_barrel(bow_barrel *new_barrel,double *weights, int *yvect, int *tdocs
 
   cdoc_neg.class = map_y_to_class(model_no,(int) -1);   
 
-  if (bow_verbosity_level > bow_progress)
-    printf("support vectors: ");
-  misclass = ni = pi = 0;
+  ni = pi = 0;
   for (i=j=0; j<nsv; i++) {
     if (weights[i] > svm_epsilon_a) {
-      if (bow_verbosity_level > bow_progress)
-	printf("%d(%f) ",i,weights[i]);
       if (yvect[i] > 0) {
 	if (pi > num_words) {
 	  dummy_wv_pos->num_entries = pi;
@@ -1203,17 +1461,10 @@ int add_sv_barrel(bow_barrel *new_barrel,double *weights, int *yvect, int *tdocs
 	dummy_wv_neg->entry[ni].wi = ni;
 	ni++;
       }
-      if (weights[i] > svm_C-svm_epsilon_a) {
-	misclass++;
-      }
       j++;
     }
   }
     
-  if (bow_verbosity_level > bow_progress)
-    printf("\n%d support vectors (%d bounded) in model #%d\n", 
-	   nsv, misclass, model_no);
-
   cdoc_pos.word_count = pi;
   dummy_wv_pos->num_entries = pi;
   bow_barrel_add_document(new_barrel, &cdoc_pos, dummy_wv_pos); 
@@ -1287,8 +1538,10 @@ bow_barrel *svm_vpc_merge(bow_barrel *src_barrel) {
     fprintf(stderr, "Cannot build SVM with only 1 class.\n");
     fflush(stderr);
     return NULL;
-  } else if ((nclasses == 2) && (svm_kernel_type != FISHER)) {
-    vote_type = PAIRWISE;
+  } else if (nclasses == 2) {
+    if (svm_kernel_type != FISHER) {
+      vote_type = PAIRWISE;
+    }
   }
 
   if (weight_type && svm_kernel_type == FISHER) {
@@ -1519,7 +1772,7 @@ bow_barrel *svm_vpc_merge(bow_barrel *src_barrel) {
 
     if (svml_basename) {
       char *tmp;
-      FILE *f;
+      FILE *f = stdout;
       tmp = malloc(sizeof(char)*(20+strlen(svml_basename)));
       sprintf(tmp,"train_%d_%s",nloops,svml_basename);
       f = fopen (tmp, "w");
@@ -1541,35 +1794,11 @@ bow_barrel *svm_vpc_merge(bow_barrel *src_barrel) {
       nsv = 0;
       W[nloops] = bow_wv_new(0);
     } else {
-      struct tms t1, t2;
-      times(&t1);
-      
-
-      if (do_active_learning) {
-	/* don't have al working with transduction yet... */
-	if (ntrans) {
-	  bow_error("active learning does not work yet with transduction.\n");
-	}
-	if (test_in_train) {
-	  if (nloops >= model_starting_no) {
-	    nsv = al_svm_test_wrapper(sub_docs, yvect, weights, &b, &(W[nloops]), 
-				      mdocs,((nclasses==2 || suppress_score_mat) ? 0 : 1),
-				      al_pick_random);
-	  }
-	} else {
-	  nsv = al_svm(sub_docs, yvect, weights, &b, &(W[nloops]), mdocs, al_pick_random);
-	}
-      } else {
-	if (ntrans) {
-	  nsv = transduce_svm(sub_docs, yvect, weights, &b, &(W[nloops]),mdocs, ntrans);
-	} else {
-	  nsv = chunk_svm(sub_docs, yvect, weights, &b, &(W[nloops]), mdocs);
-	}
+      /* only useful with test-in-train - ONLY build models after a certain point
+       * (like when the previously acquired data runs out) */
+      if ((!test_in_train) || ((test_in_train) && (nloops >= model_starting_no))) {
+	nsv = tlf_svm(sub_docs,yvect,weights,&b,&(W[nloops]),ntrans,mdocs);
       }
-
-      times(&t2);
-      fprintf(stderr,"user: %d, system:%d\n", (int)(t2.tms_utime-t1.tms_utime),
-	      (int) (t2.tms_stime - t1.tms_stime));
     }
 
     if (vote_type == PAIRWISE && weight_type) {
@@ -1595,7 +1824,7 @@ bow_barrel *svm_vpc_merge(bow_barrel *src_barrel) {
     nloops++;
   }
 
-  if (test_in_train && model_starting_no) {
+  if (test_in_train) {
     exit(0);
   }
 
@@ -1638,7 +1867,11 @@ bow_barrel *svm_vpc_merge(bow_barrel *src_barrel) {
   /* the docs were freed before just to save memory - now we need them again
    * & the optimizer's done, so a lot of memory is no longer being used */
   if (svm_weight_style == WEIGHTS_PER_MODEL && vote_type == PAIRWISE) {
-    ndocs = make_doc_array(src_barrel, docs, tdocs, bow_cdoc_is_train);
+    make_doc_array(src_barrel, docs, tdocs, bow_cdoc_is_train);
+
+    /* append these trans docs to the arrays that were filled in above */
+    make_doc_array(src_barrel, &(docs[ntrain]), &(tdocs[ntrain]),
+			    use_transduction_docs);
   }
 
   /* now add all of the documents from the doc barrel to the class barrel */
@@ -1680,10 +1913,8 @@ bow_barrel *svm_vpc_merge(bow_barrel *src_barrel) {
     bow_str2int(class_barrel->classnames, bow_int2str(src_barrel->classnames, i));
   }
 
-  if (vote_type == AGAINST_ALL) {
-    for (i=0; i<ndocs; i++) {
-      bow_wv_free(docs[i]);
-    }
+  for (i=0; i<ndocs; i++) {
+    bow_wv_free(docs[i]);
   }
   
   return class_barrel;
@@ -2051,7 +2282,7 @@ int svm_score(bow_barrel *barrel, bow_wv *query_wv, bow_score *bscores,
 
   tf_transform(query_wv);
   if (svm_weight_style == WEIGHTS_PER_BARREL) {
-    svm_set_wv_weights(query_wv, NULL, model_cache.word_weights.sub_model[i]);
+    svm_set_wv_weights(query_wv, NULL, model_cache.word_weights.barrel);
   }
 
   if ((svm_weight_style == NO_WEIGHTS) || (svm_weight_style == WEIGHTS_PER_BARREL)) {    

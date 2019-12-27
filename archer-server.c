@@ -31,7 +31,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <signal.h>
-#include <signum.h>
+//The following file doesn't exist in Solaris
+//#include <signum.h>
 #include <bow/archer.h>
 #include <bow/archer_query.h>
 #include <bow/archer_query_execute.h>

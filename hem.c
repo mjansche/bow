@@ -47,6 +47,9 @@ static double crossbow_hem_lambdas_from_validation = 0.0;
 /* Doing statistical garbage collection? */
 static int crossbow_hem_garbage_collection = 0;
 
+/* Doing incremental labeling, ala co-training? */
+static int crossbow_hem_incremental_labeling = 0;
+
 /* Are the documents already labeled to belong to one leaf? */
 int crossbow_hem_deterministic_horizontal = 0;
 int crossbow_hem_restricted_horizontal = 0;
@@ -58,6 +61,10 @@ int crossbow_hem_vertical_word_movement = 1;
 
 /* Doing shrinkage */
 int crossbow_hem_shrinkage = 1;
+
+/* Using shrinkage, but with fixed weights.  Don't learn them by EM.
+   Only active is crossbow_hem_shrinkage = 1 */
+int crossbow_hem_fixed_shrinkage = 0;
 
 /* Doing Leave-One-Out */
 int crossbow_hem_loo = 1;
@@ -91,6 +98,7 @@ enum {
   GARBAGE_COLLECTION_KEY,
   MAX_NUM_ITERATIONS_KEY,
   LAMBDAS_FROM_VALIDATION_KEY,
+  INCREMENTAL_LABELING_KEY,
 };
 
 static struct argp_option crossbow_hem_options[] =
@@ -144,6 +152,11 @@ static struct argp_option crossbow_hem_options[] =
    "validation data.  0<NUM<1 is the fraction of unlabeled documents "
    "just before EM training of the classifier begins.  Default is 0, "
    "which leaves this option off."},
+  {"hem-incremental-labeling", INCREMENTAL_LABELING_KEY, 0, 0,
+   "Instead of using all unlabeled documents in the M-step, use only "
+   "the labeled documents, and incrementally label those unlabeled documents "
+   "that are most confidently classified in the E-step"},
+
   {0, 0}
 };
 
@@ -199,6 +212,9 @@ crossbow_hem_parse_opt (int key, char *arg, struct argp_state *state)
       break;
     case LAMBDAS_FROM_VALIDATION_KEY:
       crossbow_hem_lambdas_from_validation = atof (arg);
+      break;
+    case INCREMENTAL_LABELING_KEY:
+      crossbow_hem_incremental_labeling = 1;
       break;
     default:
       return ARGP_ERR_UNKNOWN;
@@ -457,6 +473,106 @@ crossbow_hem_labeled_perplexity (int (*use_doc_p)(bow_doc*))
   return 0;
 }
 
+/* Classify all unlabeled documents and convert the most confidently
+   classified to labeled */
+void
+crossbow_hem_label_most_confident ()
+{
+  int di, li;
+  crossbow_doc *doc;
+  //  bow_wv *wv;
+  bow_wa *wa;
+  int word_count;
+  double score;
+  int leaf_count = bow_treenode_leaf_count (crossbow_root);
+  bow_wa **high_scores_per_class;
+  static int unlabeled_count = -1;
+  static int num_to_label = 999;
+  treenode *iterator, *leaf;
+
+  assert (crossbow_hem_incremental_labeling);
+
+  /* Calculate num_to_label if we are to label all examples in 20
+     iterations. */
+  if (unlabeled_count == -1)
+    {
+      unlabeled_count = 0;
+      for (di = 0; di < crossbow_docs->length; di++)
+	{
+	  doc = bow_array_entry_at_index (crossbow_docs, di);
+	  if (doc->tag == bow_doc_unlabeled)
+	    unlabeled_count++;
+	}
+      num_to_label = unlabeled_count / 20;
+    }
+
+  high_scores_per_class = alloca (leaf_count * sizeof (void*));
+  for (li = 0; li < leaf_count; li++)
+    high_scores_per_class[li] = bow_wa_new (0);
+
+  for (di = 0; di < crossbow_docs->length; di++)
+    {
+      bow_wv *wv;
+      doc = bow_array_entry_at_index (crossbow_docs, di);
+      if (doc->tag != bow_doc_unlabeled)
+        continue;
+
+      wv = crossbow_wv_at_di (doc->di);
+      word_count = bow_wv_word_count (wv);
+
+      wv = crossbow_wv_at_di (doc->di);
+      assert (wv);
+      wa = crossbow_classify_doc_new_wa (wv);
+
+      bow_wa_sort (wa);
+      score = wa->entry[0].weight;
+      score /= ((word_count + 1) / MIN(9,word_count));
+      bow_wa_append (high_scores_per_class[wa->entry[0].wi], di, score);
+      bow_wa_free (wa);
+    }
+
+  for (iterator = crossbow_root, li = 0;
+       (leaf = bow_treenode_iterate_leaves (&iterator)); 
+       li++)
+    {
+      int i, num_to_label_this_class = MAX(1,num_to_label * leaf->prior);
+
+      if (high_scores_per_class[li]->length == 0)
+	continue;
+
+      bow_wa_sort (high_scores_per_class[li]);
+      if (num_to_label_this_class > high_scores_per_class[li]->length)
+	{
+	  bow_verbosify (bow_quiet,
+			 "Not enough unlabeled documents classified as %s\n",
+			 leaf->name);
+	  num_to_label_this_class = high_scores_per_class[li]->length;
+	}
+      for (i = 0; i < num_to_label_this_class; i++)
+	{
+	  char *newname = bow_malloc (128);
+	  doc = 
+	    bow_array_entry_at_index (crossbow_docs, 
+				      high_scores_per_class[li]->entry[i].wi);
+	  assert (doc->tag = bow_doc_unlabeled);
+	  doc->tag = bow_doc_train;
+	  doc->ci = li;
+	  /* xxx Yuck!  WhizBang-specific */
+	  sprintf (newname, "./data%s%s", leaf->name, 
+		   strrchr(doc->filename, '/') + 1);
+	  /* xxx Memory leak here.  Free the doc->name first. */
+	  doc->filename = newname;
+	  bow_verbosify (bow_progress, "Labeling class %10s %35s %g\n",
+			 leaf->name, doc->filename,
+			 high_scores_per_class[li]->entry[i].weight);
+	}
+    }
+
+
+  for (li = 0; li < leaf_count; li++)
+    bow_wa_free (high_scores_per_class[li]);
+}
+
 
 #if MN
 #include "mn.c"
@@ -497,7 +613,21 @@ crossbow_hem_em_one_iteration ()
       total_deposit_prob = 0;
 
       doc = bow_array_entry_at_index (crossbow_docs, di);
-      if (crossbow_hem_lambdas_from_validation)
+      if (crossbow_hem_incremental_labeling)
+	{
+	  if (crossbow_hem_lambdas_from_validation)
+	    {
+	      if (doc->tag != bow_doc_train
+		  && doc->tag != bow_doc_validation)
+		continue;
+	    }
+	  else
+	    {
+	      if (doc->tag != bow_doc_train)
+		continue;
+	    }
+	}
+      else if (crossbow_hem_lambdas_from_validation)
 	{
 	  if (doc->tag != bow_doc_train
 	      && doc->tag != bow_doc_unlabeled
@@ -552,6 +682,10 @@ crossbow_hem_em_one_iteration ()
 		  found_deterministic_leaf = 1;
 		}
 	      else
+		/* The validation document was formerly an unlabeled
+                   document.  Set the membership to zero for now; we
+                   will set it to the results of the E-step below when
+                   we call crossbow_convert_log_probs_to_probs */
 		leaf_membership[li] = 0.0;
 	      continue;
 	    }
@@ -586,6 +720,7 @@ crossbow_hem_em_one_iteration ()
       else
 	/* No longer meaningful!? */
 	assert (found_deterministic_leaf);
+
 
       /* For perplexity calculation */
       for (iterator = crossbow_root, li = 0;
@@ -1082,7 +1217,7 @@ crossbow_hem_full_em ()
   pp = -1;
   crossbow_hem_temperature = 1;
   /* Loop until convergence, i.e. perplexity doesn't change */
-  while (ABS (old_pp - pp) > 0.1 && 
+  while (/* ABS (old_pp - pp) > 0.1 && */
 	 iteration < crossbow_hem_max_num_iterations)
     {
       printf ("--------------------------------------------------"
@@ -1136,6 +1271,8 @@ crossbow_hem_full_em ()
 
       old_pp = pp;
       pp = crossbow_hem_em_one_iteration ();
+      if (iteration % 2 == 0 && crossbow_hem_incremental_labeling)
+	crossbow_hem_label_most_confident ();
       iteration++;
     }
 }

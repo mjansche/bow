@@ -31,8 +31,10 @@ typedef enum {
   bow_files_source_file = 10,     /* get docs for a type from a file */
   bow_files_source_fraction,      /* do a random fraction split of docs */
   bow_files_source_fraction_remaining, /* random fraction of untagged docs */
+  bow_files_source_fraction_train, /* a random fraction of the training docs */
   bow_files_source_number,        /* do a random number split of docs */
   bow_files_source_number_remaining, /* ditto, but proportions from untagged */
+  bow_files_source_number_train,  /* take a random number of training docs */
   bow_files_source_remaining,     /* use remaining docs for a file type */
   bow_files_source_num_per_class, /* pick a random number from each class */
   bow_files_source_num_per_class_remaining, /* ditto, but prop from untagged */
@@ -111,9 +113,11 @@ static struct argp_option bow_split_options[] =
    "to select randomly.  "
    "Alternatively, a suffix of `pc' indicates the number of documents "
    "per-class to tag.  "
+   "The suffix 't' for a number or proportion indicates to tag documents from the "
+   "pool of training documents, not the untagged documents.  "
    "`remaining' selects all documents that remain untagged at the end.  "
    "Anything else is interpreted as a filename listing documents to select.  "
-   "Default is `0.3'."},
+   "Default is `0.0'."},
 
   /* The following text was removed from above:
 
@@ -269,6 +273,23 @@ bow_split_parse_opt (int key, char *arg, struct argp_state *state)
       buf[length-1] = '\0';
       *fraction = atof(buf);
     }
+  else if (length == strspn(arg, "0123456789t")
+	   && length > 1
+	   && strchr(arg, 't') == arg + length - 1)
+    {
+      *files_source = bow_files_source_number_train;
+      *number = atoi(arg);
+    }
+  else if (length > 2 && 
+	   strchr(arg, 't') == arg + length - 1 &&
+	   strspn(arg, ".0123456789t"))
+    {
+      char buf[length];
+      *files_source = bow_files_source_fraction_train;
+      memcpy (buf, arg, length-1);
+      buf[length-1] = '\0';
+      *fraction = atof(buf);
+    }
   else if (length > 2 && 
 	   strchr(arg, 'p') == arg + length - 2 &&
 	   strchr(arg, 'c') == arg + length - 1 &&
@@ -359,19 +380,23 @@ bow_tag_docs (bow_array *docs, int tag)
 }
 
 /* Change documents in the array DOCS of type TAG1 to be of type
-   TAG2. */
-void
+   TAG2. Returns the number of tags changed. */
+int
 bow_tag_change_tags (bow_array *docs, int tag1, int tag2)
 {
   int i;
   bow_cdoc *doc;
+  int changed = 0;
 
   for (i = 0; i < docs->length ; i++)
     {
       doc = bow_array_entry_at_index (docs, i);
-      if (doc->type == tag1)
+      if (doc->type == tag1) {
 	doc->type = tag2;
+	changed++;
+      }
     }
+  return changed;
 }
 
 
@@ -389,14 +414,15 @@ bow_set_all_docs_untagged (bow_array *docs)
     }
 }
 
-/* Randomly select some untagged documents and label them with tag
-   indicated by TYPE.  The number of documents from each class are
+/* Randomly select some SOURCE_TAG documents and label them with tag
+   indicated by TAG.  The number of documents from each class are
    determined by the array NUM_PER_CLASS. */
 void
 bow_set_doc_types_randomly_by_count_per_class (bow_array *docs, 
 					       int num_classes,
 					       bow_int4str *classnames,
-					       int *num_per_class, int tag)
+					       int *num_per_class, int tag,
+					       int source_tag)
 {
   int ci, di;
   bow_cdoc *cdoc = NULL;
@@ -435,7 +461,7 @@ bow_set_doc_types_randomly_by_count_per_class (bow_array *docs,
       }
 
   /* Create a local array of the number of taggings to perform in each class,
-     which we will change by decrimenting it as we tag. */
+     which we will change by decrementing it as we tag. */
   local_num_per_class = alloca (num_classes * sizeof (int));
   total_num_to_tag = 0;
   for (ci = 0; ci < num_classes; ci++)
@@ -464,7 +490,7 @@ bow_set_doc_types_randomly_by_count_per_class (bow_array *docs,
 
       cdoc = bow_array_entry_at_index (docs, di);
       assert (cdoc);
-      if (cdoc->type == bow_doc_untagged
+      if (cdoc->type == source_tag
 	  && local_num_per_class[cdoc->class] > 0)
 	{
 	  cdoc->type = tag;
@@ -517,7 +543,8 @@ void
 bow_set_doc_types_randomly_by_count (bow_array *docs, int num_classes,
 				     bow_int4str *classnames,
 				     int num, int tag,
-				     int take_proportion_from_remaining)
+				     int take_proportion_from_remaining,
+				     int source_tag)
 {
   int ci, di;
   bow_cdoc *cdoc;
@@ -570,7 +597,7 @@ bow_set_doc_types_randomly_by_count (bow_array *docs, int num_classes,
 
   /* Do it. */
   bow_set_doc_types_randomly_by_count_per_class (docs, num_classes, classnames,
-						 num_per_class, tag);
+						 num_per_class, tag, source_tag);
 }
 
 /* Randomly select a FRACTION of the untagged documents and label them
@@ -586,7 +613,8 @@ bow_set_doc_types_randomly_by_fraction_remaining (bow_array *docs,
   int di, untagged_doc_count = 0;
   bow_cdoc *cdoc;
 
-  assert (fraction <= 1.0); for (di = 0; di < docs->length ; di++)
+  assert (fraction <= 1.0); 
+  for (di = 0; di < docs->length ; di++)
     {
       cdoc = bow_array_entry_at_index (docs, di);
       if (cdoc->type == bow_doc_untagged)
@@ -595,7 +623,7 @@ bow_set_doc_types_randomly_by_fraction_remaining (bow_array *docs,
 
   bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
 				       fraction * untagged_doc_count,
-				       type, 1);
+				       type, 1, bow_doc_untagged);
 }
 
 /* Randomly select a FRACTION of the non-ignore documents and label
@@ -606,7 +634,8 @@ void
 bow_set_doc_types_randomly_by_fraction (bow_array *docs, 
 					int num_classes,
 					bow_int4str *classnames,
-					double fraction, int type)
+					double fraction, int type,
+					int source_tag)
 {
   int di, non_ignore_doc_count = 0;
   bow_cdoc *cdoc;
@@ -619,8 +648,8 @@ bow_set_doc_types_randomly_by_fraction (bow_array *docs,
     }
 
   bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
-				       rint (fraction * non_ignore_doc_count),
-				       type, 0);
+				       fraction * non_ignore_doc_count,
+				       type, 0, source_tag);
 }
 
 
@@ -707,9 +736,13 @@ bow_set_docs_to_type (bow_array *docs,
 	{
 	  /* This filename is in the map; tag this cdoc. */
 	  if (cdoc->type != bow_doc_untagged)
-	    bow_error ("Duplicate tags requested for %s.\n", filename);
-	  cdoc->type = type;
-	  files_count++;
+	    bow_verbosify (bow_quiet, "Duplicate tags requested for %s.  "
+			   "Using first tag.\n", filename);
+	  else
+	    {
+	      cdoc->type = type;
+	      files_count++;
+	    }
 	}
     }
   
@@ -866,7 +899,8 @@ bow_set_doc_types (bow_array *docs, int num_classes, bow_int4str *classnames)
 	  bow_set_doc_types_randomly_by_count_per_class (docs, num_classes,
 							 classnames,
 							 class_nums, 
-							 types[ti].doc_type);
+							 types[ti].doc_type,
+							 bow_doc_untagged);
 	  bow_free(class_nums);
 	}
       if (types[ti].source == bow_files_source_num_per_class_remaining)
@@ -882,7 +916,8 @@ bow_set_doc_types (bow_array *docs, int num_classes, bow_int4str *classnames)
 	  bow_set_doc_types_randomly_by_count_per_class (docs, num_classes,
 							 classnames,
 							 class_nums, 
-							 types[ti].doc_type);
+							 types[ti].doc_type,
+							 bow_doc_untagged);
 	  bow_free(class_nums);
 	}
       else if (types[ti].source == bow_files_source_fancy_counts)
@@ -924,12 +959,13 @@ bow_set_doc_types (bow_array *docs, int num_classes, bow_int4str *classnames)
 	  bow_set_doc_types_randomly_by_count_per_class (docs, num_classes,
 							 classnames,
 							 counts, 
-							 types[ti].doc_type);
+							 types[ti].doc_type,
+							 bow_doc_untagged);
 	  bow_free(counts);
 	}
     }
 
-  /* Third and last, do any random class-proportioned splits to set
+  /* Third, do any random class-proportioned splits to set
      document types */
   for (ti = 0; ti < num_types; ti++)
     {
@@ -937,7 +973,7 @@ bow_set_doc_types (bow_array *docs, int num_classes, bow_int4str *classnames)
 	{
 	  bow_set_doc_types_randomly_by_fraction
 	    (docs, num_classes, classnames, types[ti].fraction,
-	     types[ti].doc_type);
+	     types[ti].doc_type, bow_doc_untagged);
 	}
       else if (types[ti].source == bow_files_source_fraction_remaining)
 	{
@@ -949,13 +985,15 @@ bow_set_doc_types (bow_array *docs, int num_classes, bow_int4str *classnames)
 	{
 	  bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
 					       types[ti].number,
-					       types[ti].doc_type, 0);
+					       types[ti].doc_type, 0, 
+					       bow_doc_untagged);
 	}
       else if (types[ti].source == bow_files_source_number_remaining)
 	{
 	  bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
 					       types[ti].number,
-					       types[ti].doc_type, 1);
+					       types[ti].doc_type, 1,
+					       bow_doc_untagged);
 	}
     }
 
@@ -967,6 +1005,26 @@ bow_set_doc_types (bow_array *docs, int num_classes, bow_int4str *classnames)
 	  assert (num_remaining == 0);
 	  num_remaining = 1;
 	  bow_set_doc_types_of_remaining (docs, types[ti].doc_type);
+	}
+    }
+
+  /* Now that the training documents are fixed, check if any document
+     types feed from them */
+  for (ti = 0; ti < num_types; ti++)
+    {
+      if (types[ti].source == bow_files_source_fraction_train)
+	{
+	  bow_set_doc_types_randomly_by_fraction
+	    (docs, num_classes, classnames, types[ti].fraction,
+	     types[ti].doc_type,
+	     bow_doc_train);
+	}
+      else if (types[ti].source == bow_files_source_number_train)
+	{
+	  bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
+					       types[ti].number,
+					       types[ti].doc_type, 0,
+					       bow_doc_train);
 	}
     }
 }
@@ -988,6 +1046,16 @@ BOW_DOC_IS_X(unlabeled)
 BOW_DOC_IS_X(untagged)
 BOW_DOC_IS_X(validation)
 BOW_DOC_IS_X(ignore)
+BOW_DOC_IS_X(pool)
+BOW_DOC_IS_X(waiting)
+
+/* return 1 for all training and unlabeled docs */
+int
+bow_cdoc_is_train_or_unlabeled (bow_cdoc *cdoc)
+{
+  return ((cdoc->type == bow_doc_unlabeled) ||
+	  (cdoc->type == bow_doc_train));
+}
 
 void _register_split_args () __attribute__ ((constructor));
 void _register_split_args ()

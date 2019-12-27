@@ -1,6 +1,6 @@
 /* rainbow - a document classification front-end to libbow. */
 
-/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999, 2000 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -21,11 +21,14 @@
 
 #include <bow/libbow.h>
 #include <argp.h>
+#include <argp/argp1.h>                         /* drapp-2/11 */
+#include <setjmp.h>                         /* drapp-2/11 */
 
 #include <errno.h>		/* needed on DEC Alpha's */
 #include <unistd.h>		/* for getopt(), maybe */
 #include <stdlib.h>		/* for atoi() */
 #include <string.h>		/* for strrchr() */
+#include <strings.h>		/* for bzero() on Solaris */
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -70,6 +73,7 @@ enum {
   USE_VOCAB_IN_FILE_KEY,
   NO_LISP_SCORE_TRUNCATION_KEY,
   SERVER_KEY,
+  FORKING_SERVER_KEY,
   PRINT_DOC_NAMES_KEY,
   PRINT_LOG_ODDS_RATIO_KEY,
   WORD_PROBABILITIES_KEY,
@@ -80,7 +84,10 @@ enum {
   TEST_ON_TRAINING_KEY,
   VPC_ONLY_KEY,
   BUILD_AND_SAVE,
-  TEST_FROM_SAVED
+  TEST_FROM_SAVED,
+  USE_SAVED_CLASSIFIER_KEY,
+  PRINT_DOC_LENGTH_KEY,
+  INDEX_LINES_KEY,
 };
 
 static struct argp_option rainbow_options[] =
@@ -94,6 +101,11 @@ static struct argp_option rainbow_options[] =
   {"index-matrix", INDEX_MATRIX_KEY, "FORMAT", 0,
    "Read document/word statistics from a file in the format produced by "
    "--print-matrix=FORMAT.  See --print-matrix for details about FORMAT."},
+  {"index-lines", INDEX_LINES_KEY, "FILENAME", 0,
+   "Read documents' contents from the filename argument, one-per-line.  "
+   "The first two "
+   "space-delimited words on each line are the document name and class name "
+   "respectively"},
 #if VPC_ONLY
   {"vpc-only", VPC_ONLY_KEY, 0, 0,
    "Only create a vector-per-class barrel.  Do not create a document barrel.  "
@@ -116,6 +128,13 @@ static struct argp_option rainbow_options[] =
    "Run rainbow in server mode, listening on socket number PORTNUM.  "
    "You can try it by executing this command, then in a different shell "
    "window on the same machine typing `telnet localhost PORTNUM'."},
+  {"forking-query-server", FORKING_SERVER_KEY, "PORTNUM", 0,
+   "Same as `--query-server', except allow multiple clients at once by "
+   "forking for each client."},
+  {"print-doc-length", PRINT_DOC_LENGTH_KEY, 0, 0,
+   "When printing the classification scores for each test document, at the "
+   "end also print the number of words in the document.  This only works "
+   "with the --test option."},
 
   {0, 0, 0, 0,
    "Rainbow-specific vocabulary options:", 22},
@@ -202,6 +221,9 @@ static struct argp_option rainbow_options[] =
    "Builds a class model and saves it to disk.  This option is unstable."},
   {"test-from-saved", TEST_FROM_SAVED, 0, 0,
    "Classify using the class model saved to disk.  This option is unstable."},
+  {"use-saved-classifier", USE_SAVED_CLASSIFIER_KEY, 0, 0,
+   "Don't ever re-train the classifier.  Use whatever class barrel was saved "
+   "to disk.  This option designed for use with --query-server"},
 
   { 0 }
 };
@@ -225,7 +247,8 @@ struct rainbow_arg_state
     rainbow_doc_name_printing,
     rainbow_printing_word_probabilities,
     rainbow_building_and_saving,
-    rainbow_testing_from_saved_model
+    rainbow_testing_from_saved_model,
+    rainbow_indexing_lines
   } what_doing;
   /* Where to find query text, or if NULL get query text from stdin */
   const char *query_filename;
@@ -253,10 +276,14 @@ struct rainbow_arg_state
   const char *barrel_printing_format;
   const char *hide_vocab_indices_filename;
   int test_on_training;
+  int use_saved_classifier;
+  int forking_server;
 #if VPC_ONLY
   /* Set if we only want to build a class barrel */
   int vpc_only;
 #endif
+  int print_doc_length;
+  const char *indexing_lines_filename;
 } rainbow_arg_state;
 
 static error_t
@@ -268,6 +295,8 @@ rainbow_parse_opt (int key, char *arg, struct argp_state *state)
       rainbow_arg_state.what_doing = rainbow_querying;
       rainbow_arg_state.query_filename = arg;
       break;
+    case FORKING_SERVER_KEY:
+      rainbow_arg_state.forking_server = 1;
     case SERVER_KEY:
       rainbow_arg_state.what_doing = rainbow_query_serving;
       rainbow_arg_state.server_port_num = arg;
@@ -285,19 +314,24 @@ rainbow_parse_opt (int key, char *arg, struct argp_state *state)
       rainbow_arg_state.vpc_only = 1;
       break;
 #endif
+    case INDEX_LINES_KEY:
+      rainbow_arg_state.what_doing = rainbow_indexing_lines;
+      rainbow_arg_state.indexing_lines_filename = arg;
+      break;
     case 'r':
       rainbow_arg_state.repeat_query = 1;
       break;
 
     case USE_VOCAB_IN_FILE_KEY:
-      rainbow_arg_state.vocab_map = bow_int4str_new_from_text_file (arg);
+      rainbow_arg_state.vocab_map = bow_int4str_new_from_string_file (arg);
       bow_verbosify (bow_progress,
 		     "Using vocab with %d words from file `%s'\n",
 		     rainbow_arg_state.vocab_map->str_array_length, arg);
+      bow_word2int_do_not_add = 1;
       break;
 
     case HIDE_VOCAB_IN_FILE_KEY:
-      rainbow_arg_state.hide_vocab_map = bow_int4str_new_from_text_file(arg);
+      rainbow_arg_state.hide_vocab_map = bow_int4str_new_from_string_file(arg);
       break;
     case HIDE_VOCAB_INDICES_IN_FILE_KEY:
       rainbow_arg_state.hide_vocab_indices_filename = arg;
@@ -424,6 +458,14 @@ rainbow_parse_opt (int key, char *arg, struct argp_state *state)
 
     case TEST_FROM_SAVED:
       rainbow_arg_state.what_doing = rainbow_testing_from_saved_model;
+      break;
+
+    case USE_SAVED_CLASSIFIER_KEY:
+      rainbow_arg_state.use_saved_classifier = 1;
+      break;
+
+    case PRINT_DOC_LENGTH_KEY:
+      rainbow_arg_state.print_doc_length = 1;
       break;
 
     default:
@@ -788,6 +830,67 @@ rainbow_index_printed_barrel (const char *filename)
     bow_barrel_new_vpc_with_weights (rainbow_doc_barrel);
 }
 
+/* Index each line of ARCHER_ARG_STATE.DIRNAME as if it were a
+   separate file, named after the line number. Does not deal with labels.*/
+void
+rainbow_index_lines (const char *filename)
+{
+  static const int max_line_length = 40000;
+  char *buf;
+  int n, classindex, nchars;
+  FILE *fp;
+  bow_cdoc cdoc;
+  int di;
+  char docname[BOW_MAX_WORD_LENGTH];
+  char classname[BOW_MAX_WORD_LENGTH];
+
+  buf = alloca (max_line_length);
+  rainbow_doc_barrel = bow_barrel_new (0, 0, sizeof (bow_cdoc), NULL);
+  fp = bow_fopen (filename, "r");
+  bow_verbosify (bow_progress, "Indexing lines:              ");
+  di = 0;
+  while (fgets (buf, max_line_length, fp))
+    {
+      if (buf[0] == '%')
+	continue;
+      n = sscanf (buf, "%s %d %n", docname, &classindex, &nchars);
+      assert (n >= 2);
+      if (classindex < 0)
+	classindex = 0;
+
+      sprintf (classname, "class%d", classindex);
+      if (!(rainbow_doc_barrel->classnames))
+	rainbow_doc_barrel->classnames = bow_int4str_new (0);
+      classindex = bow_str2int (rainbow_doc_barrel->classnames, classname);
+
+      cdoc.type = bow_doc_train;
+      cdoc.class = classindex;
+      /* Set to one so bow_infogain_per_wi_new() works correctly
+	 by default. */
+      cdoc.prior = 1.0f;
+      assert (cdoc.class >= 0);
+      cdoc.filename = strdup (docname);
+      assert (cdoc.filename);
+      cdoc.class_probs = NULL;
+      /* Add the CDOC to CDOCS, and determine the "index" of this
+	 document. */
+      di = bow_array_append (rainbow_doc_barrel->cdocs, &cdoc);
+
+      if (strlen (buf+nchars))
+	bow_wi2dvf_add_di_text_str (&(rainbow_doc_barrel->wi2dvf), di, 
+				    buf+nchars, docname);
+      di++;
+      if (di % 100 == 0)
+	bow_verbosify(bow_progress, "\b\b\b\b\b\b%6d", di);
+    }
+  fclose (fp);
+  bow_verbosify (bow_progress, "\n");
+
+  /* Combine the documents into class statistics. */
+  rainbow_class_barrel = 
+    bow_barrel_new_vpc_with_weights (rainbow_doc_barrel);
+}
+
 
 
 /* Perform a query. */
@@ -807,6 +910,10 @@ print_file (const char *filename)
 }
 
 
+int iBrokenPipe = 0;                    /* drapp-2/10 */
+jmp_buf env;                            /* drapp-2/10 */
+
+
 /* Get some query text, and print its best-matching documents among
    those previously indexed.  The number of matching documents is
    NUM_HITS_TO_SHOW.  If QUERY_FILENAME is non-null, the query text
@@ -816,13 +923,17 @@ int
 rainbow_query (FILE *in, FILE *out)
 {
   /* Show as many hits as there are classes. */
-  int num_hits_to_show = bow_barrel_num_classes (rainbow_class_barrel);
+  int num_hits_to_show;
   bow_score *hits;
   int actual_num_hits;
   int i;
   bow_wv *query_wv = NULL;
 
+  num_hits_to_show = bow_barrel_num_classes (rainbow_class_barrel);
   hits = alloca (sizeof (bow_score) * num_hits_to_show);
+
+  /* Commented out for WhizBang --query-server */
+#if 0
 
   /* (Re)set the weight-setting method, if requested with a `-m' on
      the command line. */
@@ -875,6 +986,7 @@ rainbow_query (FILE *in, FILE *out)
       rainbow_class_barrel = 
 	bow_barrel_new_vpc_with_weights (rainbow_doc_barrel);
     }
+#endif
 
   /* Get the query text, and create a "word vector" from the query text. */
  query_again:
@@ -907,23 +1019,40 @@ rainbow_query (FILE *in, FILE *out)
 	else
 	  {
 	    fprintf(out, ".\n");
-	    fflush(out);
+            if ( sigsetjmp(env, 0) == 0 )                /* drapp-2/10 */
+	      {
+		fflush(out);
+	      }
+	    else
+	      {
+		iBrokenPipe = 1;                           /* drapp-2/10 */
+	      }
 	  }
       if (rainbow_arg_state.repeat_query)
 	bow_verbosify (bow_progress, "  Stopping query repeat\n");
       return 0;
     }
 
+  /* Remove words not in the class_barrel */
+  bow_wv_prune_words_not_in_wi2dvf (query_wv, rainbow_class_barrel->wi2dvf);
+
+#if 0
+  /* Print the WV, just for debugging */
+  bow_wv_fprintf (stderr, query_wv);
+  fflush (stderr);
+#endif
 
   /* Get the best matching documents. */
   /* When using vpc-only, we should use a method that specifies weight
    * and normalization functions which do not use the doc barrel */
+#if 0
   if (rainbow_doc_barrel)
     {
       bow_wv_set_weights (query_wv, rainbow_doc_barrel);
       bow_wv_normalize_weights (query_wv, rainbow_doc_barrel);
     }
   else
+#endif
     {
       bow_wv_set_weights (query_wv, rainbow_class_barrel);
       bow_wv_normalize_weights (query_wv, rainbow_class_barrel);
@@ -966,11 +1095,25 @@ rainbow_query (FILE *in, FILE *out)
     }
   if (rainbow_arg_state.what_doing == rainbow_query_serving)
     fprintf(out, ".\n");
-  fflush(out);
+
+  if ( sigsetjmp(env, 0) == 0 )                         /* drapp-2/10 */
+    {
+      fflush(out);
+    }
+  else
+    {
+      iBrokenPipe = 1;                                   /* drapp-2/10 */
+    }
 
   if (rainbow_arg_state.repeat_query)
     goto query_again;
   return actual_num_hits;
+}
+
+void SigPipeHandler( int iParm )                       /* drapp-2/10 */
+{
+  bow_verbosify (bow_progress, "Broken Pipe.\n");
+  siglongjmp( env, 1 );
 }
 
 void
@@ -1023,8 +1166,12 @@ rainbow_serve ()
   int newsockfd, clilen;
   struct sockaddr cli_addr;
   FILE *in, *out;
+  pid_t pid;
+
+  iBrokenPipe = 0;                              /* drapp-2/10 */
 
   clilen = sizeof(cli_addr);
+  bow_verbosify (bow_progress, "Waiting for connection...\n");
   newsockfd = accept(rainbow_sockfd, &cli_addr, &clilen);
 
   assert(newsockfd >= 0);
@@ -1032,13 +1179,32 @@ rainbow_serve ()
   in = fdopen(newsockfd, "r");
   out = fdopen(newsockfd, "w");
 
-  while (!feof(in))
+  if (rainbow_arg_state.forking_server)
+    {
+      if ((pid = fork ()) != 0)
+	{
+	  /* Parent - return to server mode */
+	  fclose (in);
+	  fclose (out);
+	  close (newsockfd);
+	  return;
+	}
+    }
+  
+  bow_verbosify (bow_progress, "Got connection.\n");
+
+  while (!feof(in) && !iBrokenPipe)             /* drapp-2/10 */
     rainbow_query(in, out);
 
   fclose(in);
   fclose(out);
 
   close(newsockfd);
+  bow_verbosify (bow_progress, "Closed connection.\n");
+
+  /* Kill the child - don't want it hanging around, sucking up memory */
+  if (rainbow_arg_state.forking_server)
+    exit (0);
 }
 
 #if RAINBOW_LISP
@@ -1106,6 +1272,7 @@ rainbow_lisp_setup (char *datadirname)
   rainbow_arg_state.hide_vocab_map = NULL;
   rainbow_arg_state.use_lisp_score_truncation = 1;
   rainbow_arg_state.loo_cv = 0;
+  rainbow_arg_state.indexing_lines_filename = NULL;
 
   argp_parse (&rainbow_argp, argc, argv, 0, 0, &rainbow_arg_state);
 
@@ -1248,6 +1415,10 @@ rainbow_test (FILE *test_fp)
       rainbow_class_barrel = 
 	bow_barrel_new_vpc_with_weights (rainbow_doc_barrel);
 
+      if (rainbow_class_barrel->method->vpc_set_priors)
+	(*rainbow_class_barrel->method->vpc_set_priors) (rainbow_class_barrel,
+							rainbow_doc_barrel);
+
       /* do this late for --em-multi-hump-neg */
       if (!hits)
 	{
@@ -1291,6 +1462,9 @@ rainbow_test (FILE *test_fp)
 
 	  class_cdoc = bow_array_entry_at_index (rainbow_class_barrel->cdocs, 
 						 doc_cdoc->class);
+	  /* Remove words not in the class_barrel */
+	  bow_wv_prune_words_not_in_wi2dvf (query_wv, 
+					    rainbow_class_barrel->wi2dvf);
 	  bow_wv_set_weights (query_wv, rainbow_class_barrel);
 	  bow_wv_normalize_weights (query_wv, rainbow_class_barrel);
 	  if (!strcmp(rainbow_class_barrel->method->name, "em"))
@@ -1316,7 +1490,7 @@ rainbow_test (FILE *test_fp)
 				 : -1));
 	  }
 
-	  assert (actual_num_hits == num_hits_to_retrieve);
+	  //assert (actual_num_hits == num_hits_to_retrieve);
 #if 0
 	  printf ("%8.6f %d %8.6f %8.6f %d ",
 		  class_cdoc->normalizer, 
@@ -1350,6 +1524,8 @@ rainbow_test (FILE *test_fp)
 		       bow_score_print_precision,
 		       hits[hi].weight);
 	    }
+	  if (rainbow_arg_state.print_doc_length)
+	    fprintf (test_fp, "%d", bow_wv_word_count (query_wv));
 	  fprintf (test_fp, "\n");
 	}
       /* Don't free the heap here because bow_test_next_wv() does it
@@ -1393,6 +1569,10 @@ rainbow_test_files (FILE *out_fp, const char *test_dirname)
 	       filename,	/* This test instance */
 	       current_class); /* The name of the correct class */
 
+      /* Remove words not in the class_barrel */
+      bow_wv_prune_words_not_in_wi2dvf (query_wv, 
+					rainbow_class_barrel->wi2dvf);
+
       bow_wv_set_weights (query_wv, rainbow_class_barrel);
       bow_wv_normalize_weights (query_wv, rainbow_class_barrel);
       actual_num_hits = 
@@ -1427,7 +1607,13 @@ rainbow_test_files (FILE *out_fp, const char *test_dirname)
       bow_wv *query_wv = NULL;
       FILE *fp;
 
-      fp = bow_fopen (filename, "r");
+      fp = fopen (filename, "r");
+      if (!fp)
+	{
+	  bow_verbosify (bow_progress, 
+			 "test_file: Couldn't open file %s\n", filename);
+	  return 0;
+	}
       /* Must test to see if text here because this was done when the
 	 barrel was build in barrel.c:bow_barrel_add_from_text_dir().
 	 Otherwise we may read a document that was not included in the
@@ -1624,7 +1810,7 @@ bow_print_log_odds_ratio (FILE *fp, bow_barrel *barrel, int num_to_print)
 	fprintf (fp, "-");
       fprintf (fp, "\n");
       for (wci = 0; wci < num_to_print; wci++)
-	fprintf (fp, "%1.4f %s\n", lors[ci][wci].lor,
+	fprintf (fp, "%1.15f %s\n", lors[ci][wci].lor,
 		 lors[ci][wci].wi >= 0
 		 ? bow_int2word (lors[ci][wci].wi)
 		 : "<nothing>");
@@ -1718,6 +1904,9 @@ rainbow_print_foilgain (const char *classname)
 
 /* The main() function. */
 
+extern int _bow_nextprime (unsigned n);
+
+
 #if !RAINBOW_LISP
 int
 main (int argc, char *argv[])
@@ -1739,6 +1928,10 @@ main (int argc, char *argv[])
   rainbow_arg_state.barrel_printing_format = NULL;
   rainbow_arg_state.hide_vocab_indices_filename = NULL;
   rainbow_arg_state.test_on_training = 0;
+  rainbow_arg_state.use_saved_classifier = 0;
+  rainbow_arg_state.forking_server = 0;
+  rainbow_arg_state.print_doc_length = 0;
+  rainbow_arg_state.indexing_lines_filename = NULL;
 #ifdef VPC_ONLY
   rainbow_arg_state.vpc_only = 0;
 #endif
@@ -1752,6 +1945,11 @@ main (int argc, char *argv[])
 	 classname later using FILENAME_TO_CLASSNAME. */
       int argi, len;
       const char **rainbow_classnames;
+
+      /* if we've fixed the vocab from a file, then use it */
+      if (rainbow_arg_state.vocab_map)
+	bow_words_set_map(rainbow_arg_state.vocab_map, 1);
+
 
       if (rainbow_arg_state.barrel_printing_format)
 	{
@@ -1780,6 +1978,17 @@ main (int argc, char *argv[])
 	bow_error ("No text documents found.");
       exit (0);
     }
+
+  if (rainbow_arg_state.what_doing == rainbow_indexing_lines)
+    {
+      rainbow_index_lines (rainbow_arg_state.indexing_lines_filename);
+      if (bow_num_words ())
+	rainbow_archive ();
+      else
+	bow_error ("No text documents found.");
+      exit (0);
+    }
+
 
   /* We are using an already built model.  Get it from disk. */
   rainbow_unarchive ();
@@ -1863,15 +2072,6 @@ main (int argc, char *argv[])
       exit (0);
     }
 #endif
-
-  if (rainbow_arg_state.what_doing == rainbow_query_serving)
-    {
-      rainbow_socket_init (rainbow_arg_state.server_port_num, 0);
-      while (1)
-	{
-	  rainbow_serve();
-	}
-    }
 
   /* Do things that don't require the class/word weights to be updated. */
 
@@ -2033,6 +2233,10 @@ main (int argc, char *argv[])
 	  
 	  class_cdoc = bow_array_entry_at_index (rainbow_class_barrel->cdocs, 
 						 doc_cdoc->class);
+
+	  /* Remove words not in the class_barrel */
+	  bow_wv_prune_words_not_in_wi2dvf (query_wv, 
+					    rainbow_class_barrel->wi2dvf);
 	  bow_wv_set_weights (query_wv, rainbow_class_barrel);
 	  bow_wv_normalize_weights (query_wv, rainbow_class_barrel);
 	  if (!strcmp(rainbow_class_barrel->method->name, "em"))
@@ -2092,7 +2296,9 @@ main (int argc, char *argv[])
 	}
       exit(0);
     }
-    
+
+  if (rainbow_arg_state.use_saved_classifier)
+    goto done_training_classifier;
 
   /* Do things necessary to update the class/word weights for the 
      command-line options. */
@@ -2157,6 +2363,8 @@ main (int argc, char *argv[])
 	bow_barrel_new_vpc_with_weights (rainbow_doc_barrel);
     }
   
+ done_training_classifier:
+
   /* Do things that require the vocabulary or class/word weights to
      have been updated. */
   
@@ -2205,6 +2413,17 @@ main (int argc, char *argv[])
     {
       rainbow_query (stdin, stdout);
       exit (0);
+    }
+
+  if (rainbow_arg_state.what_doing == rainbow_query_serving)
+    {
+      bow_word2int_do_not_add = 1;
+      rainbow_socket_init (rainbow_arg_state.server_port_num, 0);
+      while (1)
+	{
+	  signal( SIGPIPE, SigPipeHandler );            /* drapp-2/10 */
+	  rainbow_serve();
+	}
     }
 
   exit (0);

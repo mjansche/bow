@@ -22,6 +22,7 @@
 #include <bow/libbow.h>
 #include <stdlib.h>
 #include <ctype.h>		/* for isupper */
+#include <string.h>
 
 static bow_int4str *stopword_map;
 
@@ -91,8 +92,14 @@ bow_stoplist_add_word (const char *word)
 int
 bow_stoplist_present (const char *word)
 {
+  char *test_word;
+
   if (!stopword_map)
     init_stopwords ();
+
+  if (bow_lexer_infix_separator &&
+      (test_word = strstr (word, bow_lexer_infix_separator)))
+    word = test_word + bow_lexer_infix_length;
 
   return ((bow_str2int_no_add (stopword_map, word) == -1)
 	  ? 0 : 1);

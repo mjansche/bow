@@ -1,6 +1,6 @@
 /* Word-index to document-vector-file */
 
-/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999, 2000 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -22,6 +22,7 @@
 #include <bow/libbow.h>
 #include <netinet/in.h>		/* for machine-independent byte-order */
 #include <assert.h>
+#include <string.h>
 
 #define INIT_BOW_DVF(DVF) { DVF.seek_start = -1; DVF.dv = NULL; }
 
@@ -106,6 +107,7 @@ bow_wi2dvf_add_di_text_str (bow_wi2dvf **wi2dvf, int di, char *data,
   int num_words = 0;
 
   lex = bow_default_lexer->open_str (bow_default_lexer, data);
+  assert (lex);
 
   /* Loop once for each lexical token in this document. */
   while (bow_default_lexer->get_word (bow_default_lexer,
@@ -290,6 +292,16 @@ bow_wi2dvf_hide_wi (bow_wi2dvf *wi2dvf, int wi)
     }
 }
 
+/* unhide a specific word index */
+void
+bow_wi2dvf_unhide_wi (bow_wi2dvf *wi2dvf, int wi)
+{
+  assert (wi < wi2dvf->size);
+  assert (wi2dvf->entry[wi].seek_start < -1);
+  wi2dvf->entry[wi].seek_start = - (wi2dvf->entry[wi].seek_start);
+  (wi2dvf->num_words)++;
+}
+
 /* Hide all words occuring in only COUNT or fewer number of documents.
    Return the number of words hidden. */
 int
@@ -330,6 +342,52 @@ bow_wi2dvf_hide_words_by_occur_count (bow_wi2dvf *wi2dvf, int count)
     {
       dv = bow_wi2dvf_dv (wi2dvf, wi);
       if (dv && bow_words_occurrences_for_wi (wi) <= count)
+	{
+	  bow_wi2dvf_hide_wi (wi2dvf, wi);
+	  num_hides++;
+	}
+    }
+  return num_hides;
+}
+
+/* hide all words where the prefix of the word matches the given
+   prefix */
+int
+bow_wi2dvf_hide_words_with_prefix (bow_wi2dvf *wi2dvf, char *prefix)
+{
+  int wi;
+  int num_hides = 0;
+  int prefix_len = strlen (prefix);
+  bow_dv *dv;
+
+  /* hide all words where the prefix of the word matches the given
+     prefix */
+  for (wi = 0; wi < wi2dvf->size; wi++)
+    {
+      dv = bow_wi2dvf_dv (wi2dvf, wi);
+      if (dv && 0 == strncmp (prefix, bow_int2word (wi), prefix_len))
+	{
+	  bow_wi2dvf_hide_wi (wi2dvf, wi);
+	  num_hides++;
+	}
+    }
+  return num_hides;
+}
+
+/* hide all words where the prefix of the word doesn't match the given
+   prefix */
+int
+bow_wi2dvf_hide_words_without_prefix (bow_wi2dvf *wi2dvf, char *prefix)
+{
+  int wi;
+  int num_hides = 0;
+  int prefix_len = strlen (prefix);
+  bow_dv *dv;
+
+  for (wi = 0; wi < wi2dvf->size; wi++)
+    {
+      dv = bow_wi2dvf_dv (wi2dvf, wi);
+      if (dv && 0 != strncmp (prefix, bow_int2word (wi), prefix_len))
 	{
 	  bow_wi2dvf_hide_wi (wi2dvf, wi);
 	  num_hides++;

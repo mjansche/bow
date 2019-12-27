@@ -262,6 +262,20 @@ bow_cdoc_is_validation (bow_cdoc *cdoc)
   return (cdoc->type == bow_doc_validation);
 }
 
+/* Return nonzero iff CDOC has type == bow_doc_pool */
+int 
+bow_cdoc_is_pool (bow_cdoc *cdoc)
+{
+  return (cdoc->type == bow_doc_pool);
+}
+
+/* Return nonzero iff CDOC has type == bow_doc_waiting */
+int 
+bow_cdoc_is_waiting (bow_cdoc *cdoc)
+{
+  return (cdoc->type == bow_doc_waiting);
+}
+
 int 
 bow_test_next_wv(bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv)
 {

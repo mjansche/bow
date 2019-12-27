@@ -34,7 +34,10 @@ static int naivebayes_binary_scoring = 0;
 static int naivebayes_normalize_log = 0;
 static int naivebayes_rescale_scores = 1;
 static int naivebayes_final_rescale_scores = 1;
+static int naivebayes_return_log_pr = 0;
 static int naivebayes_cross_entropy = 0;
+
+double bow_naivebayes_anneal_temperature = 1;
 
 /* icky globals for Good-Turing discounting */
 static double **bow_naivebayes_goodturing_discounts = NULL;
@@ -739,37 +742,15 @@ bow_naivebayes_score (bow_barrel *barrel, bow_wv *query_wv,
   for (hi = 0; hi < bscores_len; hi++)
     bscores[hi].name = NULL;
 
+  /* Initialize log-probabilities to 0 (unless class prior is zero) */
   for (ci = 0; ci < barrel->cdocs->length; ci++)
     {
-      if (naivebayes_score_returns_doc_pr) {
-	scores[ci] = 0.0;
-      } else {
-	bow_cdoc *cdoc;
-	cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
-	if (bow_uniform_class_priors)
-	  /* Uniform prior means each class has probability 1/#classes. */
-	  scores[ci] = -log (barrel->cdocs->length);
-	else
-	  {
-#if 0 /* For now forget about this little detail, because rainbow-h
-	 trips up on it. */
-	  /* LOO_CLASS is not implemented for cases in which we are
-	     not doing uniform class priors. */
-            assert (loo_class == -1);
-#endif
-	    assert (cdoc->prior >= 0.0f && cdoc->prior <= 1.0f);
-	    if (cdoc->prior == 0)
-	    scores[ci] = IMPOSSIBLE_SCORE_FOR_ZERO_CLASS_PRIOR;
-	    else
-	      scores[ci] = log (cdoc->prior);
-	  }
-	assert (scores[ci] > -FLT_MAX + 1.0e5);
-	if (bow_print_word_scores)
-	printf ("%16s %-40s  %10.9f\n", 
-		"",
-		(strrchr (cdoc->filename, '/') ? : cdoc->filename),
-		scores[ci]);
-      }
+      bow_cdoc *cdoc;
+      cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
+      if (cdoc->prior == 0)
+	scores[ci] = IMPOSSIBLE_SCORE_FOR_ZERO_CLASS_PRIOR;
+      else
+	scores[ci] = 0;
     }
 
   /* If we are doing leave-one-out evaluation, get the total number of
@@ -917,7 +898,51 @@ bow_naivebayes_score (bow_barrel *barrel, bow_wv *query_wv,
 	    }
 	}
     }
-  /* Now SCORES[] contains a (unnormalized) log-probability for each class. */
+  /* Now SCORES[] contains a (unnormalized) log-probability of the
+     document for each class. */
+
+  /* Anneal the probability */
+  if (bow_naivebayes_anneal_temperature != 1)
+    {
+      for (ci = 0; ci < barrel->cdocs->length; ci++)
+	if (scores[ci] != IMPOSSIBLE_SCORE_FOR_ZERO_CLASS_PRIOR)
+	  {
+#if 0
+	    scores[ci] /= (query_wv_total_weight
+			   + bow_naivebayes_anneal_temperature);
+#elif 0
+	    scores[ci] /= 1 + log (query_wv_total_weight + 1);
+#elif 0
+	    scores[ci] /= ((pow (query_wv_total_weight, 0.9) + 1) / 3);
+#elif 1
+	    scores[ci] /= ((query_wv_total_weight + 1) / 7);
+#else
+	    scores[ci] /= bow_naivebayes_anneal_temperature;
+#endif
+	    assert (scores[ci] > -FLT_MAX + 1.0e5);
+	  }
+    }
+
+  /* Incorporate the class prior */
+  if (!naivebayes_score_returns_doc_pr && !bow_uniform_class_priors)
+    {
+      for (ci = 0; ci < barrel->cdocs->length; ci++)
+	{
+	  bow_cdoc *cdoc;
+	  cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
+	  assert (cdoc->prior >= 0.0f && cdoc->prior <= 1.0f);
+	  if (cdoc->prior == 0)
+	    assert (scores[ci] == IMPOSSIBLE_SCORE_FOR_ZERO_CLASS_PRIOR);
+	  else
+	    scores[ci] += log (cdoc->prior);
+	  assert (scores[ci] > -FLT_MAX + 1.0e5);
+	  if (bow_print_word_scores)
+	    printf ("%16s %-40s  %10.9f\n", 
+		    "",
+		    (strrchr (cdoc->filename, '/') ? : cdoc->filename),
+		    scores[ci]);
+	}
+    }
 
   /* Rescale the SCORE one last time, this time making them all -2 or
      more negative, so that exp() will work well, especially around
@@ -957,7 +982,7 @@ bow_naivebayes_score (bow_barrel *barrel, bow_wv *query_wv,
       if (scores[1-low_score_index] != IMPOSSIBLE_SCORE_FOR_ZERO_CLASS_PRIOR)
 	scores[1-low_score_index] = -1.0 * scores[low_score_index];
     }
-  else
+  else if (!naivebayes_return_log_pr)
     {
       if (naivebayes_normalize_log)
 	{

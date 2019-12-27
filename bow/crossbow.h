@@ -95,4 +95,8 @@ void crossbow_leaf_document_probs_print (int num_to_print);
    probabilities. */
 void crossbow_convert_log_probs_to_probs (double *log_probs, int num_entries);
 
+/* Return a bow_wa containing the classification scores (log
+	 probabilities) of DOC indexed by the leaf indices */
+bow_wa *crossbow_classify_doc_new_wa (bow_wv *wv);
+
 #endif /* __crossbow_h_INCLUDE */

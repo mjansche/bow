@@ -32,11 +32,13 @@ extern void bow_print_log_odds_ratio (FILE *fp,
 
 enum {
   EMSIMPLE_NUM_RUNS = 19000,
-  EMSIMPLE_PRINT_ACCURACY
+  EMSIMPLE_PRINT_ACCURACY,
+  EMSIMPLE_NO_INIT
 };
 
-static int bow_emsimple_num_em_runs = 7;
+static int bow_emsimple_num_em_runs = 10;
 static int (* emsimple_accuracy_docs)(bow_cdoc *) = NULL;
+static int emsimple_no_init = 0;
 
 static struct argp_option emsimple_options[] =
 {
@@ -47,6 +49,8 @@ static struct argp_option emsimple_options[] =
   {"emsimple-print-accuracy", EMSIMPLE_PRINT_ACCURACY, "TYPE", 0,
    "When running emsimple, print the accuracy of documents at each EM round.  "
    "Type can be validation, train, or test."},
+  {"emsimple-no-init", EMSIMPLE_NO_INIT, 0, 0,
+   "Use this option when using emsimple as the secondary method for genem"},
   {0, 0}
 };
 
@@ -67,6 +71,9 @@ emsimple_parse_opt (int key, char *arg, struct argp_state *state)
 	emsimple_accuracy_docs = bow_cdoc_is_test;
       else
 	bow_error("Unknown document type for --emsimple-print-accuracy");
+      break;
+    case EMSIMPLE_NO_INIT:
+      emsimple_no_init = 1;
       break;
     default:
       return ARGP_ERR_UNKNOWN;
@@ -184,28 +191,32 @@ bow_emsimple_new_vpc_with_weights (bow_barrel *doc_barrel)
       }
   }
 
-  /* Initialize memory and values for each document cdoc->class_probs.
-     This holds the class membership for each labeled and unlabeled
-     document.  For labeled documents, this is the true class
-     membership.  For unlabeled documents, we initialize to zero, but
-     later estimate these memberships using EM. */
-  for (di=0; di < doc_barrel->cdocs->length; di++)
+  if (!emsimple_no_init) 
     {
-      bow_cdoc *cdoc = bow_array_entry_at_index (doc_barrel->cdocs, di);
       
-      cdoc->class_probs = bow_malloc (sizeof (float) * max_ci);
-      
-      /* initialize the class_probs to all zeros */
-      for (ci=0; ci < max_ci; ci++)
-	cdoc->class_probs[ci] = 0.0;
-      
-      /* If document is a training document, set its class_probs to
-         match its class.  This implicitly starts the EM search using
-         just the labeled data. */
-      if (cdoc->type == bow_doc_train)
-	cdoc->class_probs[cdoc->class] = 1.0;
+      /* Initialize memory and values for each document cdoc->class_probs.
+	 This holds the class membership for each labeled and unlabeled
+	 document.  For labeled documents, this is the true class
+	 membership.  For unlabeled documents, we initialize to zero, but
+	 later estimate these memberships using EM. */
+      for (di=0; di < doc_barrel->cdocs->length; di++)
+	{
+	  bow_cdoc *cdoc = bow_array_entry_at_index (doc_barrel->cdocs, di);
+	
+	  cdoc->class_probs = bow_malloc (sizeof (float) * max_ci);
+	  
+	  /* initialize the class_probs to all zeros */
+	  for (ci=0; ci < max_ci; ci++)
+	    cdoc->class_probs[ci] = 0.0;
+	  
+	  /* If document is a training document, set its class_probs to
+	     match its class.  This implicitly starts the EM search using
+	     just the labeled data. */
+	  if (cdoc->type == bow_doc_train)
+	    cdoc->class_probs[cdoc->class] = 1.0;
+	}
     }
-
+  
   /* Create an empty barrel; we fill it with vector-per-class
      data and return it. */
   {
@@ -315,8 +326,8 @@ bow_emsimple_new_vpc_with_weights (bow_barrel *doc_barrel)
 	  
       bow_verbosify (bow_progress, "\n");
 
-      bow_print_log_odds_ratio (stderr, vpc_barrel, 5);
-
+      /* bow_print_log_odds_ratio (stderr, vpc_barrel, 5); */
+      
       /* set the word_count of each class to the total number of word
          occurrences per class */      
       bow_nbsimple_set_cdoc_word_count_from_wi2dvf_weights (vpc_barrel);
