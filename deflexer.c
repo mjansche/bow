@@ -24,11 +24,13 @@
 /* Default instances of the lexers that can be modified by libbow's
    argp cmdline argument processing. */
 static bow_lexer_simple _bow_default_lexer_simple;
+static bow_lexer_simple _bow_default_lexer_white;
 static bow_lexer_gram _bow_default_lexer_gram;
 static bow_lexer_indirect _bow_default_lexer_html;
 static bow_lexer_indirect _bow_default_lexer_email;
 
 bow_lexer_simple *bow_default_lexer_simple;
+bow_lexer_simple *bow_default_lexer_white;
 bow_lexer_indirect *bow_default_lexer_indirect;
 bow_lexer_gram *bow_default_lexer_gram;
 bow_lexer_indirect *bow_default_lexer_html;
@@ -53,6 +55,7 @@ _bow_default_lexer_init ()
   done = 1;
 
   _bow_default_lexer_simple = *bow_alpha_lexer;
+  _bow_default_lexer_white = *bow_white_lexer;
   _bow_default_lexer_gram = *bow_gram_lexer;
   _bow_default_lexer_html = *bow_html_lexer;
   _bow_default_lexer_email = *bow_email_lexer;
@@ -65,6 +68,7 @@ _bow_default_lexer_init ()
     (bow_lexer*)(&_bow_default_lexer_simple);
 
   bow_default_lexer_simple = &_bow_default_lexer_simple;
+  bow_default_lexer_white = &_bow_default_lexer_white;
   bow_default_lexer_gram = &_bow_default_lexer_gram;
   bow_default_lexer_html = &_bow_default_lexer_html;
   bow_default_lexer_email = &_bow_default_lexer_email;

@@ -188,6 +188,8 @@ bow_make_dv_heap_from_wi2dvf(bow_wi2dvf *wi2dvf)
   return heap;
 }
 
+/* Free a heap.  Seldom needs to be called from outside this function
+   since it is done automatically by the bow_*_next_wv() functions. */
 void
 bow_dv_heap_free (bow_dv_heap *heap)
 {

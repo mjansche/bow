@@ -214,13 +214,13 @@ bow_lexer_simple_get_raw_word (bow_lexer_simple *self, bow_lex *lex,
 	break;
       buf[wordlen] = tolower (byte);
     }
+
+  /* Back up to point at the character that caused the end of the word. */
+  lex->document_position--;
   assert (lex->document_position <= lex->document_length);
 
   if (wordlen >= buflen)
     bow_error ("Encountered word longer than buffer length=%d", buflen);
-
-  /* Back up to point at the character that caused the end of the word. */
-  lex->document_position--;
 
   /* Terminate it. */
   buf[wordlen] = '\0';
@@ -230,7 +230,7 @@ bow_lexer_simple_get_raw_word (bow_lexer_simple *self, bow_lex *lex,
 
 /* Perform all the necessary postprocessing after the initial token
    boundaries have been found: strip non-alphas from end, toss words
-   containing non-alphas, toss words containing certaing many digits,
+   containing non-alphas, toss words containing certain many digits,
    toss words appearing in the stop list, stem the word, check the
    stoplist again, toss words of length one.  If the word is tossed,
    return zero, otherwise return the length of the word. */
@@ -348,6 +348,12 @@ bow_isgraph (int character)
   return isgraph (character);
 }
 
+int
+bow_not_isspace (int character)
+{
+  return (! isspace (character));
+}
+
 
 /* A lexer that keeps all alphabetic strings, delimited by
    non-alphabetic characters.  For example, the string
@@ -403,7 +409,10 @@ const bow_lexer_simple *bow_alpha_only_lexer = &_bow_alpha_only_lexer;
 
 /* A lexer that keeps all strings that begin and end with alphabetic
    characters, delimited by white-space.  For example,
-   the string `http://www.cs.cmu.edu' will be a single token. */
+   the string `http://www.cs.cmu.edu' will be a single token. 
+   This does not change the words at all---no down-casing, no stemming,
+   no stoplist, no word tossing.  It's ideal for use when a
+   --lex-pipe-command is used to do all the tokenizing.  */
 const bow_lexer_simple _bow_white_lexer =
 {
   {
@@ -414,15 +423,16 @@ const bow_lexer_simple _bow_white_lexer =
     "",				/* document start pattern begins right away */
     NULL			/* document end pattern goes to end */
   },
-  bow_isalpha,			/* begin words with an alphabetic char */
-  bow_isgraph,			/* end words with any non-alphabetic char */
-  bow_stoplist_present,		/* use the default stoplist */
+  bow_not_isspace,		/* begin words with any non-whitespace */
+  bow_not_isspace,		/* end words with whitespace */
+  NULL,				/* don't use a stoplist */
   0,				/* don't use the Porter stemming algorithm */
-  NO,				/* be case-INsensitive */
-  YES,				/* strip non-alphas from end */
+  YES,				/* don't change the case insensitivity */
+  NO,				/* don't strip non-alphas from end */
   NO,				/* don't toss words w/ non-alphas */
-  4,				/* toss words with 4 digits */
+  99,				/* toss words with 99 digits */
   59				/* toss words longer than 59 chars, uuenc=60 */
 };
 const bow_lexer_simple *bow_white_lexer = &_bow_white_lexer;
+
 

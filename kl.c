@@ -101,7 +101,7 @@ bow_kl_set_weights (bow_barrel *barrel)
 
 
   /* Set the weights in the BARREL's WI2DVF so that they are
-     equal to P(w|C), the probability of a word given a class. */
+     equal to the log odds-ratio, Pr(w|C)/Pr(w|~C). */
   for (wi = 0; wi < max_wi; wi++) 
     {
       double pr_w = 0.0;
@@ -178,7 +178,11 @@ bow_kl_score (bow_barrel *barrel, bow_wv *query_wv,
 
   query_word_count = 0;
   for (wvi = 0; wvi < query_wv->num_entries; wvi++)
-    query_word_count += query_wv->entry[wvi].count;
+    {
+      /* Only count those words that are in the model's vocabulary. */
+      if (bow_wi2dvf_dv (barrel->wi2dvf, query_wv->entry[wvi].wi))
+	query_word_count += query_wv->entry[wvi].count;
+    }
 
 #if KL_AGAINST_UNCOND
   for (ci = 0; ci < barrel->cdocs->length; ci++)
@@ -196,8 +200,22 @@ bow_kl_score (bow_barrel *barrel, bow_wv *query_wv,
   for (ci = 0; ci < barrel->cdocs->length; ci++)
     {
       bow_cdoc *cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
-      assert (cdoc->prior > 0 && cdoc->prior <= 1.0);
-      scores[ci] = log (cdoc->prior) / query_word_count;
+      if (bow_uniform_class_priors)
+	{
+	  scores[ci] = 0.0;
+	}
+      else
+	{
+	  /* assert (cdoc->prior > 0 && cdoc->prior <= 1.0); */
+	  assert (cdoc->prior >= 0 && cdoc->prior <= 1.0);
+	  if (cdoc->word_count == 0)
+	    /* There was no training data for this class.  Give it a
+	       special, impossible value.  Positive scores are treated
+	       as a special case that can never win. */
+	    scores[ci] = 999.0;
+	  else
+	    scores[ci] = log (cdoc->prior) / query_word_count;
+	}
     }
 
   /* Loop over each word in the word vector QUERY_WV, putting its
@@ -240,6 +258,12 @@ bow_kl_score (bow_barrel *barrel, bow_wv *query_wv,
 
 	  cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
 	  assert (cdoc->type == model);
+	  if (cdoc->word_count == 0)
+	    {
+	      assert (scores[ci] > 0);
+	      /* xxx Why isn't this true? assert (cdoc->prior == 0); */
+	      continue;
+	    }
 
 	  /* Assign PR_W_C to P(w|C), either using a DV entry, or, if
 	     there is no DV entry for this class, using M-estimate 
@@ -259,7 +283,7 @@ bow_kl_score (bow_barrel *barrel, bow_wv *query_wv,
 			    ((M_EST_M * M_EST_P) + dv->entry[dvi].count 
 			     - query_wv->entry[wvi].count)
 			    / (M_EST_M + cdoc->word_count
-			       - query_wv->entry[wvi].count));
+			       - query_word_count));
 		  if (pr_w_c <= 0)
 		    bow_error ("A negative word probability was calculated.\n"
 			       "This can happen if you are using "
@@ -304,7 +328,7 @@ bow_kl_score (bow_barrel *barrel, bow_wv *query_wv,
 		     removal of QUERY_WV's document. */
 		  pr_w_c = ((M_EST_M * M_EST_P)
 			    / (M_EST_M + cdoc->word_count
-			       - query_wv->entry[wvi].count));
+			       - query_word_count));
 		  assert (pr_w_c > 0 && pr_w_c <= 1);
 		  count_w_c = 0;
 		  count_c = cdoc->word_count - query_wv->entry[wvi].count;
@@ -318,10 +342,19 @@ bow_kl_score (bow_barrel *barrel, bow_wv *query_wv,
 		  count_c = cdoc->word_count;
 #if WITTEN_BELL
 		  /* Witten-Bell */
-		  pr_w_c =
-		    (cdoc->normalizer
-		     / ((cdoc->word_count + cdoc->normalizer)
-			* (barrel->wi2dvf->num_words - cdoc->normalizer)));
+		  if (cdoc->word_count)
+		    {
+		      /* There is training data for this class */
+		      pr_w_c =
+			(cdoc->normalizer
+			 / ((cdoc->word_count + cdoc->normalizer)
+			    * (barrel->wi2dvf->num_words - cdoc->normalizer)));
+		    }
+		  else
+		    {
+		      /* There is no training data for this class. */
+		      pr_w_c = 1.0 / barrel->wi2dvf->num_words;
+		    }
 #endif
 		}
 	    }
@@ -355,12 +388,18 @@ bow_kl_score (bow_barrel *barrel, bow_wv *query_wv,
   {
     double scores_sum = 0;
     for (ci = 0; ci < barrel->cdocs->length; ci++)
-      scores_sum += scores[ci];
+      {
+	if (scores[ci] <= 0)
+	  scores_sum += scores[ci];
+      }
     if (scores_sum)
       {
 	for (ci = 0; ci < barrel->cdocs->length; ci++)
 	  {
-	    scores[ci] /= -scores_sum;
+	    if (scores[ci] > 0)
+	      scores[ci] = -FLT_MAX;
+	    else
+	      scores[ci] /= -scores_sum;
 	    assert (scores[ci] == scores[ci]);
 	    /* assert (scores[ci] > 0); */
 	  }
@@ -423,6 +462,7 @@ bow_method bow_method_kl =
   bow_kl_score,
   bow_wv_set_weights_to_count,
   NULL,				/* no need for extra weight normalization */
+  bow_barrel_free,
   0
 };
 

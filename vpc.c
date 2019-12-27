@@ -26,11 +26,11 @@
    only one vector per class. The classes will be represented as
    "documents" in this new barrel. */
 bow_barrel *
-bow_barrel_new_vpc (bow_barrel *doc_barrel, 
-		    const char **classnames, int num_classes)
+bow_barrel_new_vpc (bow_barrel *doc_barrel)
 {
   bow_barrel* vpc_barrel;	/* The vector per class barrel */
   int max_ci = -1;		/* The highest index of encountered classes */
+  int num_classes = bow_barrel_num_classes (doc_barrel);
   int wi;
   int max_wi;
   int dvi;
@@ -40,6 +40,8 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel,
   int di;
   int num_docs_per_ci[num_classes];
 
+  assert (doc_barrel->classnames);
+
   for (ci = 0; ci < num_classes; ci++)
     num_docs_per_ci[ci] = 0;
 
@@ -48,10 +50,11 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel,
   /* Create an empty barrel; we fill fill it with vector-per-class
      data and return it. */
   vpc_barrel = bow_barrel_new (doc_barrel->wi2dvf->size,
-			       doc_barrel->cdocs->length,
+			       num_classes,
 			       doc_barrel->cdocs->entry_size,
 			       doc_barrel->cdocs->free_func);
   vpc_barrel->method = doc_barrel->method;
+  vpc_barrel->classnames = bow_int4str_new (0);
 
   bow_verbosify (bow_progress, "Making vector-per-class... words ::       ");
 
@@ -89,22 +92,35 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel,
       if (wi % 100 == 0)
 	bow_verbosify (bow_progress, "\b\b\b\b\b\b%6d", max_wi - wi);
     }
-  assert (max_ci > 0);
+  assert (num_classes-1 == max_ci);
+  if (max_ci < 0)
+    {
+      int i;
+      bow_verbosify (bow_progress, "%s: No data found for ",
+		     __PRETTY_FUNCTION__);
+      for (i = 0; i < num_classes; i++)
+	bow_verbosify (bow_progress, "%s ", 
+		       bow_barrel_classname_at_index (doc_barrel, i));
+      bow_verbosify (bow_progress, "\n");
+    }
 
-  /* Initialize the CDOCS part of the VPC_BARREL.  Create BOW_CDOC
-     structures for each class, and append them to the VPC->CDOCS
-     array. */
-  for (ci = 0; ci <= max_ci; ci++)
+
+  /* Initialize the CDOCS and CLASSNAMES parts of the VPC_BARREL.
+     Create BOW_CDOC structures for each class, and append them to the
+     VPC->CDOCS array. */
+  for (ci = 0; ci < num_classes; ci++)
     {
       bow_cdoc cdoc;
+      const char *classname = NULL;
+
       cdoc.type = model;
       cdoc.normalizer = -1.0f;
       /* Make WORD_COUNT be the number of documents in the class. */
       cdoc.word_count = num_docs_per_ci[ci];
-      if (classnames)
+      if (doc_barrel->classnames)
 	{
-	  assert (classnames[ci]);
-	  cdoc.filename = strdup (classnames[ci]);
+	  classname = bow_barrel_classname_at_index (doc_barrel, ci);
+	  cdoc.filename = strdup (classname);
 	  if (!cdoc.filename)
 	    bow_error ("Memory exhausted.");
 	}
@@ -112,8 +128,12 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel,
 	{
 	  cdoc.filename = NULL;
 	}
+      cdoc.class_probs = NULL;
       cdoc.class = ci;
+      /* Add a CDOC for this class to the VPC_BARREL */
       bow_array_append (vpc_barrel->cdocs, &cdoc);
+      /* Add an entry for this class into the VPC_BARREL->CLASSNAMES map. */
+      bow_str2int (vpc_barrel->classnames, classname);
     }
 
   if (doc_barrel->method->vpc_set_priors)
@@ -124,10 +144,9 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel,
     }
   else
     {
-      /* We don't need priors for the other methods.  Set them to
-	 obviously bogus values, so we'll notice if they accidently
-	 get used. */
-      for (ci = 0; ci <= max_ci; ci++)
+      /* We don't need priors, so set them to obviously bogus values,
+	 so we'll notice if they accidently get used. */
+      for (ci = 0; ci < num_classes; ci++)
 	{
 	  bow_cdoc *cdoc;
 	  cdoc = bow_array_entry_at_index (vpc_barrel->cdocs, ci);
@@ -144,15 +163,13 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel,
    weights appropriately by calling SET_WEIGHTS from the METHOD of
    DOC_BARREL on the `vector-per-class' barrel that will be returned. */
 bow_barrel *
-bow_barrel_new_vpc_merge_then_weight (bow_barrel *doc_barrel, 
-				      const char **classnames,
-				      int num_classes)
+bow_barrel_new_vpc_merge_then_weight (bow_barrel *doc_barrel)
 {
   bow_barrel *vpc_barrel;
 
   assert (doc_barrel->method->name);
   /* Merge documents into classes, then set weights. */
-  vpc_barrel = bow_barrel_new_vpc (doc_barrel, classnames, num_classes);
+  vpc_barrel = bow_barrel_new_vpc (doc_barrel);
   bow_barrel_set_weights (vpc_barrel);
   /* Scale the weights */
   bow_barrel_scale_weights (vpc_barrel, doc_barrel);
@@ -165,15 +182,13 @@ bow_barrel_new_vpc_merge_then_weight (bow_barrel *doc_barrel,
    `Vector-Per-Class' barrel, and set the weights in the VPC barrel by
    summing weights from the DOC_BARREL. */
 bow_barrel *
-bow_barrel_new_vpc_weight_then_merge (bow_barrel *doc_barrel, 
-				      const char **classnames,
-				      int num_classes)
+bow_barrel_new_vpc_weight_then_merge (bow_barrel *doc_barrel)
 {
   bow_barrel *vpc_barrel;
 
   /* Set weights, then merge documents into classes. */
   bow_barrel_set_weights (doc_barrel);
-  vpc_barrel = bow_barrel_new_vpc (doc_barrel, classnames, num_classes);
+  vpc_barrel = bow_barrel_new_vpc (doc_barrel);
   bow_barrel_scale_weights (vpc_barrel, doc_barrel);
   bow_barrel_normalize_weights (vpc_barrel);
   return vpc_barrel;
@@ -222,12 +237,16 @@ bow_barrel_set_vpc_priors_by_counting (bow_barrel *vpc_barrel,
       cdoc = bow_array_entry_at_index (vpc_barrel->cdocs, ci);
       prior_sum += cdoc->prior;
     }
+  assert (prior_sum > 0);
   /* Normalize to set the prior. */
   for (ci = 0; ci <= max_ci; ci++)
     {
       bow_cdoc *cdoc;
       cdoc = bow_array_entry_at_index (vpc_barrel->cdocs, ci);
       cdoc->prior /= prior_sum;
-      assert (cdoc->prior > 0.0 && cdoc->prior < 1.0);
+      /*printf ("ci=%d  prior_sum=%f  prior=%f\n", ci,prior_sum,cdoc->prior);*/
+      /* xxx We allow "cdoc->prior >= 0.0" because there may be no
+	 training data for some class.  Is this good? */
+      assert (cdoc->prior >= 0.0 && cdoc->prior <= 1.0);
     }
 }

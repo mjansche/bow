@@ -60,11 +60,17 @@ static char rainbow_argp_doc[] =
 
 static char rainbow_argp_args_doc[] = "[ARG...]";
 
-#define PRINT_COUNTS_FOR_WORD_KEY 10000
-#define INFOGAIN_PAIR_VECTOR_KEY 10001
-#define USE_VOCAB_IN_FILE_KEY 10002
-#define NO_LISP_SCORE_TRUNCATION_KEY 10003
-#define SERVER_KEY 10004
+enum {
+  PRINT_COUNTS_FOR_WORD_KEY = 10000,
+  INFOGAIN_PAIR_VECTOR_KEY,
+  USE_VOCAB_IN_FILE_KEY,
+  NO_LISP_SCORE_TRUNCATION_KEY,
+  SERVER_KEY,
+  TEST_FILES_KEY,
+  PRINT_DOC_NAMES_KEY,
+  PRINT_WORD_PROBABILITIES_KEY,
+  INDEX_PRINTED_BARREL_KEY
+};
 
 static struct argp_option rainbow_options[] =
 {
@@ -74,6 +80,9 @@ static struct argp_option rainbow_options[] =
    "Tokenize training documents found under directories ARG... "
    "(where each ARG directory contains documents of a different class), "
    "build weight vectors, and save them to disk."},
+  {"index-printed-barrel", INDEX_PRINTED_BARREL_KEY, "FORMAT", 0,
+   "Read document/word statistics from a file in the format produced by "
+   "--print-barrel=FORMAT.  See --print-barrel for details about FORMAT."},
 
   {0, 0, 0, 0,
    "For doing document classification using the data structures "
@@ -105,11 +114,17 @@ static struct argp_option rainbow_options[] =
    "Perform N test/train splits of the indexed documents, and output "
    "classifications of all test documents each time."},
   {"test-percentage", 'p', "P", 0,
-   "Use P percent of the indexed documents as test data."},
+   "Use P percent of the indexed documents as test data.  Default is 30."},
   {"no-lisp-score-truncation", NO_LISP_SCORE_TRUNCATION_KEY, 0, 0,
    "Normally scores that are lower than 1e-35 are printed as 0, "
    "because our LISP reader can't handle floating point numbers smaller "
    "than 1e-35.  This option turns off that truncation."},
+  {"testing-files", TEST_FILES_KEY, "FILENAME", 0,
+   "Instead of splitting the data among test/train randomly (using the "
+   "-p option), use the indexed files named in the contents of FILENAME "
+   "for testing, and all the others in the model for training.  FILENAME "
+   "should contain a list of file paths (with path identical to the path "
+   "used in indexing), each path separated by a newline."},
 
   {0, 0, 0, 0,
    "Testing documents that are specified on the command line:", 5},
@@ -132,15 +147,27 @@ static struct argp_option rainbow_options[] =
   {"weight-vector", 'W', "CLASSNAME", 0,
    "Print the word/weight vector for CLASSNAME, "
    "sorted with high weights first."},
+  {"print-word-probabilities", PRINT_WORD_PROBABILITIES_KEY, "CLASS", 0,
+   "Print P(w|CLASS), the probability in class CLASS "
+   "of each word in the vocabulary."},
   {"foilgain-vector", 'F', "CLASSNAME", 0,
    "Print the word/foilgain vector for CLASSNAME."},
-  {"print-barrel", 'B', 0, 0,
+  {"print-barrel", 'B', "FORMAT", OPTION_ARG_OPTIONAL,
    "Print the word/document count matrix in an awk- or perl-accessible "
-   "format."},
+   "format.  Format is specified by the following letters:\n"
+   "print all vocab or just words in document:\n"
+   "  a=all OR s=sparse\n"
+   "print counts as ints or binary:\n"
+   "  b=binary OR i=integer\n"
+   "print word as:\n  "
+   "  n=integer index OR w=string OR e=empty OR c=combination\n"
+   "The default is the last in each list"},
   {"print-word-counts", PRINT_COUNTS_FOR_WORD_KEY, "WORD", 0,
    "Print the number of times WORD occurs in each class."},
   {"print-counts-for-word", PRINT_COUNTS_FOR_WORD_KEY, "WORD", 
    OPTION_ALIAS | OPTION_HIDDEN},
+  {"print-doc-names", PRINT_DOC_NAMES_KEY, 0, 0,
+   "Print the list of filenames on which the model was built."},
 
   { 0 }
 };
@@ -160,6 +187,8 @@ struct rainbow_arg_state
     rainbow_foilgain_printing,
     rainbow_barrel_printing,
     rainbow_word_count_printing,
+    rainbow_doc_name_printing,
+    rainbow_printing_word_probabilities
   } what_doing;
   /* Where to find query text, or if NULL get query text from stdin */
   const char *query_filename;
@@ -182,6 +211,8 @@ struct rainbow_arg_state
   int use_lisp_score_truncation;
   int loo_cv;
   const char *server_port_num;
+  const char *test_files_filename;
+  const char *barrel_printing_format;
 } rainbow_arg_state;
 
 static error_t
@@ -200,6 +231,10 @@ rainbow_parse_opt (int key, char *arg, struct argp_state *state)
       break;
     case 'i':
       rainbow_arg_state.what_doing = rainbow_indexing;
+      break;
+    case INDEX_PRINTED_BARREL_KEY:
+      rainbow_arg_state.what_doing = rainbow_indexing;
+      rainbow_arg_state.barrel_printing_format = arg;
       break;
     case 'r':
       rainbow_arg_state.repeat_query = 1;
@@ -243,6 +278,9 @@ rainbow_parse_opt (int key, char *arg, struct argp_state *state)
     case NO_LISP_SCORE_TRUNCATION_KEY:
       rainbow_arg_state.use_lisp_score_truncation = 0;
       break;
+    case TEST_FILES_KEY:
+      rainbow_arg_state.test_files_filename = arg;
+      break;
 
       /* Switches for file testing */
     case 'X':
@@ -275,6 +313,7 @@ rainbow_parse_opt (int key, char *arg, struct argp_state *state)
     case 'B':
       /* Print the barrel in awk-accessible form to stdout. */
       rainbow_arg_state.what_doing = rainbow_barrel_printing;
+      rainbow_arg_state.barrel_printing_format = arg;
       break;
     case PRINT_COUNTS_FOR_WORD_KEY:
       rainbow_arg_state.what_doing = rainbow_word_count_printing;
@@ -283,6 +322,13 @@ rainbow_parse_opt (int key, char *arg, struct argp_state *state)
     case INFOGAIN_PAIR_VECTOR_KEY:
       rainbow_arg_state.what_doing = rainbow_infogain_pair_printing;
       rainbow_arg_state.infogain_words_to_print = atoi (arg);
+      break;
+    case PRINT_DOC_NAMES_KEY:
+      rainbow_arg_state.what_doing = rainbow_doc_name_printing;
+      break;
+    case PRINT_WORD_PROBABILITIES_KEY:
+      rainbow_arg_state.what_doing = rainbow_printing_word_probabilities;
+      rainbow_arg_state.printing_class = arg;
       break;
 
 #if 0
@@ -299,6 +345,7 @@ rainbow_parse_opt (int key, char *arg, struct argp_state *state)
 	 can force argp to stop parsing here and return.  */
       rainbow_arg_state.non_option_argi = state->next - 1;
       if (rainbow_arg_state.what_doing == rainbow_indexing
+	  && rainbow_arg_state.barrel_printing_format == NULL
 	  && state->next == state->argc)
 	{
 	  /* Only one classname is not enough. */
@@ -343,9 +390,31 @@ static struct argp rainbow_argp =
 /* The structures that hold the data necessary for answering a query. */
 
 bow_barrel *rainbow_doc_barrel;     /* the stats about words and documents */
-bow_barrel *rainbow_class_barrel;   /* the stats about words and classes */
-const char **rainbow_classnames;
+bow_barrel *rainbow_class_barrel=NULL;  /* the stats about words and classes */
 /* The static structure in bow/int4word.c is also used. */
+
+/* Given a fully-specified file path name (all the way from `/'),
+   return just the last filename part of it. */
+static inline const char *
+filename_to_classname (const char *filename)
+{
+#if 0
+  /* Don't bother stripping off the directory name from the classname.
+     This way, even when we give rainbow multi-directory
+     specifications for where to find the data for each class, and
+     some of the lowest-level directories have the same name, we can
+     still distinguish between them. */
+  return filename;
+#else
+  const char *ret;
+  ret = strrchr (filename, '/');
+  if (ret)
+    return ret + 1;
+  return filename;
+#endif
+}
+
+
 
 
 /* Writing and reading the word/document stats to disk. */
@@ -401,7 +470,6 @@ rainbow_unarchive ()
   char *fnp;
   FILE *fp;
   char buf[1024];
-  int i;
   struct stat st;
   int e;
   
@@ -449,32 +517,24 @@ rainbow_unarchive ()
   rainbow_doc_barrel = bow_barrel_new_from_data_fp (fp);
   /* Don't close it because bow_wi2dvf_dv will still need to read it. */
 
-  /* Extract the CLASSNAMES from the class barrel. */
-  rainbow_classnames = bow_malloc (rainbow_class_barrel->cdocs->length
-				   * sizeof (char*));
-  for (i = 0; i < rainbow_class_barrel->cdocs->length; i++)
+  if (rainbow_doc_barrel->classnames == NULL)
     {
-      bow_cdoc *cdoc = 
-	bow_array_entry_at_index (rainbow_class_barrel->cdocs, i);
-      assert (cdoc->filename);
-      rainbow_classnames[i] = strdup (cdoc->filename);
-      assert (rainbow_classnames[i]);
+      int i;
+      bow_cdoc *cdoc;
+      rainbow_doc_barrel->classnames = bow_int4str_new (0);
+      rainbow_class_barrel->classnames = bow_int4str_new (0);
+      for (i = 0; i < rainbow_class_barrel->cdocs->length; i++)
+	{
+	  cdoc = bow_array_entry_at_index (rainbow_class_barrel->cdocs, i);
+	  bow_str2int (rainbow_doc_barrel->classnames, 
+		       filename_to_classname (cdoc->filename));
+	  bow_str2int (rainbow_class_barrel->classnames, 
+		       filename_to_classname (cdoc->filename));
+	}
     }
 
   if (bow_uniform_class_priors)
     bow_barrel_set_cdoc_priors_to_class_uniform (rainbow_doc_barrel);
-}
-
-/* Given a fully-specified file path name (all the way from `/'),
-   return just the last filename part of it. */
-static inline const char *
-filename_to_classname (const char *filename)
-{
-  const char *ret;
-  ret = strrchr (filename, '/');
-  if (ret)
-    return ret + 1;
-  return filename;
 }
 
 
@@ -492,7 +552,7 @@ rainbow_index (int num_classes, const char *classdir_names[],
   void do_indexing ()
     {
       if (rainbow_doc_barrel)
-	bow_barrel_free (rainbow_doc_barrel);
+	bow_free_barrel (rainbow_doc_barrel);
       /* Index all the documents. */
       rainbow_doc_barrel = bow_barrel_new (0, 0, sizeof (bow_cdoc), NULL);
       if (bow_argp_method)
@@ -508,10 +568,11 @@ rainbow_index (int num_classes, const char *classdir_names[],
 	     documents indexed.  This gathers stats on individual
 	     documents; we have yet to "sum together the word vectors
 	     of all documents for each particular class". */
-	  if (bow_barrel_add_from_text_dir (rainbow_doc_barrel, 
-					    classdir_names[class_index],
-					    exception_name,
-					    class_index)
+	  if (bow_barrel_add_from_text_dir
+	      (rainbow_doc_barrel, 
+	       classdir_names[class_index],
+	       exception_name,
+	       filename_to_classname (classdir_names[class_index]))
 	      == 0)
 	    bow_verbosify (bow_quiet,
 			   "No text files found in directory `%s'\n", 
@@ -566,12 +627,23 @@ rainbow_index (int num_classes, const char *classdir_names[],
 
   /* Combine the documents into class statistics. */
   rainbow_class_barrel = 
-    bow_barrel_new_vpc_with_weights (rainbow_doc_barrel, 
-				     classdir_names, num_classes);
+    bow_barrel_new_vpc_with_weights (rainbow_doc_barrel);
 }
 
+void
+rainbow_index_printed_barrel (const char *filename)
+{
+  rainbow_doc_barrel = 
+    bow_barrel_new_from_printed_barrel_file
+    (filename, rainbow_arg_state.barrel_printing_format);
+
+  /* Combine the documents into class statistics. */
+  rainbow_class_barrel = 
+    bow_barrel_new_vpc_with_weights (rainbow_doc_barrel);
+}
 
 
+
 /* Perform a query. */
 
 /* Print the contents of file FILENAME to stdout. */
@@ -598,7 +670,7 @@ int
 rainbow_query (FILE *in, FILE *out)
 {
   /* Show as many hits as there are classes. */
-  int num_hits_to_show = rainbow_class_barrel->cdocs->length;
+  int num_hits_to_show = bow_barrel_num_classes (rainbow_class_barrel);
   bow_score *hits;
   int actual_num_hits;
   int i;
@@ -661,7 +733,7 @@ rainbow_query (FILE *in, FILE *out)
       /* Change barrel by removing words with small information gain. */
       bow_barrel_keep_top_words_by_infogain
 	(bow_prune_vocab_by_infogain_n, rainbow_doc_barrel, 
-	 rainbow_class_barrel->cdocs->length);
+	 bow_barrel_num_classes (rainbow_class_barrel));
     }
 
   /* Re-build the rainbow_class_barrel, if necessary */
@@ -669,12 +741,9 @@ rainbow_query (FILE *in, FILE *out)
       || rainbow_arg_state.vocab_map
       || bow_prune_vocab_by_infogain_n)
     {
-      int num_classes = rainbow_class_barrel->cdocs->length;
-      bow_barrel_free (rainbow_class_barrel);
+      bow_free_barrel (rainbow_class_barrel);
       rainbow_class_barrel = 
-	bow_barrel_new_vpc_with_weights (rainbow_doc_barrel, 
-					 rainbow_classnames, 
-					 num_classes);
+	bow_barrel_new_vpc_with_weights (rainbow_doc_barrel);
     }
 
   /* Get the best matching documents. */
@@ -719,44 +788,46 @@ rainbow_query (FILE *in, FILE *out)
   return actual_num_hits;
 }
 
-static void rainbow_socket_init(const char *socket_name, int use_unix_socket)
+void
+rainbow_socket_init (const char *socket_name, int use_unix_socket)
 {
-   int servlen, type, bind_ret;
-   struct sockaddr_un un_addr;
-   struct sockaddr_in in_addr;
-   struct sockaddr *sap;
+  int servlen, type, bind_ret;
+  struct sockaddr_un un_addr;
+  struct sockaddr_in in_addr;
+  struct sockaddr *sap;
 
-   type = use_unix_socket ? AF_UNIX : AF_INET;
+  type = use_unix_socket ? AF_UNIX : AF_INET;
    
-   rainbow_sockfd = socket(type, SOCK_STREAM, 0);
-   assert(rainbow_sockfd >= 0);
+  rainbow_sockfd = socket(type, SOCK_STREAM, 0);
+  assert(rainbow_sockfd >= 0);
 
-   if (type == AF_UNIX)
-   {
-     sap = (struct sockaddr *)&un_addr;
-     bzero((char *)sap, sizeof(un_addr));
-     strcpy(un_addr.sun_path, socket_name);
-     servlen = strlen(un_addr.sun_path) + sizeof(un_addr.sun_family) + 1;
-   }
-   else
-   {
-     sap = (struct sockaddr *)&in_addr;
-     bzero((char *)sap, sizeof(in_addr));
-     in_addr.sin_port = htons(atoi(socket_name));
-     in_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-     servlen = sizeof(in_addr);
-   }
+  if (type == AF_UNIX)
+    {
+      sap = (struct sockaddr *)&un_addr;
+      bzero((char *)sap, sizeof(un_addr));
+      strcpy(un_addr.sun_path, socket_name);
+      servlen = strlen(un_addr.sun_path) + sizeof(un_addr.sun_family) + 1;
+    }
+  else
+    {
+      sap = (struct sockaddr *)&in_addr;
+      bzero((char *)sap, sizeof(in_addr));
+      in_addr.sin_port = htons(atoi(socket_name));
+      in_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+      servlen = sizeof(in_addr);
+    }
 
-   sap->sa_family = type;     
+  sap->sa_family = type;     
 
-   bind_ret = bind(rainbow_sockfd, sap, servlen);
-   assert(bind_ret >= 0);
+  bind_ret = bind(rainbow_sockfd, sap, servlen);
+  assert(bind_ret >= 0);
 
-   listen(rainbow_sockfd, 5);
+  listen(rainbow_sockfd, 5);
 }
 
 
-static void rainbow_serve(void)
+void
+rainbow_serve ()
 {
   int newsockfd, clilen;
   struct sockaddr cli_addr;
@@ -853,10 +924,9 @@ rainbow_lisp_setup (char *datadirname)
 
   /*  if (rainbow_doc_barrel->method != rainbow_class_barrel->method)
     { */
-      bow_barrel_free (rainbow_class_barrel);
+      bow_free_barrel (rainbow_class_barrel);
       rainbow_class_barrel = 
-	bow_barrel_new_vpc_with_weights (rainbow_doc_barrel, 
-					 rainbow_classnames);
+	bow_barrel_new_vpc_with_weights (rainbow_doc_barrel);
       /*    } */
 
 }
@@ -917,7 +987,7 @@ rainbow_test (FILE *test_fp)
   bow_wv *query_wv;
   int di;			/* a document index */
   bow_score *hits;
-  int num_hits_to_retrieve = rainbow_class_barrel->cdocs->length;
+  int num_hits_to_retrieve = bow_barrel_num_classes (rainbow_class_barrel);
   int actual_num_hits;
   int hi;			/* hit index */
   bow_cdoc *doc_cdoc;
@@ -944,8 +1014,20 @@ rainbow_test (FILE *test_fp)
     {
       fprintf (test_fp, "#%d\n", tn);
 
-      /* Randomly set which doc's are for training and which are testing. */
-      bow_test_split (rainbow_doc_barrel, num_test_docs);
+      if (rainbow_arg_state.test_files_filename)
+	{
+	  bow_test_set_files (rainbow_doc_barrel,
+			      rainbow_arg_state.test_files_filename);
+	  /* Make sure we only go through this for-loop once, because
+	     there is no point in running the same test set again. */
+	  tn = rainbow_arg_state.num_trials-1;
+	}
+      else
+	{
+	  /* Randomly set which documents's are for training and
+	     which are testing. */
+	  bow_test_split (rainbow_doc_barrel, num_test_docs);
+	}
 
       if (bow_uniform_class_priors)
 	bow_barrel_set_cdoc_priors_to_class_uniform (rainbow_doc_barrel);
@@ -955,21 +1037,16 @@ rainbow_test (FILE *test_fp)
 	  /* Change barrel by removing words with small information gain. */
 	  bow_barrel_keep_top_words_by_infogain
 	    (bow_prune_vocab_by_infogain_n, rainbow_doc_barrel, 
-	     rainbow_class_barrel->cdocs->length);
+	     bow_barrel_num_classes (rainbow_class_barrel));
 	}
       assert (rainbow_arg_state.test_percentage > 0 
 	      && rainbow_arg_state.test_percentage < 100);
 
       /* Re-create the vector-per-class barrel in accordance with the
 	 new train/test settings. */
-      {
-	int num_classes = rainbow_class_barrel->cdocs->length;
-	bow_barrel_free (rainbow_class_barrel);
-	rainbow_class_barrel = 
-	  bow_barrel_new_vpc_with_weights (rainbow_doc_barrel, 
-					   rainbow_classnames,
-					   num_classes);
-      }
+      bow_free_barrel (rainbow_class_barrel);
+      rainbow_class_barrel = 
+	bow_barrel_new_vpc_with_weights (rainbow_doc_barrel);
 
       /* Create the heap from which we'll get WV's. */
       test_heap = bow_test_new_heap (rainbow_doc_barrel);
@@ -1019,11 +1096,15 @@ rainbow_test (FILE *test_fp)
 		  && hits[hi].weight > 0)
 		hits[hi].weight = 0;
 	      fprintf (test_fp, "%s:%g ", 
-		       filename_to_classname (class_cdoc->filename),
+		       bow_barrel_classname_at_index (rainbow_class_barrel,
+						      hits[hi].di),
 		       hits[hi].weight);
 	    }
 	  fprintf (test_fp, "\n");
+
 	}
+      /* Don't free the heap here because bow_test_next_wv() does it
+	 for us. */
     }
 }
 
@@ -1038,7 +1119,7 @@ rainbow_test_files (FILE *out_fp, const char *test_dirname)
 {
   bow_score *hits;
   /* int num_test_docs; */
-  int num_hits_to_retrieve = rainbow_class_barrel->cdocs->length;
+  int num_hits_to_retrieve = bow_barrel_num_classes (rainbow_class_barrel);
   int actual_num_hits;
   int hi;			/* hit index */
   const char *current_class;
@@ -1050,12 +1131,18 @@ rainbow_test_files (FILE *out_fp, const char *test_dirname)
   /* This nested function is called once for each test document. */
   int test_file (const char *filename, void *context)
     {
-      bow_wv *query_wv;
+      bow_wv *query_wv = NULL;
       FILE *fp;
       bow_cdoc *class_cdoc;
 
       fp = bow_fopen (filename, "r");
-      query_wv = bow_wv_new_from_text_fp (fp);
+      /* Must test to see if text here because this was done when the
+	 barrel was build in barrel.c:bow_barrel_add_from_text_dir().
+	 Otherwise we may read a document that was not included in the
+	 original barrel, and get negative word occurrence counts
+	 since we subtract to do leave-one-out processing here. */
+      if (bow_fp_is_text (fp))
+	query_wv = bow_wv_new_from_text_fp (fp);
       fclose (fp);
       if (!query_wv)
 	{
@@ -1113,7 +1200,7 @@ rainbow_test_files (FILE *out_fp, const char *test_dirname)
       /* Change barrel by removing words with small info gain, if requested. */
       bow_barrel_keep_top_words_by_infogain
 	(bow_prune_vocab_by_infogain_n, rainbow_doc_barrel, 
-	 rainbow_class_barrel->cdocs->length);
+	 bow_barrel_num_classes (rainbow_class_barrel));
     }
 
   /* Re-build the rainbow_class_barrel, if necessary */
@@ -1122,17 +1209,15 @@ rainbow_test_files (FILE *out_fp, const char *test_dirname)
       || bow_prune_vocab_by_infogain_n
       || rainbow_arg_state.test_percentage)
     {
-      int num_classes = rainbow_class_barrel->cdocs->length;
-      bow_barrel_free (rainbow_class_barrel);
+      bow_free_barrel (rainbow_class_barrel);
       rainbow_class_barrel = 
-	bow_barrel_new_vpc_with_weights (rainbow_doc_barrel, 
-					 rainbow_classnames, num_classes);
+	bow_barrel_new_vpc_with_weights (rainbow_doc_barrel);
     }
 #endif
 
   fprintf (out_fp, "#0\n");
 
-  for (ci = 0; ci < rainbow_class_barrel->cdocs->length; ci++)
+  for (ci = 0; ci < bow_barrel_num_classes (rainbow_class_barrel); ci++)
     {
       /* Build a string containing the name of this directory. */
       bow_cdoc *class_cdoc;
@@ -1162,13 +1247,13 @@ rainbow_print_weight_vector (const char *classname)
   int dvi;			/* an index into DV */
 
   /* Find the `class index' of the class with name CLASSNAME */
-  for (ci = 0; ci < rainbow_class_barrel->cdocs->length; ci++)
+  for (ci = 0; ci < bow_barrel_num_classes (rainbow_class_barrel); ci++)
     {
       cdoc = bow_array_entry_at_index (rainbow_class_barrel->cdocs, ci);
       if (!strcmp (filename_to_classname (cdoc->filename), classname))
 	break;
     }
-  if (ci == rainbow_class_barrel->cdocs->length)
+  if (ci == bow_barrel_num_classes (rainbow_class_barrel))
     bow_error ("No class named `%s'\n", classname);
 
   /* Get the CDOC for this class, so we can use its NORMALIZER. */
@@ -1208,19 +1293,19 @@ rainbow_print_foilgain (const char *classname)
   int fig_num_wi;
 
   /* Find the `class index' of the class with name CLASSNAME */
-  for (ci = 0; ci < rainbow_class_barrel->cdocs->length; ci++)
+  for (ci = 0; ci < bow_barrel_num_classes (rainbow_class_barrel); ci++)
     {
       cdoc = bow_array_entry_at_index (rainbow_class_barrel->cdocs, ci);
       if (!strcmp (filename_to_classname (cdoc->filename), classname))
 	break;
     }
-  if (ci == rainbow_class_barrel->cdocs->length)
+  if (ci == bow_barrel_num_classes (rainbow_class_barrel))
     bow_error ("No class named `%s'\n", classname);
 
   /* Get the foilgains. */
   fig_per_wi_ci = 
     bow_foilgain_per_wi_ci_new (rainbow_doc_barrel,
-				rainbow_class_barrel->cdocs->length,
+				bow_barrel_num_classes (rainbow_class_barrel),
 				&fig_num_wi);
 
   /* Print the `foilgain' for each word in the class */
@@ -1253,10 +1338,9 @@ main (int argc, char *argv[])
   rainbow_arg_state.vocab_map = NULL;
   rainbow_arg_state.use_lisp_score_truncation = 1;
   rainbow_arg_state.loo_cv = 0;
+  rainbow_arg_state.test_files_filename = NULL;
+  rainbow_arg_state.barrel_printing_format = NULL;
   
-  _register_method_kl ();
-  _register_method_evi ();
-
   /* Parse the command-line arguments. */
   argp_parse (&rainbow_argp, argc, argv, 0, 0, &rainbow_arg_state);
 
@@ -1265,20 +1349,29 @@ main (int argc, char *argv[])
       /* Strip any trailing `/'s from the classnames, so we can find the 
 	 classname later using FILENAME_TO_CLASSNAME. */
       int argi, len;
-      for (argi = rainbow_arg_state.non_option_argi; argi < argc; argi++)
-	{
-	  len = strlen (argv[argi]);
-	  if (argv[argi][len-1] == '/')
-	    argv[argi][len-1] = '\0';
-	}
+      const char **rainbow_classnames;
 
-      /* Initialize the global variable RAINBOW_CLASSNAMES */
-      rainbow_classnames = (const char **)(argv + 
-					   rainbow_arg_state.non_option_argi);
-      /* Index text in the directories. */
-      rainbow_index (argc - rainbow_arg_state.non_option_argi,
-		     rainbow_classnames, 
-		     rainbow_arg_state.output_filename);
+      if (rainbow_arg_state.barrel_printing_format)
+	{
+	  rainbow_index_printed_barrel
+	    (argv[rainbow_arg_state.non_option_argi]);
+	}
+      else
+	{
+	  for (argi = rainbow_arg_state.non_option_argi; argi < argc; argi++)
+	    {
+	      len = strlen (argv[argi]);
+	      if (argv[argi][len-1] == '/')
+		argv[argi][len-1] = '\0';
+	    }
+
+	  rainbow_classnames = 
+	    (const char **)(argv + rainbow_arg_state.non_option_argi);
+	  /* Index text in the directories. */
+	  rainbow_index (argc - rainbow_arg_state.non_option_argi,
+			 rainbow_classnames, 
+			 rainbow_arg_state.output_filename);
+	}
       if (bow_num_words ())
 	rainbow_archive ();
       else
@@ -1314,7 +1407,7 @@ main (int argc, char *argv[])
       /* Make vocabulary size manageable. */
       bow_barrel_keep_top_words_by_infogain
 	(max_vocab_size-1, rainbow_doc_barrel,
-	 rainbow_class_barrel->cdocs->length);
+	 bow_barrel_num_classes (rainbow_class_barrel));
 
       /* Step through each document, setting bit for each word-pair 
 	 co-occurrence. */
@@ -1333,6 +1426,8 @@ main (int argc, char *argv[])
 		}
 	    }
 	}
+      /* Don't free the heap here because bow_model_next_wv() does it
+	 for us. */
       
       /* Count the number of co-occurrences. */
       num_co_occurrences = 0;
@@ -1374,7 +1469,7 @@ main (int argc, char *argv[])
     {
       bow_infogain_per_wi_print
 	(stdout, rainbow_doc_barrel,
-	 rainbow_class_barrel->cdocs->length,
+	 bow_barrel_num_classes (rainbow_class_barrel),
 	 rainbow_arg_state.infogain_words_to_print);
       exit (0);
     }
@@ -1385,18 +1480,12 @@ main (int argc, char *argv[])
       exit (0);
     }
 
-  if (rainbow_arg_state.what_doing == rainbow_barrel_printing)
-    {
-      bow_barrel_printf (rainbow_doc_barrel, stdout, "");
-      exit (0);
-    }
-
   if (rainbow_arg_state.what_doing == rainbow_infogain_pair_printing)
     {
       int s;
       bow_infogain_per_wi_new_using_pairs
 	(rainbow_doc_barrel,
-	 rainbow_class_barrel->cdocs->length,
+	 bow_barrel_num_classes (rainbow_class_barrel),
 	 &s);
       exit (0);
     }
@@ -1405,6 +1494,18 @@ main (int argc, char *argv[])
     {
       bow_barrel_print_word_count (rainbow_class_barrel,
 				   rainbow_arg_state.printing_class);
+      exit (0);
+    }
+
+  if (rainbow_arg_state.what_doing == rainbow_doc_name_printing)
+    {
+      int di;
+      bow_cdoc *cdoc;
+      for (di = 0; di < rainbow_doc_barrel->cdocs->length; di++)
+	{
+	  cdoc = bow_array_entry_at_index (rainbow_doc_barrel->cdocs, di);
+	  printf ("%s\n", cdoc->filename);
+	}
       exit (0);
     }
 
@@ -1426,7 +1527,7 @@ main (int argc, char *argv[])
       /* Change barrel by removing words with small info gain. */
       bow_barrel_keep_top_words_by_infogain
 	(bow_prune_vocab_by_infogain_n, rainbow_doc_barrel, 
-	 rainbow_class_barrel->cdocs->length);
+	 bow_barrel_num_classes (rainbow_class_barrel));
     }
 
   /* Re-build the rainbow_class_barrel, if necessary */
@@ -1435,14 +1536,27 @@ main (int argc, char *argv[])
       || bow_prune_vocab_by_infogain_n
       || 1)
     {
-      int num_classes = rainbow_class_barrel->cdocs->length;
-      bow_barrel_free (rainbow_class_barrel);
+      bow_free_barrel (rainbow_class_barrel);
       rainbow_class_barrel = 
-	bow_barrel_new_vpc_with_weights (rainbow_doc_barrel, 
-					 rainbow_classnames, num_classes);
+	bow_barrel_new_vpc_with_weights (rainbow_doc_barrel);
+    }
+  
+  /* Do things that require the vocabulary or class/word weights to
+     have been updated. */
+  
+  if (rainbow_arg_state.what_doing == rainbow_barrel_printing)
+    {
+      bow_barrel_printf (rainbow_doc_barrel, stdout,
+			 rainbow_arg_state.barrel_printing_format);
+      exit (0);
     }
 
-  /* Do things that require the class/word weights to have been updated. */
+  if (rainbow_arg_state.what_doing == rainbow_printing_word_probabilities)
+    {
+      bow_naivebayes_print_word_probabilities_for_class
+	(rainbow_class_barrel, rainbow_arg_state.printing_class);
+      exit (0);
+    }
 
   if (rainbow_arg_state.what_doing == rainbow_file_testing)
     {

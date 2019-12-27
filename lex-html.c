@@ -40,6 +40,7 @@ bow_lexer_html_get_raw_word (bow_lexer_simple *self, bow_lex *lex,
 	  if (html_bracket_nestings)
 	    bow_verbosify (bow_verbose,
 			   "Found unterminated `<' in HTML\n");
+	  lex->document_position--;
 	  return 0;
 	}
       if (byte == '<')

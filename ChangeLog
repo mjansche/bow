@@ -1,4 +1,542 @@
+Sun Dec 21 20:36:08 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (rainbow_options): Document --print-barrel's FORMAT
+ 	better.
+
+	* Makefile.in (DIST_FILES): Added $(METHOD_C_FILES).
+
+	* rainbow.c (rainbow_options): New command-line option
+ 	"index-printed-barrel".
+	(rainbow_parse_opt): Handle it.  Add a term to the conditions under
+	which we complain about "Need data from more than one class"
+ 	because when doing --index-printed-barrel the filename is in the
+ 	place of a classname, and there is supposed to be only one.
+	(rainbow_index_printed_barrel): New function.
+	(main): Handle two different ways of what_doing == rainbow_indexing.
+	* barrel.c (getline): New function.
+	(bow_barrel_new_from_printed_barrel_file): New function.
+	* bow/libbow.h: Declare new function.
+
+Wed Dec 17 14:47:40 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* lex-simple.c (bow_not_isspace): New function.
+	(_bow_white_lexer): Instead of insisting on starting with a alphabetic
+	character, downcasing and stoplisting, etc, instead just grab
+ 	tokens delimited by whitespace, making no changes to the contents.
+	* bow/libbow.h: Change comment on BOW_WHITE_LEXER.
+	(bow_default_lexer_white): New declaration.
+	* opts.c (bow_options): New command-line option "lex-white".
+	(parse_bow_opt): Implement it.
+	* deflexer.c: Add a lexer structure for BOW_DEFAULT_LEXER_WHITE.
+
+	* int4str.c (_str2id): Re-written to make sure it never returns 0,
+ 	which would cause an infinite loop in _str_hash_add().
+
+Tue Dec 16 12:24:49 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* kl-div.c: New file.
+	* Makefile.in (kl-div): New target.
+	(OTHER_C_FILES): New variable, includes kl-div.
+	(DIST_FILES): Add it.
+	(libbow.a): Include the $(METHOD_O_FILES) in there too, so that simple
+	executables like kl-div can properly get the default_lexer.
+	(all): Added kl-div.
+	(default): Target now just depends on `all'.
+
+Mon Dec 15 14:35:16 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (rainbow_unarchive): Use filename_to_classname() when
+ 	initializing CLASSNAMES.
+
+	* wicoo.c: New file.  Builds a structure for calculating 
+	word co-occurrence statistics.
+	* Makefile.in (LIBBOW_C_FILES): Added wicoo.c.
+
+	* arrow.c: Include headers for socket server implementation.
+	(arrow_options): New command-line option "query-server" and "print-coo"
+	(struct arrow_arg_state): New element SERVER_PORT_NUM.
+	(arrow_parse_opt): Implement new options.
+	(arrow_query): Take new arguments for in and out FILE*'s.  Print
+	filenames instead of file contents.
+	(arrow_socket_init): New function.
+	(arrow_serve): New function.
+	(arrow_coo): New function.
+	(main): Call new functions.
+
+	* rainbow-h.c (rainbowh_options): New command-line option
+ 	"print-word-probabilities".
+	(rainbowh_parse_opt): For 't', be smarter about warning when this badly
+	interacts with --use-vocab-in-file.  Likewise for
+ 	`--use-vocab-in-file'.  Implement new option.
+	(hier_barrel_class_index_of_classname): New function.
+	(hier_barrel_prob_wi_uniform): New function.
+	(hier_barrel_prob_wi_in_ci_local): Use it.
+	(hier_barrel_prob_wi_in_ci_shrink): Likewise.
+	(hier_barrel_prob_wi_local): Likewise.
+	(hier_barrel_prob_wi_shrink): Likewise.
+	(hier_barrel_print_word_probabilities_for_class): New function.
+	(_hier_barrel_local_score): Avoid counting out-of-vocabulary words
+	when calculating NUM_WORDS_IN_QUERY_WV.
+	(hier_barrel_set_lambdas): New function
+	(hier_barrel_test): Call it.
+	(main): No longer avoid handling BOW_PRUNE_VOCAB_BY_OCCUR_COUNT_N.
+	Handle new options.
+
+	* kl.c (bow_kl_score): When setting QUERY_WORD_COUNT be sure to
+ 	only count the words that are part of the barrel's vocabulary.
+  	Use QUERY_WORD_COUNT properly for leave-one-out evaluation instead
+ 	of only the number of times the word in question occurs.
+
+	* naivebayes.c (bow_naivebayes_pr_wi_ci): New function.
+	(bow_naivebayes_print_word_probabilities_for_class): New function.
+	(bow_naivebayes_score): Get the total number of words in the query for
+	doing proper leave-one-out evaluation.  Use
+ 	bow_naivebayes_pr_wi_ci() instead of calculating it locally.
+
+	* dv.c (bow_dv_add_di_count_weight): Verbosify about count
+ 	overflow at level BOW_PROGRESS instead of BOW_VERBOSE.
+
+	* split.c (BASENAME_ONLY): New macro.
+	(bow_basename): New function.
+	(bow_test_set_files): Use it for comparing basename of file only.
+	Useful for comparisons of hier vs non-hier file lists.
+
+	* wi2dvf.c (bow_wi2dvf_remove_wi): Call bow_error() because this
+ 	function is currently broken.
+	(bow_wi2dvf_hide_words_by_doc_count): New function.
+	(bow_wi2dvf_dv): Use ABS() when examining SEEK_START, to interact
+	properly with word hiding when words haven't yet been read in.
+
+	* vpc.c (bow_barrel_new_vpc): Assert DOC_BARREL->CLASSNAMES.
+
+	* rainbow.c (*_KEY): Replace #define's with enum.
+	(rainbow_options): New option "print-word-probabilities".
+	"print-barrel" now takes an optional argument.
+	(struct rainbow_arg_state): New element BARREL_PRINTING_FORMAT.
+	(rainbow_parse_opt): Handle new options.
+	(rainbow_unarchive): If RAINBOW_DOC_BARREL->CLASSNAMES is NULL, create
+	it and fill it.  This is necessary when reading old barrels that
+ 	didn't archive CLASSNAMES.
+	(rainbow_socket_init): Reformat.
+	(rainbow_serve): Likewise.
+	(rainbow_test_files): In nested function test_file(), make sure the
+	file passes the bow_fp_is_text() test.  Otherwise we the counts
+ 	are off when doing leave-one-out-evaluation.
+	(main): Move the barrel printing after the vocabulary reduction, and
+	call with new argument.
+
+	* bow/libbow.h: Declare new function.
+	(assert): New commented out macro that is useful when the builtin
+	assert() doesn't allow the debugger to examine the error-full
+ 	frame.
+
+	* lex-html.c (bow_lexer_html_get_raw_word): Decrement
+ 	LEX->DOCUMENT_POSITION before returning when HTML `<' was
+ 	unterminated.  Otherwise we get errors when we catch the inifite
+ 	loop.
+
+	* barrel.c (bow_barrel_prune_words_not_in_map): Hide words instead
+ 	of removing them.
+	(bow_barrel_keep_top_words_by_infogain): Set BOW_WORD2INT_DO_NOT_ADD
+	so that lexing doesn't add more words to the vocabulary.  This
+ 	fixes a bug in which new words in queries were causing the total
+ 	count of the number of words in a query document to be too high
+ 	during leave-one-out evaluation.
+	(bow_barrel_printf_old1): Renamed from bow_barrel_printf.
+	(bow_barrel_printf): New function that can print in different
+	formats.
+
+Tue Nov 25 11:10:12 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (hier_barrel): New element LAMBDA_G1PARENT.
+	(hier_barrel_new): Initialize it to zero.
+	(hier_barrel_add_stats): Initialize CDOC->CLASS_PROBS to NULL.
+	(hier_barrel_add_document): Likewise.
+	(hier_barrel_set_lambda_from_delta): Initialize LAMBDA_G1PARENT to 0.
+	(HIER_BARREL_PARENT): New macro.
+	(HIER_BARREL_G1PARENT): New macro.
+	(hier_barrel_prob_wi_in_ci_shrink): Use LAMBDA_G1PARENT, get only
+	local probs from each of them, and mix them.
+	(hier_barrel_prob_wi_shrink): Likewise.
+	(hier_barrel_calc_lambda_one_iteration): Use LAMBDA_G1PARENT.  Get
+	only local probs from each of them, and mix them.
+	(rainbowh_options): New option "print-barrel".
+	(rainbowh_parse_opt): Handle it.
+	(hier_barrel_print_barrel): New function.
+	(main) Call it.
+
+Mon Nov 24 16:36:55 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* lex-simple.c (bow_lexer_simple_get_raw_word): Decrement
+ 	LEX->DOCUMENT_POSITION before assert().  Otherwise files that end
+	without a newline seem to cause crashes.
+
+	* rainbow.c (BASENAME): Removed macro.
+	(rainbow_index): Use filename_to_classname() instead of BASENAME.
+
+Mon Nov 24 12:57:52 1997  Kamal Nigam  <knigam@cs.cmu.edu>
+
+	* em.c, bow/em.h: New files!
+	* Makefile.in (LIBBOW_H_FILES): Added em.h.
+	(METHOD_C_FILES): Added em.c.
+	* vpc.c (bow_barrel_new_vpc): Initialize CLASS_PROBS to NULL.
+	* split.c (bow_test_split2): New function.
+	(bow_ignore_next_wv): New function.
+	(bow_ignored_model_next_wv): New function.
+	* rainbow.c (rainbow_class_barrel): Initialize to NULL.
+	* bow/libbow.h: #include <bow/em.h>.  Declare new functions.
+	(bow_cdoc): Add element CLASS_PROBS.
+	* barrel.c (_bow_barrel_cdoc_free): Free CLASS_PROBS if non-NULL.
+	(bow_barrel_add_from_text_dir): Initialize CLASS_PROBS to NULL.
+	(_bow_barrel_cdoc_read): Likewise.
+
+Mon Nov 24 08:45:29 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (*_KEY): Changed from #define's to enum.
+	(struct rainbowh_arg_state): New member shinkage_method.
+	(rainbowh_options): New option "shrinkage-method".
+	(rainbowh_parse_opt): Implement it.
+	(hier_barrel): New elements LAMBDA and LAMBDA_UNIFORM.
+	(CI_IN_PARENT_ROOT): Macro deleted.
+	(hier_barrel_new): Initialize LAMBDA and LAMBDA_UNIFORM.
+	(hier_barrel_prune_words_not_in_map_and_set_vpc): Initialize
+	DOC_BARREL->CLASSNAMES.
+	(hier_barrel_set_local_class_model): Likewise.
+	(hier_dir_is_leaf): New code, but commented out with AUTO_LEAF_DETECT.
+	(_hier_barrel_new_from_text_dir_recurse): Rather than exiting with
+	error if the directory was found to be empty of subdirectories,
+ 	instead call _hier_barrel_new_from_text_dir_leaf().  This means
+ 	that you don't have to create "rainbow-hier-leaf" files in the
+ 	directories at the leaf of the data directory.
+	(hier_barrel_prob_wi_in_ci_wittenbell): Change LOO_CLASS from int to
+	char*.
+	(hier_barrel_prob_wi_in_ci): Likewise.
+	(hier_barrel_score): Likewise.
+	(hier_barrel_set_lambda_from_delta): New function.
+	(hier_barrel_set_children_lambda_from_delta): New function.
+	(hier_barrel_calc_delta): Once DELTA is determined, set LAMBDA's to
+	match.
+	(hier_barrel_calc_delta_recurse): Set LAMBDA of HBARREL root here.
+	(last_pr_w_c): Global variable removed.
+	(old_hier_barrel_prob_wi_in_ci_shrink): Renamed from
+	hier_barrel_prob_wi_in_ci_shrink().
+	(LOO_CLASS_IN_PARENT): Macro deleted.
+	(LOO_CLASS_MATCH): New macro.
+	(hier_barrel_prob_wi_in_ci_local): New function.
+	(hier_barrel_prob_wi_in_ci_shrink): New function.
+	(hier_barrel_prob_wi_local): New function.
+	(hier_barrel_prob_wi_shrink): New function.
+	(hier_barrel_calc_lambda_one_iteration): New function.
+	(hier_barrel_calc_lambda): New function.
+	(hier_barrel_calc_lambdas): New function.
+	(check_prob_wi_in_ci): Don't immediately return; actually do the check.
+	(_hier_barrel_local_score): Some minor clean-ups, and make it do KL
+	instead of log-naivebayes, by dividing by document length.
+	(_hier_barrel_set_node_scores): Change condition for doing local
+	scoring so that if HIER_LEAF, we don't bother evaluating interior
+ 	nodes of the tree.  Remove some OVERRIDE_LOG_PROBS-commented-out
+ 	code.  Only call self recursively on HBARREL's with children.
+	(hier_barrel_print_loo_accuracy): Don't evaluate from root of tree.
+	Perhaps this should be changed back?
+	(hier_barrel_print_loo_accuracy_vary_delta): Start at delta/1024
+	instead of delta/1000.  Save the best delta, and set lambda from
+ 	it.
+	(hier_barrel_test): Deal with NULL TEST_FILES_FILENAME.  Attend to
+	SHRINKAGE_METHOD and do whichever was indicated on command-line.
+	(rainbowh_archive): Write format version to file.
+	(rainbowh_unarchive): Read it.
+	(main): Initialize shrinkage method to em.  Don't
+	check_prob_wi_in_ci() here because the LAMBDA's aren't ready.
+
+Sun Nov 23 18:47:50 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (BASENAME): New macro.
+	(rainbow_index): Use it to initialize BARREL->CLASSNAMES with correct
+	classnames!
+
+	* rainbow.c (rainbow_test): Don't free the heap.  It was already
+ 	done automatically.
+	(main): Likewise.
+
+	* heap.c (bow_dv_heap_free): Add comment.
+
+	* bow/libbow.h (ABS) New macro.
+
+Mon Nov 17 10:09:20 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* bow/libbow.h: Include <bow/knn.h>.
+	(bow_barrel_add_classname): New macro.
+
+	* Makefile.in (LIBBOW_C_FILES): Remove deflexer.c.
+	(METHOD_C_FILES): Add deflexer.c, because it also has a constructor
+	function that may not get linked in otherwise.
+
+	* Makefile.local (rainbow-h): Add METHOD_O_FILES.
+
+	* rainbow-h.c (hier_barrel_prune_words_not_in_map_and_set_vpc):
+ 	Free and reinitialize HBARREL->DOC_BARREL->CLASSNAMES, instead of
+ 	building a local array to be passed to the VPC function.
+	(hier_barrel_set_local_class_model): Likewise.
+	(hier_barrel_select_test): Function deleted.
+	(hier_barrel_free): Don't free the hash; it's been deleted.
+	(hier_barrel_set_vpc_with_weights): Comment out unused function.
+
+	* rainbow-h.c: Remove old functions by Andrew Ng that are no
+	longer used.
+	(fix_up_node): Function deleted.
+	(classify_from_rankings_helper: Likewise.
+	(classify_from_rankings): Likewise.
+	(hier_recursive_reping_document): Likewise.
+	(new_bow_di_to_wv): Likewise.
+	(hier_recursive_set_rankings): Likewise.
+	(classify_single_doc): Likewise.
+	(set_true_class): Likewise.
+	(hier_recursive_reping_all_documents): Likewise.
+	(new_hash_ele_t): Likewise.
+	(free_hash_ele_t): Likewise.
+	(hashit): Likewise.
+	(create_hash): Likewise.
+	(find_di_from_fn): Likewise.
+	(find_child_di): Likewise.
+	(find_di): Likewise.
+	(free_hash): Likewise.
+	(hier_barrel_single_pass_set_vpc_with_weights): Likewise.
+	(classify_document): Likewise.
+	(is_descendant_of): Likewise.
+	(set_niece_pointer): Likewise.
+	(fix_up_is_niece_field): Likewise.
+	(fix_up_niece_pointers): Likewise.
+	(init_ignore_structure): Likewise.
+	(set_all_model): Likewise.
+
+	* rainbow.c (rainbow_classnames): Deleted global variable.
+	(rainbow_unarchive): Remove code for initializing RAINBOW_CLASSNAMES.
+	(main): New local variable RAINBOW_CLASSNAMES.
+
+	* vpc.c (bow_barrel_new_vpc): Drop CLASSNAMES and NUM_CLASSES
+ 	arguments.  Get that information from DOC_BARREL->CLASSNAMES
+ 	instead.
+	(bow_barrel_new_vpc_merge_then_weight): Drop last two args.
+	(bow_barrel_new_vpc_weight_then_merge): Likewise.
+	* rainbow.c (rainbow_index): Drop last two arguments to vpc
+ 	function.
+	(rainbow_query): Likewise.
+	(rainbow_lisp_setup): Likewise.
+	(rainbow_test): Likewise.
+	(rainbow_test_files): Likewise.
+	(main): Likewise.
+	* rainbow-h.c (hier_barrel_set_vpc_with_weights): Drop last two
+ 	arguments to vpc function.
+	(hier_barrel_set_local_class_model): Likewise.
+	(hier_barrel_set_vpc_with_weights): Likewise.
+	* knn.c (bow_knn_classification_barrel): Drop last two arguments.
+	* bow/libbow.h (bow_method): VPC_WITH_WEIGHTS no longer takes
+ 	CLASSNAMES and NUM_CLASSES arguments.
+	(bow_barrel_new_vpc_with_weights): Likewise.
+	(bow_barrel_new_vpc): Likewise.
+	(bow_barrel_new_vpc_merge_then_weight): Likewise.
+	(bow_barrel_new_vpc_weight_then_merge): Likewise.
+
+	* Makefile.in (clean): Remove PERL_RUNNABLE_FILES.
+
+	The following changes mostly added with Sean Slattery.
+	Add KNN method.  Add CLASSNAMES element to barrel structure, and
+	use it to get classnames and the number of classes, rather than
+	using the BARREL->CDOCS->LENGTH from the class barrel.
+
+	* knn.c, bow/knn.h: New files that implement k-NN classification
+	based on TFIDF weights and cosine-similarity.
+	
+	* bow/libbow.h (bow_barrel): Add new element CLASSNAMES.  It's a
+ 	str4int map between classnames and their indices.
+	(bow_method): Add new element FREE_BARREL.  A function to call to free
+	the barrel.
+	(bow_free_barrel): New macro.
+	(bow_barrel_num_classes): New macro.
+	(bow_barrel_classname_at_index): New macro.
+	(bow_barrel_add_from_text_dir): Declare type-change in last argument.
+	(BOW_DEFAULT_FILE_FORMAT_VERSION): Bumped from 5 to 6.  Barrel's now
+	write out their new CLASSNAMES map.
+	* kl.c (bow_method_kl): Add new element bow_barrel_free().
+
+	* Makefile.in (LIBBOW_C_FILES): Remove the .c files that implement
+ 	methods.
+	(METHOD_C_FILES): Put them in this new variable.
+	(METHOD_O_FILES): New variable.
+	($(DEMO_EXECUTABLES)): Depend on METHOD_O_FILES and explicitly link
+	them in.  Previously we just depending on linking them from the
+ 	library, but the executables didn't require any symbols from the
+ 	method files, so they would get linked in unless we added a kludgy
+ 	function call that required them.
+
+	* barrel.c (bow_barrel_new): Initialize CLASSNAMES to NULL.
+	(bow_barrel_add_document): Assert that CLASSNAMES is NULL, as a check
+	to make sure that bow_barrel_add_from_text_dir wasn't used on the
+ 	barrel's in rainbow-h.
+	(bow_barrel_add_from_text_dir): Change type of class argument: instead
+	of specifying which class by integer index, specify by char*
+ 	classname.  Initialize the CLASSNAMES map if it hasn't been
+ 	already.
+	(bow_barrel_new_from_data_fp): Read CLASSNAMES.
+	(bow_barrel_write): Write CLASSNAMES.
+	(bow_barrel_free): Free CLASSNAMES.
+
+	* vpc.c (bow_barrel_new_vpc): Create and initialize CLASSNAMES new
+ 	element in VPC_BARREL.  Use BARREL_NUM_CLASSES to determine size
+ 	of VPC_BARREL, not the number of documents in the DOC_BARREL!
+
+	* wi2dvf.c (bow_wi2dvf_new_from_data_fp): Add comment about this
+ 	not reading all the data.
+
+	* prind.c (bow_method_prind): Add new element bow_barrel_free().
+	* tfidf.c (bow_method_tfidf): Likewise.
+	* naivebayes.c (bow_method_naivebayes): Likewise.
+
+	* rainbow.c: Use bow_free_barrel() instead of bow_barrel_free().
+  	Use bow_barrel_num_classes() instead of looking at the length of
+ 	cdocs.
+	(rainbow_options): Say what the default is for "test-percentage".
+	(rainbow_index): Use new last arg to bow_barrel_add_from_text_dir().
+	(rainbow_test): Use bow_barrel_classname_at_index() instead of
+	filename_to_classname().
+	(main): Don't manually register methods kl and evi.  The proper .o's
+	now get explicitly linked in by the Makefile.
+
+	* robin.c (robin_index): Use new last argument for
+ 	bow_barrel_add_from_text_dir().
+
+	* arrow.c (arrow_index): Use new last arg to
+ 	bow_barrel_add_from_text_dir().
+
+	* rainbow-h.c: Use the macro bow_free_barrel() instead of
+ 	bow_barrel_free().
+	(hier_barrel_print_loo_accuracy): New function.
+	(hier_barrel_print_loo_accuracy_vary_delta): New function.
+	(hier_barrel_print_loo_accuracy_vary_delta_recurse): New function.
+	(hier_barrel_test): As a temporary test, instead of printing test
+	results, just print varying delta LOO results and return.
+	(rainbowh_hbarrel): Global variable moved up.
+	(hier_barrel_new_from_text_dir): Use new last argument to
+	bow_barrel_add_from_text_dir().
+	(hier_barrel_prob_wi_in_ci_wittenbell): Add new arguments for LOO.
+	(hier_barrel_prob_wi_in_ci_shrink): Likewise.  Use new arguments to
+	implement LOO classification.
+	(hier_barrel_prob_wi_in_ci): Add new arguments for LOO.
+	(check_prob_wi_in_ci): Call above function with new arguments for LOO.
+	(_hier_barrel_local_score): Likewise.
+	(PRINT_TREE_SCORES):  Change macro value from 1 to 0.
+	(_hier_barrel_set_node_scores): Add new argument for LOO.  Call
+	bow_barrel_score() with LOO argument.
+	(hier_barrel_print_scores): Call above function with new args for LOO.
+	(hier_barrel_score): Likewise, and add new args for LOO.
+	(hier_barrel_test): Call hier_barrel_score() with LOO argument.
+
+Wed Nov  5 13:47:44 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (rainbowh_options): Rename "test-files" to
+ 	"testing-files" to avoid naming conflict.
+	* rainbow.c (rainbow_options): Likewise.
+
+Thu Oct 30 11:04:54 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (hier_barrel_test): Write the infogain-chosen
+ 	vocabulary in the local directory, named something like
+ 	"infogain2-hV00200" according to the the random seed and the
+ 	vocabulary size.
+
+	* rainbow-h.c (hier_barrel_prob_wi_in_ci_shrink): Change the #elif
+ 	to do the "Witten-Bell"-like weighting between parent and child
+ 	instead of the "Method of Moments"-style weighting.
+	(hier_barrel_test): Put two newlines at the beginning of the file so
+	that even if we are lexing with --skip-headers, we'll still get
+ 	the words in the file.
+
+Tue Oct 28 13:50:35 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* arrow.c (arrow_query): Complain with message if the query vector
+ 	is emtpy.
+
+	* barrel.c (bow_barrel_add_from_text_dir): Fill in the WORD_COUNT
+ 	entry in the created CDOC's.
+	* wi2dvf.c (bow_wi2dvf_add_di_text_fp): Make it return the number
+ 	of words in the document, instead of void.
+	* bow/libbow.h (bow_wi2dvf_add_di_text_fp): Now returns int
+ 	instead of void.
+
+Thu Oct 16 09:58:14 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	Following changes actually made in September:
+
+	* rainbow-h.c (USE_VOCAB_SIZE_KEY): New macro.
+	(TEST_FILES_KEY): Likewise.
+	(rainbowh_options): New options "use-vocab-size" and "test-files".
+	(struct rainbowh_arg_state): New members VOCAB_SIZE and
+	TEST_FILES_FILENAME.
+	(rainbowh_parse_opt): Handle new options.
+	(hier_barrel): New member DELTA.
+	(hier_barrel_prune_words_not_in_map_and_set_vpc): New function.
+	(hier_barrel_set_local_class_model): Uncomment code to free the class
+	barrel before re-creating it.
+	(rainbowh_total_unique_words): New global variable.
+	(hier_barrel_prob_wi_in_ci_wittenbell): New function.
+	(hier_barrel_calc_delta): New function.
+	(hier_barrel_calc_delta_recurse): New function.
+	(hier_barrel_prob_wi_in_ci_shrink): New function taken from
+	hier_barrel_prob_wi_in_ci().  Implement Wasserman's "Method of
+ 	Moments".
+	(hier_barrel_prob_wi_in_ci): New function that calls one of above two.
+	(_hier_barrel_local_score): Find the root and total number of words.
+	Initialize SCORES[] to log of prior class prob.  Handle case where
+ 	there is not training data for a class.  If DV is NULL, deal with
+ 	skipping the word sometimes, but not always, depending on the
+ 	right case.  When incrementing score for each word, deal with
+ 	classes that have no training data.  Remove code for
+ 	!OVERRIDE_LOG_PROBS.  When putting scores into return array, deal
+ 	with classes that have no training data.
+	(_hier_barrel_set_node_scores): Set the local score or not depending
+	on HIER_LEAF mode.
+	(hier_barrel_print_infogain): Function moved up in file.  New first
+	argument FILE*.
+	(hier_barrel_test): Deal with TEST_FILES_FILENAME and VOCAB_MAP, etc.
+	(main): Initialize VOCAB_SIZE to zero.  Register the KL method.  Call
+	hier_barrel_print_infogain() with new argument.  Remove
+ 	"compile-command" local emacs variable.
+
+	* vpc.c (bow_barrel_new_vpc): Deal with situations where there is
+ 	no training data for a class.  Instead of asserting MAX_CI > 0,
+ 	print a warning instead.  Loop over NUM_CLASSES instead of relying
+ 	on MAX_CI.  Allow the class prior prob to be equal to 0.0 or 1.0.
+
+	* split.c (bow_test_set_files): New function.
+
+	* opts.c (bow_options): Rearrange some options.
+
+	* kl.c (bow_kl_score): When setting class prior prob, handle case
+ 	in which there was no training data for this class.  Also handle
+ 	this case when adding contribution of a WI for each class, and
+ 	when doing WITTEN_BELL, and when normalizing score.
+
+	* int4str.c (bow_int4str_new_from_string_file): New function.
+
+	* bow/libbow.h: Declare new functions.
+
+	* Makefile.local (rainbow-h): Use $(CC) instead of gcc.
+
+	* rainbow.c (TEST_FILES_KEY): New macro.
+	(PRINT_DOC_NAMES_KEY): Likewise.
+	(rainbow_options): New options "test-files" and "print-doc-names".
+	(rainbow_parse_opt): Handle them.
+	(filename_to_classname): Comment out early return of filename.  That
+	is, revert to old behavior.
+	(rainbow_test): If TEST_FILES_FILENAME is non-NULL use it instead of
+	randomly setting which documents are for training and which are
+ 	for testing.
+	(main): Initialize TEST_FILES_FILENAME to NULL.  Handle
+	RAINBOW_DOC_NAME_PRINTING.
+
 Thu Sep 25 17:35:01 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	This version given to Rob Shapire and others at AT&T Research.
 
 	* Makefile.in (LIBBOW_H_FILES): Added bow/kl.h.
 

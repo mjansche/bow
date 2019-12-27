@@ -64,8 +64,10 @@ infodir = $(prefix)/info
 include $(srcdir)/Version
 
 LIBBOW_H_FILES = \
+bow/em.h \
 bow/libbow.h \
 bow/kl.h \
+bow/knn.h \
 bow/naivebayes.h \
 bow/prind.h \
 bow/tfidf.h
@@ -75,7 +77,6 @@ array.c \
 barrel.c \
 bitvec.c \
 bmalloc.c \
-deflexer.c \
 dv.c \
 docnames.c \
 email.c \
@@ -89,18 +90,15 @@ int4str.c \
 int4word.c \
 io.c \
 istext.c \
-kl.c \
 lex-email.c \
 lex-gram.c \
 lex-html.c \
 lex-indirect.c \
 lex-simple.c \
 methods.c \
-naivebayes.c \
 normalize.c \
 opts.c \
 primes.c \
-prind.c \
 sarray.c \
 scale.c \
 scan.c \
@@ -108,8 +106,8 @@ split.c \
 stem.c \
 stoplist.c \
 stopwords.c \
-tfidf.c \
 vpc.c \
+wicoo.c \
 wi2dvf.c \
 wv.c
 
@@ -117,11 +115,26 @@ $(LIBBOW_C_FILES): $(LIBBOW_H_FILES)
 
 LIBBOW_O_FILES = $(LIBBOW_C_FILES:.c=.o)
 
+METHOD_C_FILES = \
+em.c \
+deflexer.c \
+kl.c \
+knn.c \
+naivebayes.c \
+prind.c \
+tfidf.c 
+
+METHOD_O_FILES = $(METHOD_C_FILES:.c=.o)
+
+
 # Other name ideas: longbow, archer, shoelace,...
 DEMO_C_FILES = \
 rainbow.c \
 arrow.c \
 crossbow.c
+
+OTHER_C_FILES = \
+kl-div.c
 
 DEMO_O_FILES = $(DEMO_C_FILES:.c=.o)
 DEMO_EXECUTABLES = $(DEMO_C_FILES:.c=)
@@ -149,10 +162,12 @@ version.texi
 DIST_FILES = \
 $(LIBBOW_C_FILES) \
 $(LIBBOW_H_FILES) \
+$(METHOD_C_FILES) \
 $(DEMO_C_FILES) \
 $(PERL_FILES) \
 $(DOC_TEXI_FILES) \
 $(OTHER_TEXI_FILES) \
+$(OTHER_C_FILES) \
 ChangeLog \
 HACKING \
 INSTALL \
@@ -174,13 +189,13 @@ ALL_CFLAGS = $(CFLAGS)
 
 # Rules
 
-default: $(DEMO_EXECUTABLES) $(PERL_RUNNABLE_FILES)
+default: all
 
-all: libbow.a $(DEMO_EXECUTABLES) $(PERL_RUNNABLE_FILES)
+all: libbow.a $(DEMO_EXECUTABLES) $(PERL_RUNNABLE_FILES) kl-div
 
 # Compiling code
 
-libbow.a: $(LIBBOW_O_FILES)
+libbow.a: $(LIBBOW_O_FILES) $(METHOD_O_FILES)
 	$(AR) rc $@ $^
 	$(RANLIB) $@
 
@@ -189,8 +204,11 @@ argp/libargp.a:
 
 ALL_LIBS = $(LIBS) -L. -lbow -L./argp -largp -lm
 
-$(DEMO_EXECUTABLES): %: libbow.a argp/libargp.a %.o
-	$(CC) $(CFLAGS) $@.o -o $@ $(LDFLAGS) $(ALL_LIBS)
+$(DEMO_EXECUTABLES): %: libbow.a argp/libargp.a %.o $(METHOD_O_FILES)
+	$(CC) $(CFLAGS) $@.o -o $@ $(METHOD_O_FILES) $(LDFLAGS) $(ALL_LIBS)
+
+kl-div: libbow.a kl-div.o
+	$(CC) $(CFLAGS) kl-div.o -o $@ $(LDFLAGS) $(ALL_LIBS)
 
 # A special executable for loading into Lisp (for Kamal)
 rainbow-lisp.o: rainbow.c
@@ -273,6 +291,7 @@ mostlyclean:
 	cd argp ; $(MAKE) mostlyclean
 clean: mostlyclean
 	rm -f *.o libbow.a $(DEMO_EXECUTABLES) *.info *.dvi
+	rm -f $(PERL_RUNNABLE_FILES)
 	cd argp ; $(MAKE) clean
 maintainer-clean: clean
 	rm -f $(PERL_RUNNABLE_FILES) README INSTALL

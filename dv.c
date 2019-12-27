@@ -146,7 +146,7 @@ bow_dv_add_di_count_weight (bow_dv **dv, int di, int count, float weight)
       static int already_warned = 0;
       if (!already_warned)
 	{
-	  bow_verbosify (bow_verbose,
+	  bow_verbosify (bow_progress,
 			 "bow_dv->entry[].count overflowed int\n");
 	  already_warned = 1;
 	}

@@ -22,6 +22,19 @@
 #include <bow/libbow.h>
 #include <argp.h>
 #include <errno.h>		/* needed on DEC Alpha's */
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <signal.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+static int arrow_sockfd;
 
 /* The version number of this program. */
 #define ARROW_MAJOR_VERSION 0
@@ -39,7 +52,12 @@ static char arrow_argp_doc[] =
 
 static char arrow_argp_args_doc[] = "[ARG...]";
 
-#define PRINT_IDF_KEY 3000
+enum {
+  PRINT_IDF_KEY = 3000,
+  QUERY_SERVER_KEY,
+  COO_KEY
+};
+
 static struct argp_option arrow_options[] =
 {
   {0, 0, 0, 0,
@@ -52,6 +70,8 @@ static struct argp_option arrow_options[] =
    "For doing document retreival using the data structures built with -i:", 2},
   {"query", 'q', "FILE", OPTION_ARG_OPTIONAL, 
    "tokenize input from stdin [or FILE], then print document most like it"},
+  {"query-server", QUERY_SERVER_KEY, "PORTNUM", 0,
+   "Run arrow in socket server mode."},
   {"num-hits-to-show", 'n', "N", 0,
    "Show the N documents that are most similar to the query text "
    "(default N=1)"},
@@ -62,6 +82,8 @@ static struct argp_option arrow_options[] =
    "Diagnostics", 3},
   {"print-idf", PRINT_IDF_KEY, 0, 0,
    "Print, in unsorted order the IDF of all words in the model's vocabulary"},
+  {"print-coo", COO_KEY, 0, 0,
+   "Print word co-occurrence statistics."},
 
   { 0 }
 };
@@ -73,7 +95,9 @@ struct arrow_arg_state
     arrow_indexing, 
     arrow_querying,
     arrow_comparing,
-    arrow_printing_idf
+    arrow_printing_idf,
+    arrow_query_serving,
+    arrow_printing_coo
   } what_doing;
   int non_option_argi;
   /* Where to find query text, or if NULL get query text from stdin */
@@ -81,6 +105,7 @@ struct arrow_arg_state
   const char *compare_filename;
   /* number of closest-matching docs to print */
   int num_hits_to_show;
+  const char *server_port_num;
 } arrow_arg_state;
 
 static error_t
@@ -104,6 +129,14 @@ arrow_parse_opt (int key, char *arg, struct argp_state *state)
       break;
     case PRINT_IDF_KEY:
       arrow_arg_state.what_doing = arrow_printing_idf;
+    case QUERY_SERVER_KEY:
+      arrow_arg_state.what_doing = arrow_query_serving;
+      arrow_arg_state.server_port_num = arg;
+      bow_default_lexer->document_end_pattern = "\n.\r\n";
+      break;
+    case COO_KEY:
+      arrow_arg_state.what_doing = arrow_printing_coo;
+      break;
 
     case ARGP_KEY_ARG:
       /* Now we consume all the rest of the arguments.  STATE->next is the
@@ -222,7 +255,7 @@ arrow_index (int argc, char *argv[])
 
   arrow_barrel = bow_barrel_new (0, 0, sizeof (bow_cdoc), 0);
   for (argi = arrow_arg_state.non_option_argi; argi < argc; argi++)
-    bow_barrel_add_from_text_dir (arrow_barrel, argv[argi], 0, 0);
+    bow_barrel_add_from_text_dir (arrow_barrel, argv[argi], 0, argv[argi]);
   if (bow_argp_method)
     arrow_barrel->method = bow_argp_method;
   else
@@ -257,7 +290,7 @@ print_file (const char *filename)
    obtained from that file; otherwise it will be prompted for and read
    from stdin. */
 int
-arrow_query ()
+arrow_query (FILE *in, FILE *out)
 {
   bow_score *hits;
   int actual_num_hits;
@@ -276,11 +309,17 @@ arrow_query ()
     }
   else
     {
-      bow_verbosify (bow_quiet, 
-		     "Type your query text now.  End with a Control-D.\n");
-      query_wv = bow_wv_new_from_text_fp (stdin);
+      if (out == stdout)
+	bow_verbosify (bow_quiet, 
+		       "Type your query text now.  End with a Control-D.\n");
+      query_wv = bow_wv_new_from_text_fp (in);
     }
 
+  if (!query_wv)
+    {
+      bow_verbosify (bow_progress, "Empty query");
+      return 0;
+    }
   bow_wv_set_weights (query_wv, arrow_barrel);
   bow_wv_normalize_weights (query_wv, arrow_barrel);
 
@@ -294,9 +333,15 @@ arrow_query ()
     {
       bow_cdoc *cdoc = bow_array_entry_at_index (arrow_barrel->cdocs, 
 						 hits[i].di);
+#if 1
+      fprintf (out, "%s\n", cdoc->filename);
+#else
       printf ("\nHit number %d, with score %g\n", i, hits[i].weight);
       print_file (cdoc->filename);
+#endif
     }
+  fprintf (out, ".\n");
+  fflush(out);
 
   return actual_num_hits;
 }
@@ -354,6 +399,101 @@ arrow_compare (bow_wv *wv1, bow_wv *wv2)
   printf ("%g\n", score);
 }
 
+void
+arrow_socket_init (const char *socket_name, int use_unix_socket)
+{
+  int servlen, type, bind_ret;
+  struct sockaddr_un un_addr;
+  struct sockaddr_in in_addr;
+  struct sockaddr *sap;
+
+  type = use_unix_socket ? AF_UNIX : AF_INET;
+   
+  arrow_sockfd = socket (type, SOCK_STREAM, 0);
+  assert (arrow_sockfd >= 0);
+
+  if (type == AF_UNIX)
+    {
+      sap = (struct sockaddr *)&un_addr;
+      bzero ((char *)sap, sizeof (un_addr));
+      strcpy (un_addr.sun_path, socket_name);
+      servlen = strlen (un_addr.sun_path) + sizeof(un_addr.sun_family) + 1;
+    }
+  else
+    {
+      sap = (struct sockaddr *)&in_addr;
+      bzero ((char *)sap, sizeof (in_addr));
+      in_addr.sin_port = htons (atoi (socket_name));
+      in_addr.sin_addr.s_addr = htonl (INADDR_ANY);
+      servlen = sizeof (in_addr);
+    }
+
+  sap->sa_family = type;     
+
+  bind_ret = bind (arrow_sockfd, sap, servlen);
+  assert (bind_ret >= 0);
+
+  listen (arrow_sockfd, 5);
+}
+
+
+void
+arrow_serve ()
+{
+  int newsockfd, clilen;
+  struct sockaddr cli_addr;
+  FILE *in, *out;
+
+  clilen = sizeof (cli_addr);
+  newsockfd = accept (arrow_sockfd, &cli_addr, &clilen);
+
+  assert(newsockfd >= 0);
+
+  in = fdopen (newsockfd, "r");
+  out = fdopen (newsockfd, "w");
+
+  while (!feof(in))
+    arrow_query (in, out);
+
+  fclose(in);
+  fclose(out);
+
+  close(newsockfd);
+}
+
+void
+arrow_coo ()
+{
+  int wi;
+  bow_wi2dvf *wicoo;
+  int num_hides;
+
+  num_hides = bow_wi2dvf_hide_words_by_doc_count (arrow_barrel->wi2dvf, 6);
+  bow_verbosify (bow_progress, "%d words hidden\n", num_hides);
+  wicoo = (bow_wi2dvf*) bow_wicoo_from_barrel (arrow_barrel);
+
+#define PRINT_WORD_PROBS 1
+#if PRINT_WORD_PROBS
+  {
+    bow_dv *dv;
+    printf ("Word probabilities:\n");
+    for (wi = 0; wi < wicoo->size; wi++)
+      {
+	dv = bow_wi2dvf_dv (wicoo, wi);
+	if (dv) 
+	  printf ("_uniform %-12.7f %s\n", dv->idf, bow_int2word (wi));
+      }
+  }
+#endif /* PRINT_WORD_PROBS */
+
+  for (wi = 0; wi < bow_num_words (); wi++)
+    {
+      /* printf ("%s  new word\n", bow_int2word (wi)); */
+      bow_wicoo_print_word_entropy (wicoo, wi);
+    }
+}
+
+
 
 /* The main() function. */
 
@@ -380,7 +520,7 @@ main (int argc, char *argv[])
       arrow_unarchive ();
       if (arrow_arg_state.what_doing == arrow_querying)
 	{
-	  arrow_query ();
+	  arrow_query (stdin, stdout);
 	}
       else if (arrow_arg_state.what_doing == arrow_comparing)
 	{
@@ -414,6 +554,16 @@ main (int argc, char *argv[])
 	      if (dv)
 		printf ("%9f %s\n", dv->idf, bow_int2word (wi));
 	    }
+	}
+      else if (arrow_arg_state.what_doing == arrow_query_serving)
+	{
+	  arrow_socket_init (arrow_arg_state.server_port_num, 0);
+	  while (1)
+	    arrow_serve ();
+	}
+      else if (arrow_arg_state.what_doing == arrow_printing_coo)
+	{
+	  arrow_coo ();
 	}
       else
 	bow_error ("Internal error");

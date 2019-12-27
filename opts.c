@@ -61,7 +61,8 @@ enum {
   BINARY_WORD_COUNTS_KEY,
   EXCLUDE_FILENAME_KEY,
   LEX_PIPE_COMMAND_KEY,
-  ISTEXT_AVOID_UUENCODE_KEY
+  ISTEXT_AVOID_UUENCODE_KEY,
+  LEX_WHITE_KEY
 };
 
 static struct argp_option bow_options[] =
@@ -98,6 +99,11 @@ static struct argp_option bow_options[] =
   {"exclude-filename", EXCLUDE_FILENAME_KEY, "FILENAME", 0,
    "When scanning directories for text files, skip files with name "
    "matching FILENAME."},
+  {"istext-avoid-uuencode", ISTEXT_AVOID_UUENCODE_KEY, 0, 0,
+   "Check for uuencoded blocks before saying that the file is text, "
+   "and say no if there are many lines of the same length."},
+  {"lex-pipe-command", LEX_PIPE_COMMAND_KEY, "SHELLCMD", 0,
+   "Pipe files through this shell command before lexing them."},
 
   {0, 0, 0, 0,
    "Mutually exclusive choice of lexers", 3},
@@ -105,14 +111,14 @@ static struct argp_option bow_options[] =
    "Skip HTML tokens when lexing."},
   {"keep-html", 'H'+KEY_OPPOSITE, 0, OPTION_HIDDEN,
    "Treat HTML tokens the same as any other chars when lexing. (default)"},
+  {"lex-white", LEX_WHITE_KEY, 0, 0,
+   "Use a special lexer that delimits tokens by whitespace only, and "
+   "does not change the contents of the token at all---no downcasing, "
+   "no stemming, no stoplist, nothing.  Ideal for use with an externally-"
+   "written lexer interfaced to rainbow with --lex-pipe-cmd."},
   {"lex-for-usenet", 'U', 0, 0,
    "Use a special lexer for UseNet articles, ignore some headers and "
    "uuencoded blocks."},
-  {"lex-pipe-command", LEX_PIPE_COMMAND_KEY, "SHELLCMD", 0,
-   "Pipe files through this shell command before lexing them."},
-  {"istext-avoid-uuencode", ISTEXT_AVOID_UUENCODE_KEY, 0, 0,
-   "Check for uuencoded blocks before saying that the file is text, "
-   "and say no if there are many lines of the same length."},
 
   {0, 0, 0, 0,
    "Feature-selection options", 4},
@@ -197,6 +203,11 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
       /* Skip HTML tokens when lexing */
       bow_default_lexer_indirect->underlying_lexer = 
 	(bow_lexer*) bow_default_lexer_html;
+      break;
+    case LEX_WHITE_KEY:
+      /* Use the whitespace lexer */
+      bow_default_lexer_indirect->underlying_lexer = 
+	(bow_lexer*) bow_default_lexer_white;
       break;
     case 'H'+KEY_OPPOSITE:
       /* Treat HTML tokens the same as any other chars when lexing (default) */

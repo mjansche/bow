@@ -96,12 +96,13 @@ bow_wi2dvf_add_di_wv (bow_wi2dvf **wi2dvf, int di, bow_wv *wv)
 
 /* Read all the words from file pointer FP, and add them to WI2DVF,
    associated with document index DI. */
-void
+int
 bow_wi2dvf_add_di_text_fp (bow_wi2dvf **wi2dvf, int di, FILE *fp)
 {
   char word[BOW_MAX_WORD_LENGTH]; /* buffer for reading and stemming words */
   int wi;			/* a word index */
   bow_lex *lex;
+  int num_words = 0;
 
   /* Loop once for each document in this file. */
   while ((lex = bow_default_lexer->open_text_fp (bow_default_lexer, fp)))
@@ -116,9 +117,12 @@ bow_wi2dvf_add_di_text_fp (bow_wi2dvf **wi2dvf, int di, FILE *fp)
 	    continue;
 	  /* Increment our stats about this word/document pair. */
 	  bow_wi2dvf_add_wi_di_count_weight (wi2dvf, wi, di, 1, 0);
+	  /* Increment our count of the number of words in this document. */
+	  num_words++;
 	}
       bow_default_lexer->close (bow_default_lexer, lex);
     }
+  return num_words;
 }
 
 /* In the map WI2DVF, increase by COUNT and WEIGHT our record of the
@@ -173,8 +177,12 @@ bow_wi2dvf_entry_at_wi_di (bow_wi2dvf *wi2dvf, int wi, int di)
 void
 bow_wi2dvf_remove_wi (bow_wi2dvf *wi2dvf, int wi)
 {
+  bow_dv *dv;
   assert (wi < wi2dvf->size);
-  if (wi2dvf->entry[wi].dv)
+  bow_error ("Don't call this function.  It's broken.");
+  /* xxx This could be more efficient.  Avoid reading it in, just to free it */
+  dv = bow_wi2dvf_dv (wi2dvf, wi);
+  if (dv)
     {
       bow_dv_free (wi2dvf->entry[wi].dv);
       (wi2dvf->num_words)--;
@@ -210,6 +218,27 @@ bow_wi2dvf_hide_wi (bow_wi2dvf *wi2dvf, int wi)
       wi2dvf->entry[wi].seek_start = - (wi2dvf->entry[wi].seek_start);
       (wi2dvf->num_words)--;
     }
+}
+
+/* Hide all words occuring in only COUNT or fewer number of documents.
+   Return the number of words hidden. */
+int
+bow_wi2dvf_hide_words_by_doc_count (bow_wi2dvf *wi2dvf, int count)
+{
+  int wi;
+  bow_dv *dv;
+  int num_hides = 0;
+
+  for (wi = 0; wi < wi2dvf->size; wi++)
+    {
+      dv = bow_wi2dvf_dv (wi2dvf, wi);
+      if (dv && dv->length < count)
+	{
+	  bow_wi2dvf_hide_wi (wi2dvf, wi);
+	  num_hides++;
+	}
+    }
+  return num_hides;
 }
 
 /* Make visible all DVF's that were hidden with BOW_WI2DVF_HIDE_WI(). */
@@ -307,7 +336,10 @@ bow_wi2dvf_write_data_file (bow_wi2dvf *wi2dvf, const char *filename)
 /* Create a `wi2dvf' by reading data from file-pointer FP.  This
    doesn't actually read in all the "document vectors"; it only reads
    in the DVF information, and lazily loads the actually "document
-   vectors". */
+   vectors". 
+   NOTE:  Remember that this doesn't actually read the entire
+   wi2dvf; it reads only the seek-table.  Don't try to read 
+   something else after this. */
 bow_wi2dvf *
 bow_wi2dvf_new_from_data_fp (FILE *fp)
 {
@@ -413,7 +445,7 @@ bow_wi2dvf_dv (bow_wi2dvf *wi2dvf, int wi)
 
   assert (wi == wi2dvf->size - 1
 	  || wi2dvf->entry[wi+1].seek_start == -1
-	  || ftell (wi2dvf->fp) == wi2dvf->entry[wi+1].seek_start);
+	  || ftell (wi2dvf->fp) == ABS(wi2dvf->entry[wi+1].seek_start));
 
   /* Return what we just read. */
   return wi2dvf->entry[wi].dv;

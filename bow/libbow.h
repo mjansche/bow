@@ -49,6 +49,12 @@
 #define ntohs(a) (a)
 #endif
 
+#if 0
+#undef assert
+#define assert(expr)   \
+((void) ((expr) || (bow_error ("Assertion failed %s:%d:" __STRING(expr) __FILE__, __LINE__), NULL)))
+#endif
+
 #if !PATH_MAX			/* for SunOS */
 #define PATH_MAX 255
 #endif
@@ -65,6 +71,10 @@
 
 #if !defined(MAX)
 #define MAX(a,b) (((a) > (b)) ? (a) : (b))
+#endif
+
+#if !defined(ABS)
+#define ABS(a) (((a) < 0) ? -(a) : (a))
 #endif
 
 #ifndef STRINGIFY
@@ -171,7 +181,10 @@ extern const bow_lexer_simple *bow_alpha_lexer;
 
 /* A lexer that keeps all strings that begin and end with alphabetic
    characters, delimited by white-space.  For example,
-   the string `http://www.cs.cmu.edu' will be a single token. */
+   the string `http://www.cs.cmu.edu' will be a single token. 
+   This does not change the words at all---no down-casing, no stemming,
+   no stoplist, no word tossing.  It's ideal for use when a
+   --lex-pipe-command is used to do all the tokenizing.  */
 extern const bow_lexer_simple *bow_white_lexer;
 
 /* Some declarations for a generic indirect lexer.  See lex-indirect.c */
@@ -231,6 +244,7 @@ extern bow_lexer *bow_default_lexer;
 /* Default instances of the lexers that can be modified by libbow's
    argp cmdline argument processing. */
 extern bow_lexer_simple *bow_default_lexer_simple;
+extern bow_lexer_simple *bow_default_lexer_white;
 extern bow_lexer_indirect *bow_default_lexer_indirect;
 extern bow_lexer_gram *bow_default_lexer_gram;
 extern bow_lexer_indirect *bow_default_lexer_html;
@@ -335,6 +349,9 @@ int bow_str2int_no_add (bow_int4str *map, const char *string);
 
 /* Create a new int-str mapping by lexing words from FILE. */
 bow_int4str *bow_int4str_new_from_text_file (const char *filename);
+
+/* Create a new int-str mapping words fscanf'ed from FILE using %s. */
+bow_int4str *bow_int4str_new_from_string_file (const char *filename);
 
 /* Write the int-str mapping to file-pointer FP. */
 void bow_int4str_write (bow_int4str *map, FILE *fp);
@@ -599,6 +616,7 @@ typedef struct _bow_cdoc {
   float prior;			/* Prior probability of this class/doc */
   const char *filename;		/* Where to find the original document */
   int class;			/* A classification label. */
+  float *class_probs;           /* Probabilistic classification labels */
 } bow_cdoc;
 
 /* A convenient interface to bow_array that is specific to bow_cdoc. */
@@ -761,7 +779,7 @@ extern unsigned int bow_wi2dvf_default_capacity;
 
 /* Create a `wi2dvf' by reading data from file-pointer FP.  This
    doesn't actually read in all the "document vectors"; it only reads
-   in the DVF information, and lazily loads the actually "document
+   in the DVF information, and lazily loads the actual "document
    vectors". */
 bow_wi2dvf *bow_wi2dvf_new_from_data_fp (FILE *fp);
 
@@ -781,7 +799,7 @@ bow_de *bow_wi2dvf_entry_at_wi_di (bow_wi2dvf *wi2dvf, int wi, int di);
 
 /* Read all the words from file pointer FP, and add them to the map
    WI2DVF, such that they are associated with document index DI. */
-void bow_wi2dvf_add_di_text_fp (bow_wi2dvf **wi2dvf, int di, FILE *fp);
+int bow_wi2dvf_add_di_text_fp (bow_wi2dvf **wi2dvf, int di, FILE *fp);
 
 /* Add a "word vector" WV, associated with "document index" DI, to 
    the map WI2DVF. */ 
@@ -799,6 +817,10 @@ void bow_wi2dvf_remove_wi (bow_wi2dvf *wi2dvf, int wi);
    map WI2DVF. The function BOW_WI2DVF_DV() will no longer see the entry
    for this WI, but */
 void bow_wi2dvf_hide_wi (bow_wi2dvf *wi2dvf, int wi);
+
+/* Hide all words occuring in only COUNT or fewer number of documents.
+   Return the number of words hidden. */
+int bow_wi2dvf_hide_words_by_doc_count (bow_wi2dvf *wi2dvf, int count);
 
 /* Make visible all DVF's that were hidden with BOW_WI2DVF_HIDE_WI(). */
 void bow_wi2dvf_unhide_all_wi (bow_wi2dvf *wi2dvf);
@@ -821,16 +843,7 @@ void bow_wi2dvf_print_stats (bow_wi2dvf *map);
 /* Free the memory held by the map WI2DVF. */
 void bow_wi2dvf_free (bow_wi2dvf *wi2dvf);
 
-#if 0
-typedef enum {
-  bow_method_tfidf_words,	/* TFIDF with DF=`word-count' */
-  bow_method_tfidf_log_words,	/* TFIDF with DF=`log-word-count' */
-  bow_method_tfidf_log_occur,	/* TFIDF with DF=`log-occurances' */
-  bow_method_tfidf_prtfidf,	/* Joachim's PrTFIDF */
-  bow_method_naivebayes,	/* Naive Bayes */
-  bow_method_prind,		/* Fuhr's Probabilistic Indexing */
-} bow_method;
-#endif
+/* xxx Move these to prind.c */
 
 /* If this is non-zero, use uniform class priors. */
 extern int bow_prind_uniform_priors;
@@ -844,8 +857,9 @@ extern int bow_prind_normalize_scores;
 /* A wrapper around a wi2dvf/cdocs combination. */
 typedef struct _bow_barrel {
   struct _bow_method *method;	/* TFIDF, NaiveBayes, PrInd, or others. */
-  bow_array *cdocs;		/* The documents */
+  bow_array *cdocs;		/* The documents (or classes, for VPC) */
   bow_wi2dvf *wi2dvf;		/* The matrix of words vs documents */
+  bow_int4str *classnames;	/* A map between classnames and indices */
   int is_vpc;			/* non-zero if each `document' is a `class' */
 } bow_barrel;
 
@@ -864,13 +878,13 @@ typedef struct _bow_method {
   void (*set_weights)(bow_barrel *barrel);
   void (*scale_weights)(bow_barrel *barrel, bow_barrel *doc_barrel);
   void (*normalize_weights)(bow_barrel *barrel);
-  bow_barrel* (*vpc_with_weights)(bow_barrel *doc_barrel, 
-				  const char **classnames, int num_classes);
+  bow_barrel* (*vpc_with_weights)(bow_barrel *doc_barrel);
   void (*vpc_set_priors)(bow_barrel *barrel, bow_barrel *doc_barrel);
   int (*score)(bow_barrel *barrel, bow_wv *query_wv, 
 	       bow_score *scores, int num_scores, int loo_class);
   void (*wv_set_weights)(bow_wv *wv);
   void (*wv_normalize_weights)(bow_wv *wv);
+  void (*free_barrel)(bow_barrel *barrel);
   /* Parameters of the method. */
   void *params;
 } bow_method;
@@ -888,8 +902,8 @@ if ((*(BARREL)->method->scale_weights))				\
 if ((*(BARREL)->method->normalize_weights))		\
   ((*(BARREL)->method->normalize_weights)(BARREL))
 
-#define bow_barrel_new_vpc_with_weights(BARREL, CLASSNAMES, NUMCLASSES) \
-((*(BARREL)->method->vpc_with_weights)(BARREL, CLASSNAMES, NUMCLASSES))
+#define bow_barrel_new_vpc_with_weights(BARREL) \
+((*(BARREL)->method->vpc_with_weights)(BARREL))
 
 #define bow_barrel_score(BARREL, QUERY_WV, SCORES, NUM_SCORES, LOO_CLASS) \
 ((*(BARREL)->method->score)(BARREL, QUERY_WV, SCORES, NUM_SCORES, LOO_CLASS))
@@ -902,10 +916,27 @@ if ((*(BARREL)->method->wv_set_weights))	\
 if (((*(BARREL)->method->wv_normalize_weights)))	\
   ((*(BARREL)->method->wv_normalize_weights)(WV))
 
+#define bow_free_barrel(BARREL)			\
+if (((*(BARREL)->method->free_barrel)))		\
+  ((*(BARREL)->method->free_barrel)(BARREL))
+
+#define bow_barrel_num_classes(BARREL)		\
+(((BARREL)->classnames)				\
+ ? ((BARREL)->classnames->str_array_length)	\
+ : ((BARREL)->cdocs->length))
+
+#define bow_barrel_classname_at_index(BARREL, INDEX) \
+(bow_int2str ((BARREL)->classnames, INDEX))
+
+#define bow_barrel_add_classname(BARREL, NAME) \
+(bow_str2int ((BARREL)->classnames, NAME))
+
 #include <bow/tfidf.h>
 #include <bow/naivebayes.h>
 #include <bow/prind.h>
 #include <bow/kl.h>
+#include <bow/em.h>
+#include <bow/knn.h>
 
 /* Associate method M with the string NAME, so the method structure can
    be retrieved later with BOW_METHOD_AT_NAME(). */
@@ -928,13 +959,18 @@ bow_barrel *bow_barrel_new (int word_capacity,
 			    int class_capacity,
 			    int entry_size, void (*free_func)());
 
+/* Create a new barrel and fill it from contents in --print-barrel=FORMAT
+   read in from FILENAME. */
+bow_barrel *bow_barrel_new_from_printed_barrel_file (const char *filename,
+						     const char *format);
+
 /* Create a BARREL by indexing all the documents found when
    recursively decending directory DIRNAME, but skip files matching
    EXCEPTION_NAME. */
 int bow_barrel_add_from_text_dir (bow_barrel *barrel,
 				  const char *dirname, 
 				  const char *except_name, 
-				  int class);
+				  const char *classnames);
 
 /* Add statistics about the document described by CDOC and WV to the
    BARREL. */
@@ -950,24 +986,19 @@ void bow_barrel_set_cdoc_priors_to_class_uniform (bow_barrel *barrel);
    only one vector per class. The classes will be represented as
    "documents" in this new barrel.  CLASSNAMES is an array of strings
    that maps class indices to class names. */
-bow_barrel *bow_barrel_new_vpc (bow_barrel *barrel, 
-				const char **classnames, int num_classes);
+bow_barrel *bow_barrel_new_vpc (bow_barrel *barrel);
 
 /* Like bow_barrel_new_vpc(), but it also sets and normalizes the
    weights appropriately by calling SET_WEIGHTS from the METHOD of
    DOC_BARREL on the `vector-per-class' barrel that will be returned. */
 bow_barrel *
-bow_barrel_new_vpc_merge_then_weight (bow_barrel *doc_barrel, 
-				      const char **classnames, 
-				      int num_classes);
+bow_barrel_new_vpc_merge_then_weight (bow_barrel *doc_barrel);
 
 /* Same as above, but set the weights in the DOC_BARREL, create the
    `Vector-Per-Class' barrel, and set the weights in the VPC barrel by
    summing weights from the DOC_BARREL. */
 bow_barrel *
-bow_barrel_new_vpc_weight_then_merge (bow_barrel *doc_barrel, 
-				      const char **classnames,
-				      int num_classes);
+bow_barrel_new_vpc_weight_then_merge (bow_barrel *doc_barrel);
 
 /* Set the class prior probabilities by counting the number of
    documents of each class. */
@@ -1168,7 +1199,7 @@ extern int bow_file_format_version;
 /* The default, initial value of above variable.  The above variable will
    take on a different value when reading from binary data archived with 
    a different format version. */
-#define BOW_DEFAULT_FILE_FORMAT_VERSION 5
+#define BOW_DEFAULT_FILE_FORMAT_VERSION 6
 
 /* Functions for conveniently recording and finding out the format
    version used to write binary data to disk. */
@@ -1375,6 +1406,15 @@ void bow_barrel_normalize_weights_by_summing (bow_barrel *barrel);
    and sets their type to be test. */
 void bow_test_split (bow_barrel *barrel, int num_test);
 
+/* This takes a bow_array of bow_cdoc's and sets num_test of them to
+   be model docs */
+void bow_test_split2 (bow_barrel *barrel, int num_test);
+
+/* Set all the cdoc's named in TEST_FILES_FILENAME to type test,
+   and all the others to model.  BARREL should be a doc barrel, not
+   a class barrel. */
+void bow_test_set_files (bow_barrel *barrel, const char *test_files_filename);
+
 /* This function sets up the data structure so we can step through the word
    vectors for each test document easily. */
 bow_dv_heap *bow_test_new_heap (bow_barrel *barrel);
@@ -1397,6 +1437,13 @@ int bow_nontest_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
 
 /* Like bow_test_next_wv, but for type==model instead of type==test */
 int bow_model_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
+
+/* Like bow_test_next_wv, but for type==ignore instead of type==test */
+int bow_ignore_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
+
+/* Like bow_test_next_wv, but for type==ignored_model instead of type==test */
+int bow_ignored_model_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
+
 
 
 

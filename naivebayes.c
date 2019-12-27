@@ -89,6 +89,119 @@ static struct argp_child naivebayes_argp_child =
 #define M_EST_P  (1.0 / barrel->wi2dvf->num_words)
 #endif
 
+/* Return the probability of word WI in class CI. 
+   If LOO_CLASS is non-negative, then we are doing 
+   leave-out-one-document evaulation.  LOO_CLASS is the index
+   of the class from which the document has been removed.
+   LOO_WI_COUNT is the number of WI'th words that are in the document
+   LOO_W_COUNT is the total number of words in the docment
+
+   The last two argments help this function avoid searching for
+   the right entry in the DV from the beginning each time.
+   LAST_DV is a pointer to the DV to use.
+   LAST_DVI is a pointer to the index into the LAST_DV that is
+   guaranteed to have class index less than CI.
+*/
+float
+bow_naivebayes_pr_wi_ci (bow_barrel *barrel,
+			 int wi, int ci,
+			 int loo_class,
+			 int loo_wi_count, int loo_w_count,
+			 bow_dv **last_dv, int *last_dvi)
+{
+  bow_dv *dv;
+  bow_cdoc *cdoc;
+  float num_wi_ci;		/* the number of times wi occurs in class */
+  float num_w_ci;		/* the number of words in class. */
+  int dvi;
+  float m_est_m;
+  float m_est_p;
+  float pr_w_c;
+
+  cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
+  if (last_dv && *last_dv)
+    {
+      dv = *last_dv;
+      dvi = *last_dvi;
+      /* No, not always true. assert (dv->entry[dvi].di <= ci); */
+    }
+  else
+    {
+      dv = bow_wi2dvf_dv (barrel->wi2dvf, wi);
+      dvi = 0;
+      if (last_dv)
+	*last_dv = dv;
+    }
+
+  /* If the model doesn't know about this word, return 0. */
+  if (!dv)
+    return -1.0;
+
+  /* Find the index of entry for this class. */
+  while (dvi < dv->length && dv->entry[dvi].di < ci)
+    dvi++;
+  /* Remember this index value for future calls to this function */
+  if (last_dvi)
+    *last_dvi = dvi;
+
+  if (dvi < dv->length && dv->entry[dvi].di == ci)
+    {
+      /* There is an entry in DV for class CI. */
+      num_wi_ci = dv->entry[dvi].count;
+    }
+  else
+    {
+      /* There is no entry in DV for class CI. */
+      num_wi_ci = 0;
+      if (loo_class == ci)
+	bow_error ("There should be data for WI,CI");
+    }
+  num_w_ci = cdoc->word_count;
+
+  if (loo_class == ci)
+    {
+      num_wi_ci -= loo_wi_count;
+      num_w_ci -= loo_w_count;
+      if (!(num_wi_ci >= 0 && num_w_ci >= 0))
+	bow_error ("foo %g %g\n", num_wi_ci, num_w_ci);
+    }
+  /* xxx This is not exactly right, because 
+     BARREL->WI2DVF->NUM_WORDS might have changed with the
+     removal of QUERY_WV's document. */
+  m_est_m = barrel->wi2dvf->num_words;
+  m_est_p = 1.0 / m_est_m;
+
+  pr_w_c = ((num_wi_ci + m_est_m * m_est_p)
+	    / (num_w_ci + m_est_m));
+
+  if (pr_w_c <= 0)
+    bow_error ("A negative word probability was calculated. "
+	       "This can happen if you are using\n"
+	       "--test-files-loo and the test files are "
+	       "not being lexed in the same way as they\n"
+	       "were when the model was built");
+  assert (pr_w_c > 0 && pr_w_c <= 1);
+
+  return pr_w_c;
+}
+
+void
+bow_naivebayes_print_word_probabilities_for_class (bow_barrel *barrel,
+						   const char *classname)
+{
+  int wi;
+  int ci = bow_str2int_no_add (barrel->classnames, classname);
+  float pr_w;
+
+  assert (ci >= 0);
+  for (wi = 0; wi < barrel->wi2dvf->size; wi++)
+    {
+      pr_w = bow_naivebayes_pr_wi_ci (barrel, wi, ci, -1, 0, 0, NULL, NULL);
+      if (pr_w >= 0)
+	printf ("%-30s  %10.8f\n", bow_int2word (wi), pr_w);
+    }
+}
+
 /* Function to assign `Naive Bayes'-style weights to each element of
    each document vector. */
 void
@@ -241,6 +354,7 @@ bow_naivebayes_score (bow_barrel *barrel, bow_wv *query_wv,
   double rescaler;		/* Rescale SCORES by this after each word */
   double new_score;		/* a temporary holder */
   int num_scores;		/* number of entries placed in SCORES */
+  int num_words_in_query = 0;
 
   /* Allocate space to store scores for *all* classes (documents) */
   scores = alloca (barrel->cdocs->length * sizeof (double));
@@ -279,6 +393,21 @@ bow_naivebayes_score (bow_barrel *barrel, bow_wv *query_wv,
 		scores[ci]);
     }
 
+  /* If we are doing leave-one-out evaluation, get the total number of
+     words in this query. */
+  if (loo_class >= 0)
+    {
+      bow_dv *dv;
+      num_words_in_query = 0;
+      for (wvi = 0; wvi < query_wv->num_entries; wvi++)
+	{
+	  /* Only count those words that are in the model's vocabulary. */
+	  dv = bow_wi2dvf_dv (barrel->wi2dvf, query_wv->entry[wvi].wi);
+	  if (dv)
+	    num_words_in_query += query_wv->entry[wvi].count;
+	}
+    }
+
   /* Loop over each word in the word vector QUERY_WV, putting its
      contribution into SCORES. */
   for (wvi = 0; wvi < query_wv->num_entries; wvi++)
@@ -305,64 +434,11 @@ bow_naivebayes_score (bow_barrel *barrel, bow_wv *query_wv,
 	 contribution into SCORES. */
       for (ci = 0, dvi = 0; ci < barrel->cdocs->length; ci++)
 	{
-	  bow_cdoc *cdoc;
-
-	  cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
-	  assert (cdoc->type == model);
-
-	  /* Assign PR_W_C to P(w|C), either using a DV entry, or, if
-	     there is no DV entry for this class, using M-estimate 
-	     smoothing */
-	  if (dv)
-	    while (dvi < dv->length && dv->entry[dvi].di < ci)
-	      dvi++;
-	  if (dv && dvi < dv->length && dv->entry[dvi].di == ci)
-	    {
-	      if (loo_class == ci)
-		{
-		  /* xxx This is not exactly right, because 
-		     BARREL->WI2DVF->NUM_WORDS might have changed with the
-		     removal of QUERY_WV's document. */
-		  pr_w_c = ((float)
-			    ((M_EST_M * M_EST_P) + dv->entry[dvi].count 
-			     - query_wv->entry[wvi].count)
-			    / (M_EST_M + cdoc->word_count
-			       - query_wv->entry[wvi].count));
-		  if (pr_w_c <= 0)
-		    bow_error ("A negative word probability was calculated. "
-			       "This can happen if you are using\n"
-			       "--test-files-loo and the test files are "
-			       "not being lexed in the same way as they\n"
-			       "were when the model was built");
-		  assert (pr_w_c > 0 && pr_w_c <= 1);
-		}
-	      else
-		{
-		  pr_w_c = ((float)
-			    ((M_EST_M * M_EST_P) + dv->entry[dvi].count)
-			    / (M_EST_M + cdoc->word_count));
-		  assert (pr_w_c > 0 && pr_w_c <= 1);
-		}
-	    }
-	  else
-	    {
-	      if (loo_class == ci)
-		{
-		  /* xxx This is not exactly right, because 
-		     BARREL->WI2DVF->NUM_WORDS might have changed with the
-		     removal of QUERY_WV's document. */
-		  pr_w_c = ((M_EST_M * M_EST_P)
-			    / (M_EST_M + cdoc->word_count
-			       - query_wv->entry[wvi].count));
-		  assert (pr_w_c > 0 && pr_w_c <= 1);
-		}
-	      else
-		{
-		  pr_w_c = ((M_EST_M * M_EST_P)
-			    / (M_EST_M + cdoc->word_count));
-		  assert (pr_w_c > 0 && pr_w_c <= 1);
-		}
-	    }
+	  pr_w_c = bow_naivebayes_pr_wi_ci (barrel, wi, ci, 
+					    loo_class, 
+					    query_wv->entry[wvi].count, 
+					    num_words_in_query,
+					    &dv, &dvi);
 	  assert (pr_w_c > 0 && pr_w_c <= 1);
 
 	  log_pr_tf = log (pr_w_c);
@@ -375,11 +451,14 @@ bow_naivebayes_score (bow_barrel *barrel, bow_wv *query_wv,
 	  scores[ci] += log_pr_tf;
 
 	  if (bow_print_word_scores)
-	    printf (" %8.2e %7.2f %-40s  %10.9f\n", 
-		    pr_w_c,
-		    log_pr_tf, 
-		    (strrchr (cdoc->filename, '/') ? : cdoc->filename),
-		    scores[ci]);
+	    {
+	      bow_cdoc *cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
+	      printf (" %8.2e %7.2f %-40s  %10.9f\n", 
+		      pr_w_c,
+		      log_pr_tf, 
+		      (strrchr (cdoc->filename, '/') ? : cdoc->filename),
+		      scores[ci]);
+	    }
 
 	  /* Keep track of the minimum score updated for this word. */
 	  if (rescaler > scores[ci])
@@ -487,6 +566,7 @@ bow_method bow_method_naivebayes =
   bow_naivebayes_score,
   bow_wv_set_weights_to_count,
   NULL,				/* no need for extra weight normalization */
+  bow_barrel_free,
   &bow_naivebayes_params
 };
 

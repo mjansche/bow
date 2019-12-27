@@ -20,3 +20,12 @@ Bag-Of-Words Library ToDo's
 
 
 * Split method header information into separate .h files.
+
+
+Remove rainbow_classnames
+Are all filename_to_classname() calls still necessary?
+Examine vpc() and fix to take advantage of barrel->classnames.
+In rainbow_print_weight_vector() find the class index more efficiently.
+Likewise for rainbow_print_foilgain()
+Rename bow_free_barrel() to bow_barrel_free...something.
+Free heaps in places that they are not!

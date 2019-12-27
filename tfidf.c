@@ -329,6 +329,7 @@ bow_method bow_method_tfidf_ ## PARAM_NAME =				\
   bow_tfidf_score,							\
   bow_wv_set_weights_to_count,						\
   bow_wv_normalize_weights_by_vector_length,				\
+  bow_barrel_free,                                                      \
   &bow_tfidf_params_ ## PARAM_NAME					\
 };									\
 void _register_method_tfidf_ ## PARAM_NAME ()				\

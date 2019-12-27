@@ -89,17 +89,31 @@ bow_int2str (bow_int4str *map, int index)
 static int
 _str2id (const char *s)
 {
-  register int h = 0;
-  register int c = 0;
+  int h = 0;
+  int c = 0;
 
   while (*s != '\0')
-    h ^= *(s++) << (c++);
-  h = (h < 0) ? -h : h;
-  /* If return value is too big then REHASH() can make it go negative,
-     so here we use modulo to keep it a little small. */
-  h = h % (INT_MAX / 4);
-  return (h < 0) ? -h : h;
+    {
+      h ^= *s << c;
+      s++;
+      c++;
+    }
+  if (h == 0)
+    {
+      /* Never return 0, otherwise _str_hash_add() will infinite-loop */
+      h = 1;
+    }
+  else
+    {
+      if (h < 0)
+	h = -h;
+      /* If return value is too big then REHASH() can make it go negative,
+	 so here we use modulo to keep it a little small. */
+      h = h % (INT_MAX / 4);
+    }
+  return h;
 }
+
 
 /* Look up STRING in the MAP->STR_HASH; or, more precisely: Return the
    index to the location in MAP->STR_HASH that contains the index to
@@ -254,6 +268,28 @@ bow_str2int (bow_int4str *map, const char *string)
 
   /* Return the index at which it was added.  */
   return (map->str_array_length)-1;
+}
+
+/* Create a new int-str mapping words fscanf'ed from FILE using %s. */
+bow_int4str *
+bow_int4str_new_from_string_file (const char *filename)
+{
+  FILE *fp;
+  bow_int4str *map;
+  const static int BUFLEN = 1024;
+  char buf[BUFLEN];
+
+  map = bow_int4str_new (0);
+
+  fp = bow_fopen (filename, "r");
+
+  while (fscanf (fp, "%s", buf) == 1)
+    {
+      assert (strlen (buf) < BUFLEN);
+      bow_str2int (map, buf);
+    }
+  fclose (fp);
+  return map;
 }
 
 /* Create a new int-str mapping by lexing words from FILE. */

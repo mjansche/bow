@@ -297,6 +297,7 @@ bow_method bow_method_prind =
   bow_prind_score,
   bow_wv_set_weights_to_count,
   bow_wv_normalize_weights_by_summing,
+  bow_barrel_free,
   &bow_prind_params
 };
 
