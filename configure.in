@@ -1,0 +1,26 @@
+AC_INIT(libbow.h)
+
+# configure.in for "libbow".
+# Process this file with autoconf to produce a configure script.
+
+# Find the compiler
+AC_PROG_CC
+AC_PROG_CPP
+
+# Find some installation programs
+AC_PROG_INSTALL
+AC_PROG_RANLIB
+
+# Needed by weight.c
+AC_CHECK_FUNCS(log2f)
+AC_CHECK_FUNCS(sqrtf)
+
+# Find out if we have getopt.h
+AC_CHECK_HEADERS(getopt.h)
+
+# Find location of the perl interpreter executable
+AC_PATH_PROG(PERL, perl)
+AC_SUBST(PERL)
+
+# Write the Makefiles
+AC_OUTPUT(Makefile)

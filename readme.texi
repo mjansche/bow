@@ -1,0 +1,7 @@
+@chapter Bag Of Words Library README
+
+@c set the vars LIBBOW_VERSION
+@include version.texi
+
+@include libbow-desc.texi
+

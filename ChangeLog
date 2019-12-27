@@ -1,0 +1,1584 @@
+Sun Jan 12 12:37:32 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* install.texi: Mention the need for GNU make.
+
+	* Makefile.in (default): Make it depend on all the
+ 	DEMO_EXECUTABLES and the PERL_RUNNABLE_FILES, instead of just
+ 	rainbow.
+
+	* libbow.h: Update copyright.
+
+	* primes.c (_bow_nextprime): Replace bzero by memset, for SunOS.
+
+	* prind.c (_bow_barrel_set_prind_weights): Remove warning about
+ 	old do-nothing loop.  Remove the loop.
+
+	* rainbow.c (rainbow_query): Set NUM_HITS_TO_SHOW equal to the
+ 	number of classes, instead of just 2.  Simplify output so it is
+ 	more machine readable.
+	(main): Require a length of 39, not 10, for argv[0] in order to turn
+	off BOW_VERBOSITY_USE_BACKSPACE.  (This was a hack so we don't get
+ 	a lot of \b's inside gdb inside emacs.)  Fix the getopt string to
+ 	include a `:' after `v'.
+
+	* Makefile.in (snapshot): cvs tag the repository.
+
+	* rainbow.c: Deal with systems that don't have getopt.h.
+
+	* weight.c (_bow_add_to_normalizer_total): Add case for
+ 	BOW_METHOD_PRIND.
+	(_bow_total_to_normalizer): Likewise.
+
+Sat Jan 11 17:57:16 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* arrow.c: Fix typo in last change.
+
+Fri Jan 10 11:03:51 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* configure.in: Look for getopt.h.
+
+	* arrow.c: Deal with systems that don't have getopt.h.
+
+	* rainbow-stats.pl (overall_accuracy): Print stderr for both
+ 	verbosity levels!
+
+Thu Jan  9 11:46:41 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* rainbow-stats.pl (overall_accuracy): Print standard error, not
+ 	standard deviation.
+
+Wed Jan  8 11:19:13 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* info_gain.c (bow_infogain_per_wi_new): Assert info gain is >= 0,
+ 	not > 0.
+	* barrel.c (bow_barrel_keep_top_words_by_infogain): Likewise.
+
+	* rainbow.c (rainbow_index): Rearrange
+ 	REUSE_ARCHIVED_BARREL_COUNTS logic so it works now.
+
+	* vpc.c (bow_barrel_new_vpc): Don't assert DV, just continue if
+ 	it's NULL.
+
+Tue Jan  7 09:45:54 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* libbow.h: Declare new barrel info gain function.
+
+Mon Jan  6 10:28:17 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* barrel.c (bow_barrel_keep_top_words_by_infogain): New function. 
+
+	* lex-gram.c (bow_lexer_gram_open_text_fp): Return NULL if LEX is
+	NULL. 
+
+	* wi2dvf.c (bow_wi2dvf_remove_wi): New function.
+	(bow_wi2dvf_write): Use new SEEK_START convention, in which it is
+	-1 when DV is NULL; previously, when DV was NULL, it was equal to
+	the previous SEEK_START.
+	(bow_wi2dvf_new_from_data_fp): Likewise.
+	* libbow.h:  Declare new wi2dvf function.
+
+	* rainbow.c, missy.c, weight.c, vpc.c, score.c, libbow.h: Separate
+	PrTFIDF from PrInd (Fuhr's Probabilistic Indexing).
+	* prind.c: New file, for Fuhr's Probabilistic Indexing method.
+
+	* rainbow.c (rainbow_index): Prune words by info gain in barrel,
+ 	not in the word vocabulary, so that `-L' can work properly.
+
+	* missy.c (missy_query): When printing a list of the reply scores,
+ 	don't print more than 10 of them.
+
+Fri Jan  3 12:56:53 1997  Andrew McCallum  <mccallum@pad>
+
+	* rainbow.c (main): Add the -L option, for turning off lexing the
+ 	text files, and instead using the word counts in the archived
+ 	barrel.
+	(rainbow_print_usage): Likewise.
+	(reuse_archived_barrel_counts): New global variable, controlling this.
+
+	* lex-html.c (bow_lexer_html_get_word): Change type of argument
+ 	SELF to match BOW_LEXER.
+
+	* rainbow.c (main): Add the -s option, for turning off use of the
+ 	stoplist.
+	(rainbow_print_usage): Likewise.
+
+	* rainbow.c (main): Add the -U option, for turning off uniform
+ 	priors in PrTFIDF.
+	(rainbow_print_usage): Likewise.
+
+	* rainbow-stats.pl: Add test of $#ARGV to the `-s' test, so it
+ 	actually works the way it's supposed to.
+
+Wed Jan  1 16:54:28 1997  Andrew McCallum  <mccallum@pad>
+
+	* lex-html.c (bow_lexer_html_get_raw_word): Print warning when we
+ 	find an unterminated open bracket `<'.  Verbosify about close
+ 	bracket warning with priority of BOW_VERBOSE, not BOW_PROGRESS.
+
+	`rainbow -i -H -S' now seems to be working.
+
+	* rainbow.c (rainbow_underlying_lexer): New global variable.
+	(rainbow_html_lexer): New global variable.
+	(rainbow_print_usage): Overhauled to accurately describe the valid
+	arguments.
+	(main): Rearrange and clean up argument handling.
+
+	* libbow.h: Change type of argument SELF in BOW_LEXER_SIMPLE
+ 	word-getting subfunctions.
+
+	* lex-simple.c (bow_lexer_simple_open_text_fp): Deal with EOF in
+ 	FP.  Deal with zero-length documents.  After we find END_PATTERN,
+ 	move the DOCUMENT_POINTER back to the beginning of of the
+ 	END_PATTERN.
+	(bow_lexer_simple_postprocess_word): Change type of SELF from
+	BOW_LEXER to BOW_LEXER_SIMPLE.
+	(old_bow_lexer_simple_get_word): Old, unused function removed.
+
+	* lex-html.c (bow_lexer_html_get_raw_word): Keep a count of the
+ 	HTML bracket nestings, instead of keeping track as a boolean.
+	(bow_lexer_html_get_word): Postprocess word using the underlying
+	lexer from SELF, not SELF itself.
+
+Tue Dec 31 12:36:21 1996  Andrew McCallum  <mccallum@pad>
+
+	* int4word.c (bow_num_words): If WORD_MAP has not yet been
+ 	created, return 0, instead of raising an error.
+
+	* lex-html.c (bow_lexer_html_get_raw_word): Look for end by
+ 	comparing to 0, not EOF.  Fix termination condition of
+ 	true-to-start loop.  Change type of SELF to BOW_LEXER_SIMPLE from
+ 	BOW_LEXER.
+	(bow_lexer_html_get_word): Change type of SELF to BOW_LEXER_INDIRECT
+	from BOW_LEXER.
+
+	* lex-simple.c (bow_lexer_simple_get_raw_word): Look for end by
+ 	comparing to 0, not EOF!
+
+	* libbow.h (bow_str2method): Add "tfidf" as a synonym for
+ 	tfidf_log_occur.
+
+	* rainbow-stats.pl: Now the `-s' argument causes it to print only
+ 	accuracy average and standard deviation.
+	(verbosity): New variable.
+
+Mon Dec 30 15:34:25 1996  Andrew McCallum  <mccallum@pad>
+
+	* wi2dvf.c (bow_wi2dvf_add_di_text_fp): Loop over all documents
+ 	(LEX's) in the file.
+	* int4word.c (bow_words_add_occurrences_from_text_dir): Likewise.
+
+	* wv.c (bow_wv_new_from_lex): New function.
+	(bow_wv_new_from_text_fp): Use it.  Handle NULL lex.
+	* libbow.h: Declare new WV function.
+
+	* lex-simple.c: Remove the N-gram lexer.
+	* lex-gram.c: lex-indirect.c, lex-html.c: New files.
+	* Makefile.in (LIBBOW_C_FILES): Added lex-gram.c, lex-html.c,
+ 	lex-indirect.c.
+	* libbow.h: Declare new lexer functions, types and variables.
+
+Sun Dec 29 13:04:17 1996  Andrew McCallum  <mccallum@pad>
+
+	* lex-simple.c: Make all the instances of BOW_LEXER use a NULL
+ 	DOCUMENT_END_PATTERN.
+	(bow_lexer_simple_open_text_fp): Instead of scanning the FP twice,
+	have it fill and grow the document buffer as it reads the FP for
+ 	the first time.  (This now seems to work on STDIN, although I
+ 	haven't tried non-NULL DOCUMENT_END_PATTERN's with it; I'm not
+ 	sure if FSEEK works on STDIN.)
+
+	* libbow.h (bow_lexer): Comment the start and end patterns.
+
+	* scan.c (bow_scan_fp_for_string): If STRING is the empty string,
+ 	return immediately instead of scanning to EOF.  The NULL string
+ 	still scans to EOF.
+
+Fri Dec 27 20:00:30 1996  Andrew McCallum  <mccallum@pad>
+
+	The changes for the new lexer.  It now seems to be working.
+
+	* libbow.h (bow_lex): New type, replacing BOW_PARSE.
+	(bow_lexer): New type, replacing BOW_PARSER.
+	(bow_lexer_simple): New type.  New lexers based on this.
+	(bow_lex_gram): New type.
+	(bow_lexer_gram): New type.
+	(bow_default_lexer): Renamed from BOW_DEFAULT_PARSER.
+	(bow_stem_porter): Renamed from BOW_STEM.
+	(bow_isalpha): New function declaration.
+	(bow_isgraph): Likewise.
+
+	* Makefile.in (LIBBOW_C_FILES): Remove p-alpha.c, p-alonly.c,
+ 	p-gram.c, p-white.c.  Add lex-simple.c.
+	(DEMO_C_FILES): Remove robin.c.
+
+	* defparser.c (bow_default_lexer): Renamed from
+ 	BOW_DEFAULT_PARSER.
+
+	* missy.c (main): Use new lexer instead of old parser.
+	* int4word.c (bow_words_add_occurrences_from_text_dir): Likewise.
+	* wi2dvf.c (bow_wi2dvf_add_di_text_fp): Likewise.
+	* wv.c (bow_wv_new_from_text_fp): Likewise.
+
+	* rainbow.c (rainbow_lexer): New global variable.
+	(main): Use new lexer instead of old parser.  Using BOW_ALPHA_LEXER
+	as the underlying lexer instead of the old BOW_ALPHA_ONLY_PARSER.
+
+	* stem.c (bow_stem_porter): Renamed from BOW_STEM.
+
+	* lex-simple.c: New file.
+
+	* scan.c (bow_scan_fp_for_string): If STRING is NULL or
+ 	zero-length, then instead of immediately returning zero, scan
+ 	through the FP until EOF.
+
+Thu Dec 26 12:20:44 1996  Andrew McCallum  <mccallum@pad>
+
+	The last version before the many `lexer' changes.
+
+	* int4word.c (bow_words_write): Write the WORD_MAP_COUNTS also.
+	(bow_words_read_from_fp): Read and create them.
+
+	* dv.c (bow_dv_add_di_count_weight): Assert that the new count is
+ 	greater than zero.
+	* prtfidf.c (_bow_barrel_set_prtfidf_weights): Assert that DV->IDF
+ 	is greater than zero.
+
+Tue Dec 24 17:36:09 1996  Andrew McCallum  <mccallum@pad>
+
+	* rainbow-stats.pl (calculate_accuracy): Use printf and %g instead
+ 	of print.
+	(overall_accuracy): Calculate and print standard deviation also.
+
+	* rainbow.c (main): Use BOW_GRAM_PARSER_PARSER.
+
+	* p-gram.c (bow_gram_parser_parser): New global variable.
+	(bow_gram_parser_open_text_fp): Set it to BOW_DEFAULT_PARSER if it's
+	NULL.  Use it.
+	(bow_gram_parser_close): Use it.
+	(bow_gram_parser_get_word): Likewise.
+	* libbow.h: Declare BOW_GRAM_PARSER_PARSER.
+
+	* prtfidf.c (bow_prtfidf_uniform_priors): New global variable.
+	Default is to use *uniform* class prior probabilities.
+	(_bow_barrel_set_prtfidf_weights): Don't set the DV->IDF here, we'll
+	use its current value later.
+	(_bow_score_prtfidf_from_wv): Move the test for !DV.  Pay attention to
+	BOW_PRTFIDF_UNIFORM_PRIORS, and do the right thing.
+
+Sun Dec 22 13:35:03 1996  Andrew McCallum  <mccallum@pad>
+
+	* .cvsignore: Added executables arrow, robin, missy, rainbow-stats.
+
+	* Makefile.in (INSTALL_FILES): New variable.
+	(install): Use it.  Fix removing of old executables.  Install Perl
+	files. 
+
+	* libbow.h (bow_str2method): New macro.
+	(bow_words_keep_top_by_infogain): Declare function.
+	* int4word.c: Add comment.
+
+	* rainbow.c (rainbow_index): Remove words with occurrences less
+ 	than X even if NUM_TOP_WORDS_TO_KEEP is non-zero.
+	(main): New command-line argument `-R'.  Use new bow_str2method().
+
+	* stoplist.c: Turn back on the builtin stoplist.
+
+Fri Dec 20 15:53:50 1996  Andrew McCallum  <mccallum@pad>
+
+	* prtfidf.c: New file.
+
+Tue Dec 17 18:19:55 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	This version used to make missy-demo data for talk.
+
+	* missy.c (prune_words_with_occurrences_less_than): Change it from
+ 	2 to 0, to turn it off by default.  (This was done for the
+ 	missy-demo data.)
+	(missy_mdoc_read): Set the PRIOR to 1.0!
+	(missy_query): Normalize WI2PY.  Print a list of the reply
+	document scores.
+
+	* rainbow.c (main): Added prtfidf for `-m'.
+
+	* score.c (bow_get_best_matches): Do the right thing for prtfidf,
+ 	call _bow_score_prtfidf_from_wv.
+
+	* stoplist.c (init_stopwords): Temporarily turn off the builtin
+ 	stoplist, for use with the missy-demo data.  Yipes, this needs to
+ 	be turned back on!
+
+	* vpc.c (bow_barrel_new_vpc): Do the right thing for prtfidf;
+ 	treat it like naivebayes.
+	(bow_barrel_new_vpc_with_weights): Likewise.
+
+	* weight.c (bow_barrel_set_weights): Call
+ 	_bow_barrel_set_prtfidf_weights when appropriate.
+
+	* Makefile.in (LIBBOW_C_FILES): Added prtfidf.c.
+
+Mon Dec 16 13:11:59 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* arrow.c (arrow_unarchive): Add verbosification.
+	* info_gain.c (bow_infogain_per_wi_new): Fix verbosification.
+	* info_gain.c (bow_infogain_per_wi_new): Add verbosifying.
+
+	* rainbow.c (num_top_words_to_keep): Set to zero as a default.
+	(rainbow_index): Make it possible to call both occurrence pruning and
+	infogain pruning.
+	(main): New command-line argument `-m'.
+
+	* vpc.c (bow_barrel_new_vpc_with_weights): Create the VPC barrel,
+ 	and then normalize the weights, otherwise we get -1 normalizers!
+	* score.c (bow_get_best_matches): Delete more leftover naivebayes
+ 	code.  Assert that the normalizer is greater than 1.
+
+	* rainbow.c (num_top_words_to_keep): New global variable set from
+ 	command line.
+	(rainbow_index): New nest function DO_INDEXING.  Use it.  Add term
+	pruning according to information gain.
+	(main): New command line argument `-T' to set num top words.
+
+	* robin.c (robin_index): Do the right thing when WI is -1.
+	* wi2dvf.c (bow_wi2dvf_add_di_text_fp): Likewise.
+	* wv.c (bow_wv_new_from_text_fp): Likewise.
+
+	* missy.c (missy_index): Add code to prune words with occurrences
+ 	less than a certain number.
+
+	* int4word.c (bow_words_keep_top_by_infogain): Implemented.
+	(bow_words_add_occurrences_from_text_dir): Do the right thing when WI
+	is -1.
+
+	* info_gain.c (bow_infogain_per_wi_new): Set info gain to 0 when
+ 	the DV for that word NULL.
+
+	* barrel.c (bow_barrel_new): Add new argument.  Separate
+ 	capacities for the cdocs array and the wi2dvf.
+	* libbow.h: Declare new argument in bow_barrel_new.
+	* arrow.c (arrow_index): Use new extra argument to barrel_new.
+	* vpc.c (bow_barrel_new_vpc): Use new extra argument to
+ 	barrel_new.
+
+	* naivebayes.c (_bow_score_naivebayes_from_wv): Removed ununsed
+ 	local variable.
+
+Wed Dec 11 15:19:44 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* Makefile.in (diff): Ignore the non-zero exit status from `diff'.
+
+	* Makefile.in (dist): Call cvs rtag.
+	(diff): New target.
+	(clean): Delete *.info and *.dvi.
+	(maintainer-clean): Delete $(PERL_RUNNABLE_FILES), configure, README,
+	and INSTALL.
+
+	* int4word.c (bow_words_keep_top_by_infogain): New function; not
+ 	yet implemented.
+
+	* naivebayes.c (_bow_score_naivebayes_from_wv): Incoporate P(w|C)
+ 	for all words in query document, not just those in the DV.
+
+	* rainbow.c: Added more comments.
+	(rainbow_wi2dvf_sum_classes): Function removed.
+
+	* Version (BOW_MINOR_VERSION): Version 0.5.
+	* libbow.h (BOW_MINOR_VERSION): Likewise.
+	This version given to Kamal.
+
+Tue Dec 10 20:22:29 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* rainbow-stats.pl: New file.  Changed from Sean's version to
+	include scientific notation in number regular expression.
+
+	Naive-Bayes code runs without crashing, but it provides horrible
+	results on the CIA type data.  Average accuracy of 7%.  It almost
+	always chooses Defense_Forces.
+
+	* naivebayes.c (_bow_barrel_set_naivebayes_weights): Rewrite from
+ 	scratch, avoiding the use of heaps.
+
+	* libbow.h: Include <limits.h>, so we get PATH_MAX.
+
+	* naivebayes.c: New file.
+	* Makefile.in (LIBBOW_C_FILES): Added naivebayes.c.
+	* weight.c: Remove the NaiveBayes code to naivebayes.c.
+	* score.c (bow_get_best_matches): Likewise.
+	* vpc.c (bow_barrel_new_vpc): Remove the NaiveBayes prior-setting
+ 	to naivebayes.c.
+
+	* rainbow.c: Remove the commented-out pre-vpc code.  Change the
+ 	default method to naivebayes.
+
+Mon Dec  9 10:11:05 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	CIA type data shows performance improvement from 1-grams to
+	1/2-grams: 79% to 68% accuracy.
+	
+	* wi2dvf.c (bow_wi2dvf_dv): Fix assertion for when doing the last WI.
+
+	* vpc.c (bow_barrel_new_vpc): Verbosify and fix off-by-one error
+ 	in class index handling.
+
+	* rainbow.c (rainbow_classnames): New global variable.
+	(rainbow_unarchive): Set it.
+	(rainbow_index): Verbosify while we read files for word pruning.
+
+	* libbow.h (PATH_MAX): Avoid warning in surrounding #if.
+	(bow_fopen): Use perror() as well as bow_error.
+
+	* int4word.c (bow_words_add_occurrences_from_text_dir): Keep track
+ 	of the text file count, and verbosify.
+
+	* barrel.c (bow_barrel_new): Create the new wi2dvf with
+ 	bow_num_words(), not CAPACITY.
+	(_bow_barrel_cdoc_free): Only free FILENAME if it's non-NULL.
+
+	* array.c (bow_array_entry_at_index): Fix off-by-one error in
+ 	assertion.
+
+	* rainbow.c: Make it work with new vpc function, but old code is
+ 	still there commented-out.
+
+	* libbow.h: Declare new vpc and infogain functions.
+
+	* info_gain.c: Comment new functions.
+
+	* score.c (bow_get_best_matches): Add code to do NaiveBayes;
+ 	thanks to Dunja, who helped.
+
+	* vpc.c (bow_barrel_new_vpc): Totally rewritten.  Now simpler and
+ 	faster.  Don't create a dv_heap, just go through the wi2dvf by
+ 	words.
+	(bow_barrel_new_vpc_with_weights): New function.
+
+	* weight.c (_bow_barrel_set_weights_naivebayes): Renamed from
+ 	_bow_barrel_set_weights_sans_idf.  Verify that the class priors
+ 	are set.
+	(bow_barrel_set_weights): Use new function name.
+
+	* split.c (drand48, srand48) [__sun__]: Add prototypes.
+
+Fri Dec  6 17:57:46 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* wi2dvf.c (bow_wi2dvf_print_stats): Don't use //-style comments.
+	* weight.c (bow_barrel_set_weight_normalizers): Likewise.
+
+	* libbow.h: Add inclusions and declarations needed for SunOS;
+ 	thanks to Sean.
+
+	* rainbow.c (prune_words_with_occurrences_less_than): New global
+ 	variable.
+	(rainbow_index): Use it.
+	(rainbow_query): Set and normalize the QUERY_WV weights!
+	(rainbow_test): Likewise.
+
+	* missy.c: Include <values.h>.
+	(test_query_ri): New global variable.
+	(missy_index): Normalize the RDOC.WV!
+	(missy_query): When printing wi2py[], use MAXFLOAT instead of 1000.
+	Normalize ri2pr[] so it sums to one.  Caluculate and print the
+ 	number of replies with higher scores than the returned reply.
+
+	* dv.c (bow_dv_default_capacity): Value changed from 4 to 2, in an
+ 	effort to reduce memory use.
+
+	* email.c (bow_email_get_replyid): Don't insist that the opening
+ 	`<' is on the same line as "In-Reply-To:".
+
+	* int4word.c (word_map_counts, word_map_counts_size): New static
+ 	variables.
+	(bow_word2int_do_not_add): New static variable.
+	(_bow_int4word_initialize): New function.
+	(bow_word2int): Use it.  Pay attention to bow_word2int_do_not_add.
+	(bow_words_set_map): New function.
+	(bow_word2int_add_occurrence): New function.
+	(bow_words_occurrences_for_wi): New function.
+	(bow_words_remove_occurrences_less_than): New function.
+	(bow_words_add_occurrences_from_text_dir): New function.
+
+	* libbow.h: Declare new bow_words_ functions.
+
+	* robin.c (robin_index): Use new function
+ 	bow_word2int_add_occurrence().
+
+	* weight.c (bow_barrel_set_weight_normalizers): Free the heap
+ 	before returning!
+
+	* wi2dvf.c (bow_wi2dvf_add_di_text_fp): Use new function
+ 	bow_word2int_add_occurrence().
+
+	* wv.c (bow_wv_new): Initialze normalizer to 1.
+	(bow_wv_new_from_text_fp): Likewise.
+	(bow_wv_new_from_text_fp): Use new bow_word2int_add_occurrence().
+
+Thu Dec  5 09:49:46 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* missy.c (method): New global variable.
+	(num_message_neighbors): New global variable set by command-line arg.
+	(missy_index): Write debugging info about matching to
+	"./missy-matching".  Set RDOC.MI even when the message is already
+ 	in MDOCS!
+	(missy_query): Set and normalize the weights of the QUERY_WV.  Add
+	code for spreading P(y|m) based only on nearest neighbors.  Print
+ 	more informative output, including filenames.
+	(main): New command-line option -k.
+
+	* score.c (bow_get_best_matches): Make sure QUERY_WV->NORMALIZER
+ 	is non-zero.
+	* weight.c (bow_wv_set_weight_normalizer): Make sure TOTAL is
+ 	non-zero.
+
+	* rainbow.c: Include <errno.h> for DEC Alpha's.
+	* arrow.c: Likewise.
+
+Wed Dec  4 10:44:52 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* Makefile.in (PERL): New variable.
+	(LIBBOW_C_FILES): Added p-gram.c.
+	(PERL_FILES): New variable.
+	(PERL_RUNNABLE_FILES): New variable.
+	(DIST_FILES): Added PERL_FILES.
+	(all): Add dependancy on PERL_RUNNABLE_FILES.
+	(PERL_RUNNABLE_FILES): New rule.
+	* configure.in: Look for perl in path.
+
+	* rainbow.c (infogain_words_to_print): New global variable, set by
+ 	command-line arguments.
+	(main): Set BOW_DEFAULT_PARSER to BOW_GRAM_PARSER; set
+	BOW_GRAM_PARSER_GRAM_SIZE to 1.  New command line options, -g, -I,
+ 	-h.  Call BOW_INFOGAIN_PER_WI_PRINT.
+
+	* info_gain.c (bow_infogain_per_wi_new): New function.
+	(bow_infogain_per_wi_print): New function.
+	(bow_barrel_scale_by_info_gain): Use new function above.
+
+	* p-gram.c: New file.
+	* libbow.h (bow_parser_skip_net_header): Declare new global
+ 	variable.
+	(bow_gram_parser): Declare new parser struct.
+	(bow_gram_parser_gram_size): Declare new global variable.
+	* defparser.c (bow_parser_skip_net_header): Define and initialize
+ 	to 0.
+	* p.inc (BOW_P_OPEN_NAME): If BOW_PARSER_SKIP_NET_HEADER is
+ 	non-zero, scan into the FP past the first "\n\n", in order to skip
+ 	over the email/news header.
+
+Tue Dec  3 10:20:11 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* wv.c (bow_wv_count_for_wi): Use bow_wv_entry_for_wi() instead of
+ 	duplicating code.
+
+	* wi2dvf.c (bow_wi2dvf_new): Initialize the FP to NULL!
+	(bow_wi2dvf_dv): Assert that WI isn't larger than the WI2DVF->SIZE.
+	Assert that IDF isn't NaN; twice.
+
+	* split.c (bow_test_new_heap): Drastically simplify.
+	(bow_test_next_wv): Free the old *WV if isn't non-NULL.  Use
+	bow_wv_new() instead of creating it with malloc by hand.  When
+ 	we've reached the end of the heap, free the *WV.
+
+	* score.c (bow_get_best_matches): Make CURRENT_SCORE a double
+ 	instead of a float.  Assert that IDF isn't NaN.  Don't normalize
+ 	the query WV.  Most important: avoid a memory leak by freeing the
+ 	HEAP when we are done with it!
+
+	* rainbow.c (rainbow_wi2dvf_sum_classes): Set the class IDF from
+ 	the doc IDF.  Still add in the count and weight, even if the
+ 	weight is zero.  This means the wi2dvf will expand to the proper
+ 	size so we can meaningfully get DV's from it.
+	(rainbow_set_weights): Don't scale by info gain.
+	(rainbow_test): Initialize the QUERY_WV to NULL so bow_test_next_wv()
+	will know not to free an uninitialized value.
+
+	* heap.c (bow_dv_heap_free): New function.
+	(bow_make_dv_heap_from_wv): Add assertion checking for IDF NaN.
+
+	* dv.c (bow_dv_new_from_data_fp): Add comment about FP assertion.
+
+	* weight.c: Assert that IDF is not NaN.  Don't print progress
+ 	verbosity every time through the loop---it's slowing us
+ 	down---only print it every 10 times through the loop.
+
+	* dv.c (bow_dv_new): Initialize the IDF to zero!
+	(bow_dv_write_size): Include the IDF size in the return value.
+	(bow_dv_write): Write the IDF.
+	(bow_dv_new_from_data_fp): Read the IDF.
+
+	* rainbow.c: Keep two barrels: one for classes, one for documents.
+	(num_trials, test_percentage, method): New global variables set by
+	command-line switches.
+	(rainbow_archive): Deal with both barrels.
+	(rainbow_unarchive): Likewise.
+	(rainbow_set_weights): New function...
+	(rainbow_wi2dvf_sum_classes): ...using code pulled from here.
+	(filename_to_classname): New function.
+	(rainbow_test): New function.
+	(main): Add new command line switches -t, -p.  Call rainbow_test().
+
+	* arrow.c: Use new weight normalization functions.
+	* missy.c: Likewise.
+
+	* split.c: Renamed functions to all begin with `bow_test_'.  Use
+ 	argument `barrel' instead of `cdoc' and `wi2dvf'.
+
+	* weight.c: Use bow_method instead of bow_idf_type and
+ 	bow_normalize_type.  All functions changed.
+
+	* score.c (bow_get_best_matches): Rename some variables.  Add
+ 	mechanics of NaiveBayes.  Normalize query vector.  Normalize
+ 	non-NaiveBayes outside the loop.
+
+	* barrel.c (bow_barrel_new): Fix initialization of METHOD.
+	(bow_barrel_add_from_text_dir): Initialize the PRIOR.
+	(_bow_barrel_cdoc_write): Write the PRIOR.
+	(_bow_barrel_cdoc_read): Read the PRIOR.
+	(bow_barrel_new_from_data_fp): Read the METHOD properly.
+
+	* libbow.h: Remove types as arguments to some weight functions.
+  	Rename the test/train split functions.
+	(bow_cdoc): Added member PRIOR.
+	(bow_barrel): Added member METHOD.
+	(bow_method): New enum.
+	(bow_idf_type): Removed.
+	(bow_normalize_type): Removed.
+
+	* Makefile.in (LIBBOW_C_FILES): Added split.c.
+
+	* barrel.c (bow_barrel_new): Set RET->METHOD to default of
+ 	BOW_METHOD_TFIDF.
+	(bow_barrel_new_from_data_fp): Read METHOD.
+	(bow_barrel_write): Write METHOD.
+
+	* missy.c: Use renamed NORMALIZER member.
+	(set_test_reply): Use new weight and normalizer setting functions.
+	* rainbow.c (rainbow_wi2dvf_sum_classes): Assert DV.
+	(rainbow_index): Use new weight and normalizer setting functions.
+	* arrow.c: Use new weight and normalizer setting functions.
+
+	* weight.c (_bow_add_to_normalizer_total): New function.
+	(_bow_total_to_normalizer): New function.
+	(bow_barrel_set_weight_normalizers): Use them.  
+	(bow_wv_set_weights): Function moved here from wv.c.
+	(bow_wv_set_weight_normalizer): Likewise.
+	* wv.c: Weight and normalizer functions moved to weight.c.
+
+	* libbow.h: Move the WV weight-setting functions next to the
+ 	barrel weight-setting functions.
+	(bow_cdoc): Rename memeber LENGTH to NORMALIZER, for clarity.
+	(bow_barrel_set_weight_normalizers): Renamed from
+	bow_barrel_normalize_weights, since it doesn't actually change the
+ 	weight values.
+
+	* wv.c: Include <math.h>
+	(sqrtf): New macro.
+	(bow_wv_set_normalizer): Renamed from bow_wv_set_norm().  New argument
+	TYPE.  Obey new argument.
+	(bow_wv_set_weights): New argument TYPE. Obey it.  Don't call the
+	normalizer function.
+	(bow_wv_write): Use new name WV->NORMALIZER.
+	(bow_wv_new_from_data_fp): Likewise.
+	* score.c (bow_get_best_matches): Use renamed NORMALIZER member.
+	* barrel.c (_bow_barrel_cdoc_write): Likewise.
+	(_bow_barrel_cdoc_read): Likewise.
+
+	* libbow.h: Rename and add new arguments to WV functions.
+
+Mon Dec  2 13:14:10 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* arrow.c (arrow_unarchive): Don't close the barrel FP, because we
+ 	still have yet to read the DV's from it!
+
+	* barrel.c (bow_barrel_add_from_text_dir): Print warning if we end
+ 	up finding more binary files than text files.
+
+	* score.c: Some formatting and comment changes.
+
+	* weight.c: Some comment and variable name changes.
+	(_bow_add_to_idf): Renamed from bow_add_to_total.
+	(_bow_barrel_set_weights_nb): New function for doing Naive Bayes.
+	(bow_barrel_set_weights): Call it if necessary.
+
+	* libbow.h: Declare new vpc function.
+	(bow_idf_nb): New idf type.
+	* Makefile.in (LIBBOW_C_FILES): Added vpc.c.
+	* vpc.c (bow_barrel_new_vpc): Renamed from bow_barrel2vpc_barrel.
+  	Replace use of printf() with bow_verbosify().  Minor formatting
+ 	changes.
+
+Mon Dec  2 13:09:10 1996  Sean Slattery  <jslttery@anther.learning.cs.cmu.edu>
+
+	* vpc.c: New file - implements vector per class models. Basically,
+ 	take a barrel and produce a vector per class barrel from it.
+
+Tue Nov 26 15:56:07 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* weight.c (_bow_add_to_total): Renamed to include a prefixing
+ 	`_'.  Declared `static inline'.
+	(bow_barrel_set_weights): Overhauled and simplified.  I'm not sure
+ 	I haven't broken it, though.  Previously some of the `if()else'
+ 	clauses seemed contradictory to me.
+
+	* score.c (bow_get_best_matches): Add comment about my perceived
+ 	pending need for normalization of the query vector.
+
+	* dv.c (_bow_dv_index_for_di): Add 1 to the DV length when it was
+ 	zero!
+	(bow_dv_add_di_count_weight): New function, replacing
+	bow_dv_add_di_count.
+	(bow_dv_add_di_weight): Function removed.
+	* libbow.h: Declare new wi2dvf function, and remove old ones.
+	* rainbow.c (rainbow_wi2dvf_sum_classes): Use new dv function.
+	* wi2dvf.c (bow_wi2dvf_add_wi_di_count_weight): New function,
+ 	replacing bow_wi2dvf_add_wi_di_count.  Use new dv function.
+	(bow_wi2dvf_add_di_wv): Use new dv function.
+	(bow_wi2dvf_add_di_text_fp): Likewise.
+
+	* Makefile.in (LIBBOW_C_FILES): Added scan.c; although this will
+ 	be taken away once I change parsing to use strings and librx.
+	* scan.c: New file.
+
+	* missy.c (test_mode): New command-line argument variable.  New
+ 	mode in which the user types message numbers instead of query
+ 	text.
+	(set_test_reply): New function.
+	(missy_index): Fix something with SENDER_ID.  Keep track of
+	NUM_MESSAGES.
+	Remove commented code about scaling for infogain.
+	(missy_query): Add test_mode code.  Add more debugging output.
+	(main): New command-line args: -t, -T.  Add words from
+	./.bow-stopwords.
+
+	* heap.c (bow_make_dv_heap_from_wi2dvf): Add silly assert()ion.
+
+	* email.c (bow_email_get_date): Don't cause error when Date isn't
+ 	found, just return 0.
+
+	* dv.c (_bow_dv_index_for_di): New function that captures the guts
+ 	of preparing a spot to add a count or weight.
+	(bow_dv_add_di_count): Use it.
+	(bow_dv_add_di_weight): Use it.
+
+	* info_gain.c (bow_entropy): Ensure COUNTS[i] isn't zero before
+ 	calculating entropy.
+
+Mon Nov 25 11:51:35 1996  Sean Slattery  <jslttery@anther.learning.cs.cmu.edu>
+
+	* weight.c: Added support of bow_prtfidf weighting which gives an
+ 	idf = sqrt(total occurances/occurances).
+	(bow_barrel_set_weights): added code to calculate the total number
+ 	of occurances and changed idf calculations that had those pesky
+ 	1.0's with the real totals intended. Doing things this way ensures
+ 	the weights don't go below 0.
+
+	* score.c (bow_get_best_matches_euclidian): New function.  Gets
+ 	best matches badet on the euclidean distance between vectors
+ 	instead of the cosine of the angel between them.
+
+	* dv.c (bow_dv_add_di_weight): Made this function capable of
+ 	updating weights that occur before the last element entered. It
+ 	assumes the documents are in the list in ascending order of their
+ 	indices. Should make this change to the bow_dv_add_di_count
+ 	function as well, but this was the minimum I needed to get vector
+ 	per class stuff done.
+
+Mon Nov 18 14:17:55 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* wv.c (bow_wv_set_norm): Initialize TOTAL to zero!  It was
+ 	uninitialized.
+	(bow_wv_write): Write the NORM!
+	(bow_wv_new_from_data_fp): Read it.
+	(bow_wv_write_size): Adjusted for writing NORM.
+
+	* stoplist.c (bow_stoplist_add_from_file): Screaming verbosify
+ 	each word that's added.
+
+	* heap.c (bow_make_dv_heap_from_wv): Get the DV using
+ 	bow_wi2dvf_dv(), not by accessing the structure directly.
+  	Otherwise, we will no properly properly read in the DVF from disk.
+	* weight.c (bow_barrel_set_weights): Likewise.
+
+	* p.inc (BOW_P_GET_WORD_NAME): Also check if word is on the
+ 	stoplist *after* stemming.
+
+Tue Nov  5 12:15:37 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* missy.c: Add option for repeated queries.
+
+	* weight.c (bow_barrel_set_weights): Use the total number of
+ 	documents instead of 1.0.
+
+Fri Nov  1 11:27:23 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* p.inc: Fix the handling of BOW_P_STOPLIST_CHECKER.
+
+	* int4str.c (bow_int4str_new_from_fp): Make it work even for
+ 	strings that contain spaces, (but not newlines).
+	(bow_int4str_write): Make sure the strings don't contain newlines.
+
+	Add generalizable parsing facilities.
+	* libbow.h (bow_parse, bow_parser): New types.  Add new parsing	funcs.
+	(bow_get_word): Function removed.  Use new parsing facilities instead.
+	* Makefile.in (DIST_FILES): Added p.inc.
+	* Makefile.in (LIBBOW_C_FILES): Added p-alpha.c, p-alonly.c, p-white.c.
+	* p.inc, p-alpha.c, p-alonly.c, p-white.c: New files.
+	* Makefile.in (LIBBOW_C_FILES): Added defparser.c.  Removed
+ 	getword.c.
+	* wi2dvf.c (bow_wi2dvf_add_di_text_fp): Use new parser.
+	* wv.c (bow_wv_new_from_text_fp): Use new parser.
+
+	* arrow.c (arrow_index): Use new bow_barrel_add_from_text_dir
+ 	function.
+
+Thu Oct 31 15:18:49 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* Version (BOW_MINOR_VERSION): Version 0.4.
+	* libbow.h (BOW_MINOR_VERSION): Version 0.4.
+
+	* rainbow.c: Add output filename feature.  Use bow_idf_words,
+ 	which unlike bow_idf_log_words, seems to work.
+	(rainbow_index): Scale by information gain.
+
+	* barrel.c (bow_barrel_add_from_text_dir): Add new EXCEPT_NAME
+ 	argument.  Deal with NULL EXCEPT_NAME.
+	* libbow.h: Add new argument to barrel function.
+
+	* weight.c (bow_barrel_set_weights): Add prefix and postfix
+ 	verbosity strings.
+	(bow_barrel_normalize_weights): Add verbosifying.
+	* info_gain.c (bow_barrel_scale_by_info_gain): Add verbosifying.
+	* barrel.c (bow_barrel_add_from_text_dir): Don't print the number
+ 	of "binary files".
+	* rainbow.c: Added some verbosifying.
+
+	* rainbow.c: Don't close the rainbow_barrel fp.  Set the weights
+ 	in the right place.  Put the indexing code in main().  Now running
+	to completion.
+
+	* dv.c (bow_dv_new_from_data_fp): Add new assertion that should
+ 	help us catch closed FP's.
+
+	* docnames.c (bow_map_verbosity_level): New global variable.
+	(bow_map_filenames_from_dir): Use it.
+
+	* barrel.c (bow_barrel_add_from_text_dir): Renamed from
+ 	bow_barrel_new_from_text_dir.  Don't create a new barrel, just add
+ 	to a pre-existing one.
+	* libbow.h: Declare renamed function.
+
+	* libbow.h (bow_fwrite_string): Handle the NULL string for
+ 	argument S.
+	(bow_fread_string): Match bow_fwrite_string handling of NULL.
+
+Mon Oct 28 12:03:11 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* info_gain.c (bow_barrel_scale_by_info_gain): Renamed from
+ 	bow_wi2dvf_scale_by_info_gain.
+	* libbow.h: Rename info gain function to use `barrel'.
+
+	* rainbow.c: Totally rewritten to be a document classifier.
+
+	* missy.c (missy_index): Use new `barrel' names.
+
+	* wi2dvf.c (bow_wi2dvf_add_di_wv): Increase wi2dvf size with a
+ 	MAX(), so we are guaranteed to be big enough.
+	(bow_wi2dvf_add_wi_di_count): Likewise.
+	(bow_wi2dvf_add_wi_di_weight): Likewise.
+	(bow_wi2dvf_write): Incorporate initial seek position into
+	calculations, in case we are writing to a file that already has
+ 	other stuff at the beginning.
+
+	* barrel.c (bow_barrel_free): New function.
+	(bow_barrel_new_from_text_dir): Print shorter verbosity.
+	* libbow.h: Declare bow_barrel_free().
+
+	* arrow.c (arrow_index): Set the weights.
+	(main): Raise error if no text documents found.
+
+	* libbow.h: Declare bow_barrel_new(), and fix typo.
+
+	* wi2dvf.c (bow_wi2dvf_add_wi_di_weight): New function.
+	* libbow.h: Declare new wi2dvf function.
+
+	* dv.c (bow_dv_add_di_weight): New function.
+	* libbow.h: Declare new dv function.
+
+	* weight.c (bow_barrel_set_weights): Renamed from
+ 	bow_wi2dvf_set_weights.
+	(bow_barrel_normalize_weights): Renamed from
+	bow_wi2dvf_normalize_weights.
+	* libbow.h: Rename weight functions to use `barrel'.
+
+	* barrel.c (bow_barrel_new_from_text_dir): Take new CLASS
+ 	argument.  Set the `class' of the new cdoc's accordingly.
+	* libbow.h: Add new argument to barrel function.
+
+Fri Oct 25 13:05:16 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* arrow.c (main): Create the data directory if it doesn't exist
+ 	already.
+
+	* Version (BOW_MINOR_VERSION): Version 0.3.
+
+	* missy.c: Update for use with barrel's.
+
+	* sarray.c (bow_sarray_new_from_data_fp): Renamed from
+ 	bow_sarray_new_from_fp.
+	* libbow.h: Rename sarray function.
+
+	* Makefile.in (version.texi): Use renamed BOW_ variables.
+	(libbow.h): New target with rules that keep it up to date with
+	./Version.
+	* libbow.h (BOW_MAJOR_VERSION): New macro.
+	(BOW_MINOR_VERSION): New macro.
+	(BOW_VERSION): New macro.
+	* Version (BOW_MAJOR_VERSION): New variable.
+	(BOW_MINOR_VERSION): New variable.
+	(BOW_VERSION): Use them; renamed from LIBBOW_VERSION.
+
+	* arrow.c: New file.
+	* Makefile.in (DEMO_C_FILES): Added arrow.c.
+
+	* barrel.c: New file.
+	* libbow.h: Declare barrel archiving functions.
+
+	* missy.c (missy_read_data): Use new function names
+ 	"...new_from_data_fp".
+	(main): Rely on bow_stoplist_add_from_file() to verbosify.
+
+	* stoplist.c (bow_stoplist_add_from_file): Add a verbosify
+ 	message.
+
+Wed Oct 23 16:45:46 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* libbow.h (bow_barrel): New type.  Use it in all places where a
+ 	WI2DVF and CDOCS were used together; several function arguments
+ 	changed.
+	* wi2dvf.c (bow_wi2dvf_new_from_text_dir): Function removed.
+  	Similar function is now in barrel.c.
+	* weight.c (bow_wi2dvf_set_weights): Use bow_barrel.
+	(bow_wi2dvf_normalize_weights): Likewise.
+	* score.c (bow_get_best_matches): Use bow_barrel.
+	* info_gain.c (bow_wi2dvf_scale_by_info_gain): Use new bow_barrel
+ 	type.
+	* Makefile.in (LIBBOW_C_FILES): Add barrel.c.
+
+	* array.c (bow_array_new_from_data_fp): Renamed from
+ 	bow_array_new_from_fp.
+	* sarray.c (bow_sarray_new_from_fp): Use renamed function
+ 	bow_array_new_from_data_fp.
+
+Tue Oct 22 14:03:38 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* missy.c (main): Take -n argument, for not using dates in
+ 	msgid's.  Take argument -q.
+	(missy_query): Print top N words in reply word distribution.
+
+	* email.c (_scan_fp_for_string): Make `\n' at the beginning of the
+ 	search string match the beginning of the file.
+
+	* missy.c (missy_index): Return the number of message/reply pairs.
+  	Completely skip a reply if the sender doesn't match SENDER_ID.
+	(main): Don't write data if MISSY_INDEX returns 0.
+
+	* error.c (_bow_error) [__linux__]: Call abort() instead of exit()
+ 	because it lets us find ourselves in GDB.  Still don't do it for
+ 	non-Linux systems, because apparently on other systems there was a
+ 	problem with flushing stderr when calling abort().
+
+	* docnames.c (bow_map_filenames_from_dir): Don't verbosify the
+ 	directory names if we're not BOW_VERBOSITY_USE_BACKSPACE.
+
+	* email.c: To several functions add new argument that negates
+ 	test, or that insists on a search all on one line.
+	(_bow_email_get_email_address): New function.
+	(bow_email_get_sender): New function.
+	(bow_email_get_recipient): New function.
+	(bow_email_get_date): New function.
+	* libbow.h: Declare new email functions.
+
+	* missy.c (missy_mdoc_free): Don't free the DOC pointer!  It was
+ 	never malloc'ed; it's part of the array.
+	(missy_rdoc_free): Likewise!
+	(missy_index): Arrange search for Message-Id using goto's, because its
+	simpler; likewise with Reply-Id's.  Don't strdup() strings until
+ 	we're sure we're going to use them.  Deal with null REPLY_DIR
+ 	argument.
+	(main): Make it work using getopt().
+
+Mon Oct 21 12:08:45 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* libbow.h (bow_parse_news_headers): Add missing semi-colon to
+ 	declaration.
+
+	* missy.c (missy_index): Set the mdoc's class entry to be unique,
+ 	so we can get usefully run bow_wi2dvf_scale_by_info_gain().  Run
+ 	that function, (but commented out for now, since it's crashing).
+
+	* info_gain.c (bow_entropy): Get the "document vector" with
+ 	bow_wi2dvf_dv(), not by following the pointer directly.
+  	Otherwise, we won't properly read the DV in from the file, and may
+ 	get inappropriate NULLs.
+
+	* Makefile.in (LIBBOW_C_FILES): Add info_gain.c.
+
+	* HACKING: Correct directions for checking out bow from CVS.
+
+Sat Oct 19 00:49:08 1996  Sean Slattery  <jslttery@anther.learning.cs.cmu.edu>
+
+	* news.c: Function for parsing news article headers. Useful for looking
+	for crosspostings for multiple classifications.
+	(bow_parse_news_headers): Added a getc to dump the first whitespace
+	character after the : proceeding the header
+	(bow_headers2newsgroups): New function to grok the bow_sarray returned
+	by bow_parse_new_headers and return a bow_array of strings 
+	corresponding to every newsgroup mentioned in the newsgroup line.
+	* libbow.h: Added def'n for new function
+
+	* libbow.h: Added bow_parse_news_headers
+
+Fri Oct 18 10:50:23 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* info_gain.c (log2f): #define it if ./configure determined that
+ 	we don't have it.
+	(bow_entropy): Use log2f instead of log2.
+	(MIN): Macro removed.  It's now in libbow.h.
+
+Fri Oct 18 21:32:42 1996  Sean Slattery  <jslttery@anther.learning.cs.cmu.edu>
+
+	* array.c (bow_array_append): Changed test from array->length > 
+	array->size to array->length >= array->size. When array->length = 
+	array->size, we're run out of space.
+	(bow_array_init): Assigned array->free_func to free_func. Otherwise
+	free_func is not initialised and the bow_array_free function will
+	sometimes crash.
+
+Fri Oct 18 10:50:23 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* missy.c: Now working for getting matching replies, although it
+ 	looks like our make could use a little improvement.
+
+	* libbow.h: Declare new functions.
+	(bow_wv): LENGTH entry renamed to NORM.
+
+	* wv.c (bow_wv_set_norm): New function.
+	(bow_wv_set_weights): New function.
+
+	* error.c (_bow_error): Call exit(-1) instead of abort().  It
+	makes a prettier error message on the console.
+
+	* heap.c (bow_make_dv_heap_from_wi2dvf): Separate the index into
+ 	words and index into the heap so that we can handle wi2dvf's that
+ 	have some NULL "document vectors".
+
+	* libbow.h (MIN): New macro.
+	(MAX): New macro.
+	(bow_verbosity_use_backspace): New global variable declaration.
+	* error.c (bow_verbosity_use_backspace): New global variable.
+	(bow_verbosify): Use it.
+	* weight.c (MIN): Remove definition. It's now in libbow.h.
+
+	* libbow.h (bow_wi2dvf_normalize_weights): Change from `normalise'
+ 	to American spelling.  The *.c file had already been changed.
+
+Fri Oct 18 01:15:57 1996  Sean Slattery  <jslttery@anther.learning.cs.cmu.edu>
+
+	* info_gain.c (bow_wi2dvf_scale_by_info_gain): New file,
+	information gain routine.
+	(bow_entropy): Cast some of the arithmitic to floats - dividing one 
+	integer by another tends to go to 0 here.
+	* libbow.h: added definition for above.
+ 
+	* split.c: (bow_next_test_wv) Free heap when we've exhausted the
+ 	test set (for tidyness)
+
+	* heap.c (bow_make_dv_heap_from_wi2dvf): Changed malloc to
+ 	bow_malloc
+	(bow_make_dv_heap_from_wv): Changed malloc to bow_malloc
+
+Thu Oct 17 11:08:42 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* missy.c: Make missy_mdoc a bow_cdoc, and pass the "cdocs" array
+ 	in at the appropriate places.  Message matches still don't seem
+	correct. 
+
+	* score.c (bow_get_best_matches): Add an assert()'ion that WI
+ 	match the word index of our current location in the word vector.
+
+	* libbow.h: Rename local variables from num_written to num_read
+ 	where appropriate.
+
+	* heap.c (bow_make_dv_heap_from_wv): Fix typo: continue when DV is
+ 	NULL, not the other way around.
+
+	* wi2dvf.c (bow_wi2dvf_write): Don't close the FP at the end!  We
+ 	didn't open it.
+	(bow_wi2dvf_new_from_data_file): Don't close the FP, it will still be
+	needed to read the DV's.
+
+	* libbow.h (bow_wi2dvf_write_data_file,
+ 	bow_wi2dvf_new_from_data_file): Re-add declarations for these
+ 	functions.
+
+	* heap.c (bow_make_dv_heap_from_wv): WV->LENGTH is not the number
+ 	of entries in the word vector, it is the Euclidean length!  Change
+ 	all uses of WV->LENGTH to WV->NUM_ENTRIES.
+	* libbow.h (bow_wv): Renamed element `length' to `total' in an
+ 	attempt to choose a less confusing name.  Other naming suggestions
+ 	welcome.
+
+	* missy.c: Added -V and -d command line arguments.  Properly index
+ 	and set weights.  Print the closest matching message.
+
+	* array.c (bow_array_new_from_fp): Set the LENGTH of the new
+ 	array; before it was uninitialized!
+
+	* libbow.h (bow_fwrite_string): Properly calculate the number of
+ 	characters written.
+	(bow_fread_string): Likewise, and parenthesis indexing of S for proper
+	termination.
+	(bow_idf_type): Added `bow_idf' as prefix to enum members, and removed
+	`total' from end.
+	* weight.c: Use new bow_idf enum names.
+	(bow_wi2dvf_set_weights): Handle the case in which a document vector
+	in the WI2DVF is NULL.
+
+	* libbow.h: Include <assert.h>
+
+	* heap.c (bow_make_dv_heap_from_wv): Make it work even when not
+ 	all the words in WV have document vectors in WI2DVF.  Keep
+ 	separate indices into the word vector and into the heap.
+
+	* int4str.c (HEADER_STRING): New macro.
+	(bow_int4str_write): Write it to the FP.
+	(bow_int4str_new_from_fp): Expected it from the FP.
+
+	* array.c (HEADER_STRING): New macro.
+	(bow_array_write): Write it to the FP.
+	(bow_array_new_from_fp): Expected it from the FP.
+
+	* bmalloc.c: Remove previous contents.  Now get the functions
+ 	directly from libbow.h.
+	* io.c: Likewise.
+	* Makefile.in (io.o bmalloc.o): Indicate that they now depend
+ 	(completely) on libbow.h.
+	* libbow.h (_BOW_MALLOC_INLINE_EXTERN): New macro for compiling
+ 	these extern inline functions in library .o files.
+	(_BOW_IO_INLINE_EXTERN): Likewise.
+	(bow_fwrite*, bow_fread): Assert the return values.
+
+	* int4docn.c (bow_docnames_write): Take FILE* argument instead of
+ 	const char *.
+	(bow_docnames_read_from_fp): Renamed frombow_docnames_read(), likewise
+	as above.
+	* libbow.h: Change argument types and function name for
+ 	bow_docnames archiving.
+	* docnames.c (bow_map_filenames_from_dir): Use renamed
+ 	bow_verbosity_level enum.
+
+	* libbow.h (bow_error): Don't print anything if
+ 	bow_verbosity_level indicates bow_silent.
+
+Thu Oct 17 14:36:44 1996  Sean Slattery  <jslttery@anther.learning.cs.cmu.edu>
+
+	* split.c (bow_next_test_wv): Function now takes a pointer to a pointer
+	to a bow_wv. It sets this to point to a pointer to the wv it creates
+	and returns the integer document index to the test document 
+	described by this word vector. 
+	(bow_test_split): Fixed bug in counting that meant we sometimes ended
+	up with fewer test docs than asked for.
+	(bow_test_split): Random number generator is now seeded with time.
+
+	* libbow.h: (bow_next_test_wv) Argument change as above.
+
+Wed Oct 16 08:35:45 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* missy.c: Overhauled for new probabilistic framework based on
+ 	sampling distributions and sufficient statistics.
+
+	* libbow.h (bow_screaming): Renamed from bow_shutup_already.
+  	Commented all bow_verbosity_levels.
+
+	* wi2dvf.c (bow_wi2dvf_write_data_file): Close the FP at the end!
+	(bow_wi2dvf_new_from_data_file): Likewise.
+	(bow_wi2dvf_new_from_data_fp): Don't assert feof(), because there may
+	be multiple things written to one file.
+
+	* io.c (bow_fread_string): Add parenthesis in order to dereference
+ 	string pointer properly.
+
+	* libbow.h: Comment changes to #include lines.
+	(bow_fopen): New macro.
+
+	* wi2dvf.c (bow_wi2dvf_new_from_data_fp): Renamed from
+ 	bow_wi2dvf_new_from_fp.  All callers changed.
+	* libbow.h: Renamed function.
+
+	* Makefile.in (LIBBOW_C_FILES): Added heap.c.
+
+	* io.c (bow_fwrite_string): New function from libbow.h.
+	(bow_fread_string): Likewise.
+
+Wed Oct 16 14:03:07 1996  Sean Slattery  <jslttery@anther.learning.cs.cmu.edu>
+
+	* weight.c: Checked for case total == 0 which can occur if no 
+	documents in the model had this word. Without this check, we get
+	a floating point error when trying to divide by total
+
+	* score.c: (bow_get_best_matches) Added support for a bow_array of
+	cdocs.
+
+	* weight.c: Messed up loop test on outer loop - Reset it to the max_wi
+	which Andrew changed it to before.
+
+	* libbow.h: Added defs for functions in split.c
+
+	* split.c: New file with functions for dealing with test sets.
+
+	* weight.c: Added bow_array *cdoc arguments to
+ 	bow_wi2dvf_set_weights
+	(so we can only do docs in the model), and to
+ 	bow_wi2dvf_normalize_weights where we only calculate the length of
+ 	docs in the model and we store the length in the corresponding
+ 	cdoc structure.
+
+	* libbow.h: Added include of string.h to stop compiler complaint
+	on alpha
+
+Wed Oct 16 08:35:45 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* int4word.c (bow_words_write): Now takes FILE* argument instead
+ 	of filename.
+	(bow_words_read_from_fp): Renamed from bow_words_read_from_file, and
+	likewise as above.
+	* libbow.h (bow_words_read_from_fp): Renamed from bow_words_read.
+
+	* libbow.h: Change argument types of bow_words_write function.
+	(bow_error): Enclose expansion in parenthesis, so that it parses
+	properly when put inside an `else' statement without brackets.
+
+	* wi2dvf.c (bow_wi2dvf_write): New function.
+	(bow_wi2dvf_write_data_file): Use it.  This function is now deprecated.
+	(bow_wi2dvf_new_from_fp): New function.
+	(bow_wi2dvf_new_from_data_file): Use it.  This function deprecated.
+	(bow_wi2dvf_free): New function.
+	* libbow.h: Declare new functions.  Remove deprecated functions.
+
+	* sarray.c (bow_sarray_write): New function.
+	(bow_sarray_new_from_fp): New function.
+	* libbow.h: Declare new functions.
+
+	* wv.c (bow_wv_new): New function.
+	(bow_wv_write_size): New function.
+	(bow_wv_write): New function.
+	(bow_wv_new_from_data_fp): New function.
+	* libbow.h: Declare new functions.
+
+	* weight.c (bow_wi2dvf_normalize_weights): Use renamed variable
+ 	wv_length.
+
+	* array.c (bow_array_write): New function.
+	(bow_array_new_from_fp): New function.
+	* libbow.h: Declare new functions.
+
+	* int4str.c (bow_int4str_write): Make second argument a FILE*
+ 	instead of a filename.
+	(bow_int4str_new_from_fp): New function.
+	* libbow.h: Declare new function.  Update argument type.
+
+Tue Oct 15 10:07:42 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* wv.c (bow_wv_entry_for_wi): New function.
+	* libbow.h: Declare new function.
+
+	* libbow.h: Update for function name changes.
+	(bow_class): New structure.
+
+	* weight.c (bow_wi2dvf_normalize_weights): Renamed from
+ 	bow_normalize_word_vectors.  Minor format, comments and variable
+ 	name changes.
+
+	* configure.in: Check for existance of log2f() and sqrtf()
+ 	functions.
+
+	* weight.c (bow_wi2dvf_set_weights): Renamed from
+ 	bow_assign_tfidf_weights because it is specific to wi2dvf
+ 	structures, and we could imagine having a di2wvf structure in the
+ 	future, and because we could imagine non-TFIDF weight-setting
+ 	schemes.  Don't loop over all word indices up to bow_num_words(),
+ 	only loop up to the min of that and size of WI2DVF.  Raise an
+ 	error if there is an unrecognized TYPE.  Fix bow_verbosify() call.
+
+Mon Oct 14 16:17:26 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* missy.c (main): Build a term frequency table for each mwi, not
+ 	for each mwi/rwi pair.  Use a bitvector to determine which replies
+ 	should be included in the sum, not a wv.  Now much, much faster;
+ 	quite reasonable for use with 3000 email messages.
+
+	* libbow.h: Indentation and comment fixes.
+
+	* rainbow.c (main): Don't exit() prematurely.  Actually write the
+ 	data file and read it back in again.
+
+	* wi2dvf.c (bow_wi2dvf_write_data_file): Use sizeof(int) instead
+ 	of sizeof(long) since it better matches reality.
+
+	* dv.c (bow_dv_write_size): Sum short's, not int's, or else we'll
+ 	lie about the results of bow_dv_write.
+
+	* getword.c (bow_get_word) [NON_ALPHA_IN_WORD]: New macro
+ 	selecting new code that will reject a word if it contains any
+ 	non-alphabetic characters.  Current default is to include this
+ 	code.
+
+	* bitvec.c (bow_bitvec_new): Properly initialize all values to 0,
+ 	not to 1.
+
+Fri Oct 11 17:37:28 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* bitvec.c: Finish and debug implementation.
+	* libbow.h: Add bow_bitvec declarations.
+
+	* Makefile.in (LIBBOW_C_FILES): Added bitvec.c.
+	* bitvec.c: New file.
+
+Fri Oct 11 17:14:12 1996  Sean Slattery  <jslttery@anther.learning.cs.cmu.edu>
+
+	* libbow.h: Resolved a conflict in bow_cdoc / bow_doc definition.
+
+Thu Oct 10 09:44:55 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* stoplist.c (bow_stoplist_add_from_file): Don't raise an error if
+ 	we can't open the file.  This way, we can simply call the function
+ 	with several "guessed" filenames.
+	* libbow.h: Update comment for stoplist function.
+
+	* getword.c (bow_get_word): Delineate words by space characters
+ 	and non-printable characters, not by non-alphabetic characters,
+ 	(but still reject words with "too many" digits).  This is an
+ 	effort to return entire email addresses and URL's as single words.
+
+	* stoplist.c: Totally re-written using a bow_int4str.
+	(bow_stoplist_present): Renamed from bow_on_stoplist.
+	(bow_stoplist_add_from_file): New function.
+	* libbow.h: Declare new stoplist functions.
+	* Makefile.in (LIBBOW_C_FILES): Added stopwords.c.
+	* getword.c (bow_get_word): Use renamed stoplist function.
+
+	* missy.c (main): Many bug fixes and extra verbosity.
+
+	* email.c (bow_email_get_receivedid): New function.
+	* libbow.h: Declare new email functions.
+
+	* rainbow.c (main): Use new function name
+ 	bow_wi2dvf_write_data_file().
+
+	* Makefile.in ($(DEMO_EXECUTABLES):): Depend on all the
+ 	$(DEMO_O_FILES).
+
+	* int4word.c (bow_num_words): Print error if WORD_MAP has not yet
+ 	been initialized.
+
+	* docnames.c (bow_map_filenames_from_dir): Don't forget to copy
+ 	the CWD and the D_NAME into the FILENAME!
+
+	* wv.c (bow_wv_count_for_wi): Return 0 if WV is NULL.
+
+	* missy.c: New file.
+	* Makefile.in (LIBBOW_C_FILES): Added email.c.
+	(DEMO_C_FILES): Added missy.c.
+	(DEMO_EXECUTABLES:): Changed rule to make $*.o separately.
+	* email.c: New file.
+	* libbow.h: Declared new email functions.
+
+	* wi2dvf.c (bow_wi2dvf_write_data_file): Renamed from
+ 	bow_wi2dvf_write().
+	* libbow.h: Rename function declaration.
+
+	* wv.c (bow_wv_count_for_wi): New function.
+	* libbow.h: Declare new function.
+
+	* sarray.c (bow_sarray_index_at_keystr): New function.
+	* libbow.h (bow_sarray_index_at_keystr): Declare new function.
+
+	* sarray.c: New file.
+	* docs.c: Old file, no longer used.
+
+	* Makefile.in (LIBBOW_C_FILES): Add sarray.c.  Remove docs.c.
+  	Temporarily remove heap.c because it hasn't been checked into the
+ 	CVS, and I don't have access to it.
+
+	* libbow.h (bow_sarray): New typedef, and new function
+ 	declarations.
+	(bow_cdoc): Renamed from bow_doc.  SEEK_START and SEEK_LENGTH elements
+	removed.  Many users will need to define their own "document
+ 	entries" with different elements; this is just one example
+ 	typically used for classification.
+	(bow_docs): Typedef removed.
+	(bow_cdocs): New macro, a bow_array of cdoc's.  Also add macro's for
+	functions.
+	(bow_wi2dvf_add_di_text_fp): Declare new function.
+
+	* int4str.c (bow_int4str_init): New function.
+	(bow_int4str_new): Use it.
+
+	* array.c (bow_array_default_capacity): Renamed from
+ 	bow_array_default_size.
+	(bow_array_init): Use new name.
+	(bow_array_append): Renamed from bow_array_add_at_index, since the
+	user really doesn't have a choice of index anyway.  No INDEX
+ 	argument now.
+
+	* wi2dvf.c (bow_wi2dvf_add_di_text_fp): New function.
+	(bow_wi2dvf_new_from_text_dir): Use it.
+
+Wed Oct  9 15:53:52 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* array.c (bow_array_add_at_index): Include ENTRY_SIZE in
+ 	calculation of realloc() size.
+
+Tue Oct  8 14:38:59 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* libbow.h (bow_array): New structure and suite of functions.
+	(bow_docs): Use it.
+
+	* Makefile.in (LIBBOW_C_FILES): Added array.c.  Renamed doc.c to
+ 	docs.c.
+
+	* array.c: New file.
+	* docs.c: New file.
+
+	* Makefile.in (LIBBOW_C_FILES): Added doc.c.
+
+Tue Oct  8 15:27:45 1996  Sean Slattery  <jslttery@anther.learning.cs.cmu.edu>
+
+	* libbow.h: Added definitions for heap functions, weight functions
+	and scoring functions. Also added length field to bow_doc
+	structure.
+
+	* Makefile.in (LIBBOW_C_FILES): Added score.c, weight.c and
+	heap.c.
+	* heap.c: New file.
+	* weight.c: New file.
+	* score.c: New file.
+
+Mon Oct  7 12:14:50 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* docnames.c (bow_map_filenames_from_dir): New function.
+	(bow_doc_list_append): Use it to do most of the work.
+	* libbow.h: Declare new function.
+
+	* Makefile.in (snapshot): New target.
+
+	* getword.c (bow_get_word): Avoid returning a post-stemmed word of
+ 	length 1.
+
+	* libbow.h (bow_wv): Renamed member "length" to "num_entries".
+  	Added member "length", meaning Euclidean length of the vector.
+	(bow_doc): Added member "class".  Removed member "wv".
+	* wv.c: Use new member name "num_entries".
+	* wi2dvf.c: Likewise.
+
+	* Makefile.in (DIST_FILES): Added HACKING.
+
+Sat Oct  5 18:26:47 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* Version (LIBBOW_VERSION): Version 0.2.
+
+	* libbow.texi: Cleaned up and added some sections.
+
+	* dv.c (bow_dv_add_di_count): Fix bugs in calculation of DV_INDEX.
+  	In an effort to reduce wasted memory, don't reallocate double the
+ 	previous SIZE, but 3/2 the previous size; this almost cuts in half
+ 	the amount of wasited "document vector" memory; (perhaps
+ 	multiplying 4/3 would help even more?).
+
+	* wi2dvf.c (bow_wi2dvf_dv): Use new function name
+ 	bow_dv_new_from_data_fp().
+	(bow_wi2dvf_print_stats): Fix typo.  Also print average number of
+	unused document vector entries.
+	(bow_wi2dvf_new_from_text_dir): Don't use "word vectors".  Instead
+	grab each word individually from a text file, and add it to the
+	map using bow_wi2dvf_add_wi_di_count().
+	(bow_wi2dvf_add_wi_di_count): Newly implemented.
+	* libbow.h (bow_dv_new_from_data_fp): Renamed from
+ 	bow_dv_new_from_fp.
+
+	* dv.c (bow_dv_add_di_count): Don't use a new "document entry" if
+ 	the "document vector" already has an entry for the given DI.
+
+	* wi2dvf.c (bow_wi2dvf_print_stats): Print stats about number of
+ 	used and unused "document entries" to get a better idea of memory
+ 	usage.
+
+	* rainbow.c (main): Use getopt() to enable setting of
+ 	bow_verbosity_level.
+
+Wed Oct  2 11:20:58 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* libbow.h (bow_wi2dvf_add_wi_di_count): New function declaration;
+ 	not yet implemented.
+
+	* rainbow.c (main): Don't set bow_verbosity_level to bow_quiet.
+
+	* docnames.c: Change many FL variable names to DL.
+	(bow_doc_list_append): Don't set *DL to NULL at the beginning, because
+	it won't work recursively.
+	* wi2dvf.c (bow_wi2dvf_new_from_text_dir): Add assertion that
+ 	verifies length of the document list.
+
+	* Version 0.0.  CVS rtag with `release-0-0'.
+
+	* wi2dvf.c (bow_wi2dvf_new_from_text_dir): Clean up and count text
+ 	files and binary files differently.
+
+	* rainbow.c (main): Comment out setting to bow_quiet.
+
+	* Makefile.in: Include Version.
+	(version.texi): Fix dependancy.
+	(dist): Fix it.
+
+	* docnames.c (bow_doc_list_append): Don't print extra newline.
+	(bow_doc_list_length): New function.
+
+	* libbow.h (bow_de): Define di and count as short int's, not
+ 	int's.
+	(bow_fwrite_short): New function.
+	(bow_fread_short): New function.
+	(bow_doc_list_length): Declare new function.
+	* dv.c (bow_dv_write): Write di and count as short ints.
+	(bow_dv_new_from_fp): Read them as short ints.
+	* io.c (bow_fwrite_short): New function.
+	(bow_fread_short): New function.
+
+	* Version: New file.
+	* libbow-desc.texi: New file.
+
+	* Makefile.in (clean): Fix name of libbow.a; also remove the
+ 	$(DEMO_EXECUTABLES).
+
+	* rainbow.c (main): Print messages during stages of wi2dvf map
+ 	testing.  Clean up the other test code.
+
+	* wi2dvf.c: (bow_wi2dvf_print_stats): New function.
+
+	* dv.c: (bow_dv_default_capacity): Decreased from 512 to 4 in an
+	attempt to avoid exhausted memory.
+	(bow_dv_count): New global variable.
+	(bow_dv_new): Increment it.
+	(bow_dv_free): Decrement it.
+
+	* libbow.h (bow_malloc): New function.
+	(bow_realloc): New function.
+	(bow_free): New function.
+	* wv.c: Use bow_malloc() instead of malloc().
+	* stoplist.c: Likewise.
+	* primes.c: Likewise.
+	* int4str.c: Likewise.
+	* docnames.c: Likewise.
+	* dv.c: Likewise.
+	* wi2dvf.c: Likewise.
+
+	* Makefile.in (LIBBOW_C_FILES): Added bmalloc.c.
+
+	* Placed under CVS with release-tag `first'.
