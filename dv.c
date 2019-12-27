@@ -166,6 +166,27 @@ bow_dv_add_di_count_weight (bow_dv **dv, int di, int count, float weight)
   (*dv)->entry[dv_index].weight += weight;
 }
 
+/* set the count and weight to COUNT and WEIGHT in the document vector
+   DV at document index DI, creating a new entry in the document
+   vector if necessary. */
+void
+bow_dv_set_di_count_weight (bow_dv **dv, int di, int count, float weight)
+{
+  int dv_index;			/* The "document vector" index at
+				   which we are adding COUNT. */
+
+  assert (count >= 0);
+
+  dv_index = _bow_dv_index_for_di (dv, di, 0);
+  (*dv)->entry[dv_index].count = count;
+
+  /* If we are recording only binary word absence/presence, force the 
+     word count to 0 or 1. */
+  if (bow_binary_word_counts && (*dv)->entry[dv_index].count > 1)
+    (*dv)->entry[dv_index].count = 1;
+  /* xxx But we don't do anything special with the weight? */
+  (*dv)->entry[dv_index].weight = weight;
+}
 
 /* Return a pointer to the BOW_DE for a particular document, or return
    NULL if there is no entry for that document. */

@@ -1,4 +1,4 @@
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -21,7 +21,7 @@
 #define __BOW_EM_H
 
 /* The method and parameters of EM weight settings. */
-extern bow_method bow_method_em;
+extern rainbow_method bow_method_em;
 typedef enum {
   bow_em_perturb_none = 0,
   bow_em_perturb_with_gaussian,
@@ -49,5 +49,12 @@ bow_em_compare_to_nb (bow_barrel *doc_barrel);
 
 void
 bow_em_print_log_odds_ratio (bow_barrel *barrel, int num_to_print);
+
+/* Set the class prior probabilities by counting the number of
+   documents of each class. note this counts all train and unlabeled
+   docs.  Note that we're doing an m-estimate thing-y by starting
+   out as one doc each per class. */
+void bow_em_set_priors_using_class_probs (bow_barrel *vpc_barrel,
+					  bow_barrel *doc_barrel);
 
 #endif /* __BOW_EM_H */

@@ -1,4 +1,4 @@
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -57,6 +57,18 @@ _bow_malloc_hook (void *ptr)
 }
 
 void
+_bow_realloc_hook (void *old, void *new)
+{
+  int i;
+  assert (ptrs_length < ptrs_size);
+  for (i = 0; i < ptrs_length && ptrs[i] != old; i++);
+  if (ptrs[i] == old)
+    ptrs[i] = 0;
+  ptrs[ptrs_length++] = new;
+  bow_malloc_check_all ();
+}
+
+void
 _bow_free_hook (void *ptr)
 {
   int i;
@@ -72,11 +84,13 @@ _bow_free_hook (void *ptr)
 }
 
 void (*bow_malloc_hook) (void *ptr) = _bow_malloc_hook;
+void (*bow_realloc_hook) (void *old, void *new) = _bow_realloc_hook;
 void (*bow_free_hook) (void *ptr) = _bow_free_hook;
 
 #else /* BOW_MCHECK */
 
 void (*bow_malloc_hook) (void *ptr) = NULL;
+void (*bow_realloc_hook) (void *old, void *new) = NULL;
 void (*bow_free_hook) (void *ptr) = NULL;
 
 #endif /* BOW_MCHECK */

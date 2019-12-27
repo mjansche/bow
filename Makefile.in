@@ -1,7 +1,7 @@
 #   @configure_input@
 #
 #   Makefile for the "Bag Of Words Library", libbow.
-#   Copyright (C) 1996, 1997, 1998 Andrew McCallum
+#   Copyright (C) 1996, 1997, 1998, 1999 Andrew McCallum
 #
 #   Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 #   Date: September 1996
@@ -26,7 +26,7 @@ SHELL = /bin/sh
 
 #### Start of system configuration section. ####
 
-default:
+default: all
 
 srcdir = @srcdir@
 VPATH = @srcdir@
@@ -38,12 +38,13 @@ MAKEINFO = makeinfo
 TEXI2DVI = texi2dvi
 PERL = @PERL@
 YACC = @YACC@
+FLEX = @LEX@
 
 CC = @CC@
 
 DEFS = @DEFS@
 LIBS = @LIBS@
-     
+
 # All these are optional.  You can redifine CFLAGS, CPPFLAGS,
 # INCLUDEFLAGS and LDFLAGS on the command line however you like.
 CFLAGS = @CFLAGS@
@@ -62,16 +63,51 @@ infodir = $(prefix)/info
 
 #### End of system configuration section. ####
 
+HAVE_PR_LOQO = \
+$(shell if ((test -f pr_loqo.c) && (test -f bow/pr_loqo.h)) ; then echo true ; else echo false ; fi)
+
+ifeq ($(HAVE_PR_LOQO),true)
+DEFS += -DHAVE_LOQO
+SVM_FILES = svm_smo.c svm_al.c svm_trans.c svm_fisher.c svm_loqo.c
+PR_LOQO = pr_loqo.c
+else
+SVM_FILES = svm_smo.c svm_al.c svm_trans.c svm_fisher.c
+endif
+
 include $(srcdir)/Version
+-include $(srcdir)/Makefile.preamble
+-include Makefile.local
+
+# convenience lex and yacc filename conversion rules:
+LEX_RULE = _lex.c
+Y_RULE = _y.c
+
+DEMO_EXECUTABLES = rainbow arrow archer crossbow 
+
+all: libbow.a $(DEMO_EXECUTABLES) $(PERL_RUNNABLE_FILES) kl-div
+
+%.o: %.c
+	$(CC) -c $(ALL_CPPFLAGS) $(ALL_CFLAGS) -o $@ $<
+%$(LEX_RULE): %.lex
+	$(FLEX) -o$@ -P$(basename $<)_ $<
+%$(Y_RULE): %.y
+	$(YACC) -d -o$@ -p$(basename $<)_ $<
+
+# cancel the default .y->.c rule --- otherwise it gives us trouble
+# because we have both archer_query.c and archer_query.y 
+%.c: %.y
+
+
+# Pattern rule
+ALL_CPPFLAGS = $(CPPFLAGS) $(INCLUDEFLAGS) -Ibow -I$(srcdir) -I$(srcdir)/argp $(DEFS)
+ALL_CFLAGS = $(CFLAGS)
+ALL_LIBS = $(LIBS) -L. -lbow -L./argp -largp -lm -lcrypt
+
+
+# Libbow section
 
 STANDARD_LIBBOW_H_FILES = \
-bow/em.h \
-bow/kl.h \
-bow/knn.h \
-bow/libbow.h \
-bow/naivebayes.h \
-bow/prind.h \
-bow/tfidf.h
+bow/libbow.h 
 
 LIBBOW_H_FILES = $(STANDARD_LIBBOW_H_FILES)
 
@@ -80,6 +116,7 @@ array.c \
 barrel.c \
 bitvec.c \
 bmalloc.c \
+deflexer.c \
 dv.c \
 docnames.c \
 email.c \
@@ -94,10 +131,9 @@ int4str.c \
 int4word.c \
 io.c \
 istext.c \
-lex-email.c \
 lex-gram.c \
 lex-html.c \
-lex-indirect.c \
+lex-next.c \
 lex-suffixing.c \
 lex-simple.c \
 methods.c \
@@ -117,44 +153,62 @@ vpc.c \
 wa.c \
 wicoo.c \
 wi2dvf.c \
-wv.c
+wv.c 
 
-LIBBOW_C_FILES = $(STANDARD_LIBBOW_C_FILES)
+# note - a library with pr_loqo shouldn't be distributed
+LIBBOW_C_FILES = $(STANDARD_LIBBOW_C_FILES) $(PR_LOQO)
 
 $(LIBBOW_C_FILES): $(LIBBOW_H_FILES)
 
 LIBBOW_O_FILES = $(LIBBOW_C_FILES:.c=.o)
 
-STANDARD_METHOD_C_FILES = \
-deflexer.c \
-kl.c \
-knn.c \
-naivebayes.c \
-prind.c \
-tfidf.c 
+libbow.a: $(LIBBOW_O_FILES) $(METHOD_O_FILES)
+	$(AR) rc $@ $^
+	$(RANLIB) $@
 
-METHOD_C_FILES = $(STANDARD_METHOD_C_FILES)
-METHOD_O_FILES = $(METHOD_C_FILES:.c=.o)
+argp/libargp.a:
+	cd argp ; $(MAKE) libargp.a
+
+# libbow.h has macros that indicate the libbow's version number; these
+# must be kept up-to-date.
+bow/libbow.h: Version
+	rm -f bow/libbow-tmp.h~
+	mv bow/libbow.h bow/libbow-tmp.h~
+	cat bow/libbow-tmp.h~ | sed -e \
+	's/e BOW_MAJOR_VERSION .*/e BOW_MAJOR_VERSION $(BOW_MAJOR_VERSION)/' \
+	| sed -e \
+	's/e BOW_MINOR_VERSION .*/e BOW_MINOR_VERSION $(BOW_MINOR_VERSION)/' \
+	> $@
+
+# The compiled functions in these files are defined entirely by libbow.h.
+io.o bmalloc.o: bow/libbow.h
+
+LIBBOW_DIST_FILES = \
+$(STANDARD_LIBBOW_C_FILES) \
+$(STANDARD_LIBBOW_H_FILES)
 
 
-# Other name ideas: longbow, flint, shoelace, bowtie, ...
-DEMO_C_FILES = \
-rainbow.c \
-arrow.c
-
-OTHER_C_FILES = \
-kl-div.c
-
-DEMO_O_FILES = $(DEMO_C_FILES:.c=.o)
-DEMO_EXECUTABLES = $(DEMO_C_FILES:.c=)
+# Perl section
 
 PERL_FILES = \
 rainbow-ac.pl \
+rainbow-be.pl \
 rainbow-pr.pl \
 rainbow-rank.pl \
 rainbow-stats.pl
 
 PERL_RUNNABLE_FILES = $(PERL_FILES:.pl=)
+
+$(PERL_RUNNABLE_FILES): %: %.pl
+	rm -f $@
+	cat $< | sed -e 's,/usr/bin/perl,${PERL},' > $@
+	chmod a+x $@
+
+PERL_DIST_FILES = \
+$(PERL_FILES)
+
+
+# Documentation section
 
 DOC_TEXI_FILES = \
 libbow.texi \
@@ -168,75 +222,6 @@ libbow-desc.texi \
 install.texi \
 readme.texi \
 version.texi
-
-DIST_FILES = \
-$(STANDARD_LIBBOW_C_FILES) \
-$(STANDARD_LIBBOW_H_FILES) \
-$(STANDARD_METHOD_C_FILES) \
-$(DEMO_C_FILES) \
-$(PERL_FILES) \
-$(DOC_TEXI_FILES) \
-$(OTHER_TEXI_FILES) \
-$(OTHER_C_FILES) \
-ChangeLog \
-HACKING \
-INSTALL \
-Makefile.in \
-NEWS \
-README \
-TODO \
-Version \
-configure \
-configure.in \
-install-sh \
-mkinstalldirs
-
-# Pattern rule
-ALL_CPPFLAGS = $(CPPFLAGS) $(INCLUDEFLAGS) -I$(srcdir) -I$(srcdir)/argp $(DEFS)
-ALL_CFLAGS = $(CFLAGS)
-
-# This must go BEFORE Makefile.preamble is included (when compiling HDB
-# libdb must be added to ALL_LIBS)
-ALL_LIBS = $(LIBS) -L. -lbow -L./argp -largp -lm
-
--include Makefile.preamble
-
-# Rules
-
-default: all
-
-all: libbow.a $(DEMO_EXECUTABLES) $(PERL_RUNNABLE_FILES) kl-div
-
-# Compiling code
-
-%.o: %.c
-	$(CC) -c $(ALL_CPPFLAGS) $(ALL_CFLAGS) -o $@ $<
-
-libbow.a: $(LIBBOW_O_FILES) $(METHOD_O_FILES)
-	$(AR) rc $@ $^
-	$(RANLIB) $@
-
-argp/libargp.a:
-	cd argp ; $(MAKE) libargp.a
-
-$(DEMO_EXECUTABLES): %: libbow.a argp/libargp.a %.o $(METHOD_O_FILES)
-	$(CC) $(CFLAGS) $@.o -o $@ $(METHOD_O_FILES) $(LDFLAGS) $(ALL_LIBS)
-
-# kl-div doesn't actually depend on libargp, but we need ALL_LIBS so that
-# libdb will be used when we compile in HDB
-kl-div: libbow.a kl-div.o argp/libargp.a
-	$(CC) $(CFLAGS) kl-div.o -o $@ $(LDFLAGS) $(ALL_LIBS)
-
-# A special executable for loading into Lisp (for Kamal)
-rainbow-lisp.o: rainbow.c
-	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -c -DNDEBUG -DRAINBOW_LISP $< -o $@
-
-$(PERL_RUNNABLE_FILES): %: %.pl
-	rm -f $@
-	cat $< | sed -e 's,/usr/bin/perl,${PERL},' > $@
-	chmod a+x $@
-
-# Compiling documentation
 
 MAKEINFO_FLAGS = -I $(srcdir)
 %.dvi: %.texi version.texi
@@ -261,19 +246,192 @@ version.texi: $(srcdir)/Version
 		echo '@set BOW_FTP_DIRECTORY $(BOW_FTP_DIRECTORY)' \
 		>> version.texi; fi
 
-# libbow.h has macros that indicate the libbow's version number; these
-# must be kept up-to-date.
-bow/libbow.h: Version
-	rm -f bow/libbow-tmp.h~
-	mv bow/libbow.h bow/libbow-tmp.h~
-	cat bow/libbow-tmp.h~ | sed -e \
-	's/e BOW_MAJOR_VERSION .*/e BOW_MAJOR_VERSION $(BOW_MAJOR_VERSION)/' \
-	| sed -e \
-	's/e BOW_MINOR_VERSION .*/e BOW_MINOR_VERSION $(BOW_MINOR_VERSION)/' \
-	> $@
+DOC_DIST_FILES = \
+$(DOC_TEXI_FILES) \
+$(OTHER_TEXI_FILES) \
+HACKING \
+INSTALL \
+NEWS \
+README \
+TODO 
 
-# The compiled functions in these files are defined entirely by libbow.h.
-io.o bmalloc.o: bow/libbow.h
+# Rainbow section
+
+STANDARD_RAINBOW_METHOD_C_FILES = \
+active.c \
+deflexer.c \
+em.c \
+emsimple.c \
+kl.c \
+knn.c \
+maxent.c \
+naivebayes.c \
+nbshrinkage.c \
+nbsimple.c \
+prind.c \
+tfidf.c \
+svm_base.c $(SVM_FILES)
+
+STANDARD_RAINBOW_METHOD_H_FILES = \
+bow/nbsimple.h \
+bow/em.h \
+bow/kl.h \
+bow/knn.h \
+bow/naivebayes.h \
+bow/prind.h \
+bow/svm.h \
+bow/tfidf.h
+
+RAINBOW_METHOD_C_FILES += $(STANDARD_RAINBOW_METHOD_C_FILES)
+RAINBOW_METHOD_O_FILES += $(RAINBOW_METHOD_C_FILES:.c=.o)
+
+RAINBOW_C_FILES += \
+rainbow.c \
+$(RAINBOW_METHOD_C_FILES)
+
+RAINBOW_O_FILES = $(RAINBOW_C_FILES:.c=.o)
+
+foo1: $(RAINBOW_O_FILES)
+	echo $^
+	echo $(RAINBOW_O_FILES)
+
+
+rainbow: libbow.a argp/libargp.a $(RAINBOW_O_FILES)
+	$(CC) $(CFLAGS) -o $@ $(RAINBOW_O_FILES) $(LDFLAGS) $(ALL_LIBS)
+
+
+RAINBOW_DIST_FILES = \
+rainbow.c \
+$(STANDARD_RAINBOW_METHOD_H_FILES) \
+$(STANDARD_RAINBOW_METHOD_C_FILES)
+
+
+# Arrow section
+
+ARROW_METHOD_C_FILES = \
+tfidf.c
+
+ARROW_METHOD_O_FILES = $(ARROW_METHOD_C_FILES:.c=.o)
+
+arrow: libbow.a argp/libargp.a arrow.o $(ARROW_METHOD_O_FILES)
+	$(CC) $(CFLAGS) $@.o -o $@ $(ARROW_METHOD_O_FILES) $(LDFLAGS) $(ALL_LIBS)
+
+ARROW_DIST_FILES = \
+arrow.c
+
+
+# Crossbow section
+
+STANDARD_CROSSBOW_H_FILES = \
+bow/crossbow.h \
+bow/treenode.h 
+
+STANDARD_CROSSBOW_C_FILES = \
+crossbow.c \
+hem.c \
+multiclass.c \
+treenode.c 
+
+CROSSBOW_H_FILES = $(STANDARD_CROSSBOW_H_FILES)
+CROSSBOW_C_FILES = $(STANDARD_CROSSBOW_C_FILES)
+
+CROSSBOW_O_FILES = $(CROSSBOW_C_FILES:.c=.o)
+
+crossbow: libbow.a argp/libargp.a $(CROSSBOW_O_FILES)
+	$(CC) $(CFLAGS) -o $@ $(CROSSBOW_O_FILES) $(LDFLAGS) $(ALL_LIBS)
+
+CROSSBOW_DIST_FILES = \
+$(STANDARD_CROSSBOW_H_FILES) \
+$(STANDARD_CROSSBOW_C_FILES)
+
+
+# Archer section
+
+ARCHER_H_FILES = \
+
+ARCHER_H_FILES = \
+bow/archer.h \
+bow/archer_query.h \
+bow/archer_query_array.h \
+bow/archer_query_execute.h \
+bow/archer_query_table.h \
+bow/archer_query_index.h
+
+ARCHER_LEX_FILES = \
+archer_query.lex \
+flex_mail.lex \
+tagged.lex
+
+ARCHER_Y_FILES = \
+archer_query.y
+
+ARCHER_C_FILES = \
+annotation.c \
+archer_query.c \
+archer_query_array.c \
+archer_query_execute.c \
+archer_query_index.c \
+archer_query_table.c \
+archer-server.c \
+deflexer.c \
+labels.c \
+pv.c \
+wi2pv.c 
+
+ARCHER_GENERATED_C_FILES = \
+$(ARCHER_LEX_FILES:.lex=$(LEX_RULE)) \
+$(ARCHER_Y_FILES:.y=$(Y_RULE))
+
+ARCHER_O_FILES = $(ARCHER_C_FILES:.c=.o) $(ARCHER_GENERATED_C_FILES:.c=.o)
+
+# we need the yacc .h file to compile the lex file; this forces the dependency
+# $(archer_query.lex:.lex=$(LEX_RULE)): $(archer_query.y:.y=$(Y_RULE))
+# well that doesn't work; there should be a better way to do it than:
+archer_query_lex.c: archer_query_y.c
+
+archer: libbow.a argp/libargp.a archer.o $(ARCHER_O_FILES)
+	$(CC) $(CFLAGS) -o $@ archer.o $(ARCHER_O_FILES) $(LDFLAGS) $(ALL_LIBS)
+
+archer.o: archer.c
+	$(CC) -c $(ALL_CPPFLAGS) $(ALL_CFLAGS) -o archer.o archer.c
+
+ARCHER_DIST_FILES = \
+archer.c \
+archer_query.c \
+$(ARCHER_H_FILES) \
+$(ARCHER_Y_FILES) \
+$(ARCHER_LEX_FILES) \
+$(ARCHER_C_FILES) 
+
+# Other name ideas: longbow, flint, shoelace, bowtie, ...
+
+
+# Section for other misc tools
+
+OTHER_C_FILES += \
+dice.c \
+dicefactory.c \
+dirichlet.c \
+kl-div.c 
+
+# kl-div doesn't actually depend on libargp, but we need ALL_LIBS so that
+# libdb will be used when we compile in HDB
+kl-div: libbow.a kl-div.o argp/libargp.a
+	$(CC) $(CFLAGS) kl-div.o -o $@ $(LDFLAGS) $(ALL_LIBS)
+
+dice: dice.o
+	$(CC) dice.o -o $@
+
+dirichlet: dirichlet.o
+	$(CC) -O -g dirichlet.o -o $@ -lm
+
+dicefactory: dicefactory.o
+	$(CC) $@.o -o $@ -L. -lbow -L./argp -largp
+
+# A special executable for loading into Lisp (for Kamal)
+rainbow-lisp.o: rainbow.c
+	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -c -DNDEBUG -DRAINBOW_LISP $< -o $@
+
 
 # Compiling the Makefile
 
@@ -309,6 +467,9 @@ mostlyclean:
 clean: mostlyclean
 	rm -f *.o libbow.a $(DEMO_EXECUTABLES) *.info *.dvi
 	rm -f $(PERL_RUNNABLE_FILES)
+	rm -f $(ARCHER_LEX_FILES:.lex=$(LEX_RULE))
+	rm -f $(ARCHER_Y_FILES:.y=$(Y_RULE))
+	rm -f $(ARCHER_Y_FILES:.y=$(Y_RULE:.c=.h))
 	cd argp ; $(MAKE) clean
 maintainer-clean: clean
 	rm -f $(PERL_RUNNABLE_FILES) README INSTALL
@@ -316,6 +477,24 @@ maintainer-clean: clean
 	cd argp ; $(MAKE) maintainer-clean
 
 # Making a distribution .tar.gz file
+
+DIST_FILES = \
+$(LIBBOW_DIST_FILES) \
+$(DOC_DIST_FILES) \
+$(PERL_DIST_FILES) \
+$(RAINBOW_DIST_FILES) \
+$(ARROW_DIST_FILES) \
+$(CROSSBOW_DIST_FILES) \
+$(ARCHER_DIST_FILES) \
+$(OTHER_C_FILES) \
+archer.el \
+ChangeLog \
+Makefile.in \
+Version \
+configure \
+configure.in \
+install-sh \
+mkinstalldirs
 
 bow-$(BOW_VERSION).tar.gz: dist
 dist: $(DIST_FILES)
@@ -369,4 +548,3 @@ snapshot: $(DIST_FILES)
 dist-cmu: bow-$(BOW_VERSION).tar.gz
 	cp -f $< /afs/cs/project/theo-11/www/naive-bayes
 
--include Makefile.local

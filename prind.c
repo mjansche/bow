@@ -1,7 +1,7 @@
 /* Weight-setting and scoring implementation for PrInd classification
    (Fuhr's Probabilistic Indexing) */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -52,7 +52,7 @@ prind_parse_opt (int key, char *arg, struct argp_state *state)
       /* Don't scale weights (by foilgain or anything else) */
       {
 	int i;
-	bow_method *m;
+	rainbow_method *m;
 	for (i = 0; i < bow_methods->array->length; i++)
 	  {
 	    m = bow_sarray_entry_at_index (bow_methods, i);
@@ -349,7 +349,7 @@ bow_params_prind bow_prind_params =
   bow_yes			/* Normalize the scores */
 };
 
-bow_method bow_method_prind =
+rainbow_method bow_method_prind =
 {
   "prind",
   bow_prind_set_weights,
@@ -370,7 +370,10 @@ void _register_method_prind ()
   static int done = 0;
   if (done) 
     return;
-  bow_method_register_with_name (&bow_method_prind, "prind", NULL);
+  bow_method_register_with_name ((bow_method*)&bow_method_prind,
+				 "prind", 
+				 sizeof (rainbow_method),
+				 NULL);
   bow_argp_add_child (&prind_argp_child);
   done = 1;
 }

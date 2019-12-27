@@ -1,6 +1,6 @@
 /* Word-index to document-vector-file */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -88,9 +88,9 @@ bow_wi2dvf_add_di_wv (bow_wi2dvf **wi2dvf, int di, bow_wv *wv)
 	}
       /* Add the "document index" DI and the count associated with
          word index WI to the WI'th "document vector". */
-      /* xxx Should we be adding WV->ENTRY[i].WEIGHT also? */
       bow_dv_add_di_count_weight (&((*wi2dvf)->entry[wi].dv), di,
-				  wv->entry[i].count, 0);
+				  wv->entry[i].count, 
+				  wv->entry[i].weight);
     }
 }
 
@@ -192,6 +192,44 @@ bow_wi2dvf_add_wi_di_count_weight (bow_wi2dvf **wi2dvf, int wi,
      word index WI to the WI'th "document vector". */
   bow_dv_add_di_count_weight (&((*wi2dvf)->entry[wi].dv), di, count, weight);
 }
+
+/* In the map WI2DVF, set to COUNT and WEIGHT our record of the
+   number times and weight that the document with "document index" DI
+   contains the word with "word index" WI. */
+void
+bow_wi2dvf_set_wi_di_count_weight (bow_wi2dvf **wi2dvf, int wi,
+				   int di, int count, float weight)
+{
+  if (wi >= (*wi2dvf)->size)
+    {
+      /* There are so many unique words, we need to grow the array
+	 that maps WI's to DVF's. */
+      int old_size = (*wi2dvf)->size; /* a "word vector" */
+      (*wi2dvf)->size = MAX (wi+1, (*wi2dvf)->size * 2);
+      (*wi2dvf) = bow_realloc (*wi2dvf, 
+			       (sizeof (bow_wi2dvf)
+				+ (sizeof (bow_dvf) * (*wi2dvf)->size)));
+      /* Initialize the new part of the realloc'ed space. */
+      for ( ; old_size < (*wi2dvf)->size; old_size++)
+	INIT_BOW_DVF((*wi2dvf)->entry[old_size]);
+    }
+ 
+  /* Increment the stats for the WI/DI pair. */
+  if ((*wi2dvf)->entry[wi].dv == NULL)
+    {
+      /* There is not yet a "document vector" for "word index" WI,
+	 so create one. */
+      (*wi2dvf)->entry[wi].dv = bow_dv_new (0);
+      /* This 2 is a flag to the hide/unhide code that this DV exists. */
+      (*wi2dvf)->entry[wi].seek_start = 2;
+      ((*wi2dvf)->num_words)++;
+    }
+  /* Add the "document index" DI and the count associated with
+     word index WI to the WI'th "document vector". */
+  bow_dv_set_di_count_weight (&((*wi2dvf)->entry[wi].dv), di, count, weight);
+}
+
+
 
 /* Return a pointer to the BOW_DE for a particular word/document pair, 
    or return NULL if there is no entry for that pair. */
@@ -316,6 +354,26 @@ bow_wi2dvf_unhide_all_wi (bow_wi2dvf *wi2dvf)
     }
 }
 
+/* Set the WI2DVF->ENTRY[WI].IDF to the sum of the COUNTS for the
+   given WI. */
+void
+bow_wi2dvf_set_idf_to_count (bow_wi2dvf *wi2dvf)
+{
+  int wi, nwi, dvi;
+  bow_dv *dv;
+
+  nwi = MIN (wi2dvf->size, bow_num_words());
+  for (wi = 0; wi < nwi; wi++)
+    {
+      dv = bow_wi2dvf_dv (wi2dvf, wi);
+      if (!dv)
+	continue;
+      dv->idf = 0;
+      for (dvi = 0; dvi < dv->length; dvi++)
+	dv->idf += dv->entry[dvi].count;
+    }
+}
+
 /* Write WI2DVF to file-pointer FP, in a machine-independent format.
    This is the format expected by bow_wi2dvf_new_from_fp(). */
 void
@@ -386,7 +444,7 @@ void
 bow_wi2dvf_write_data_file (bow_wi2dvf *wi2dvf, const char *filename)
 {
   FILE *fp;
-  if (!(fp = fopen (filename, "w")))
+  if (!(fp = fopen (filename, "wb")))
     bow_error ("Couldn't open file `%s' for writing.", filename);
   bow_wi2dvf_write (wi2dvf, fp);
   fclose (fp);
@@ -435,7 +493,7 @@ bow_wi2dvf_new_from_data_file (const char *filename)
   FILE *fp;
   bow_wi2dvf *ret;
 
-  if (!(fp = fopen (filename, "r")))
+  if (!(fp = fopen (filename, "rb")))
     bow_error ("Couldn't open file `%s' for reading.", filename);
   ret = bow_wi2dvf_new_from_data_fp (fp);
   /* Don't close the FP because it will still be needed for 
@@ -461,9 +519,11 @@ bow_wi2dvf_free (bow_wi2dvf *wi2dvf)
 
 /* Return the "document vector" corresponding to "word index" WI.  This
    function will read the "document vector" out of the file passed to
-   bow_wi2dvf_new_from_file() if is hasn't been read already. */
+   bow_wi2dvf_new_from_file() if is hasn't been read already.  If the 
+   DV has been "hidden" (by feature selection, for example) it will not
+   be returned unless EVEN_IF_HIDDEN is non-zero. */
 bow_dv *
-bow_wi2dvf_dv (bow_wi2dvf *wi2dvf, int wi)
+bow_wi2dvf_dv_hidden (bow_wi2dvf *wi2dvf, int wi, int even_if_hidden)
 {
   /* If the word-index is higher than anything we know about,
      return NULL.  This could legitimately happen if the query
@@ -476,7 +536,9 @@ bow_wi2dvf_dv (bow_wi2dvf *wi2dvf, int wi)
      greater than or equal to -1) then simply return it.  Note that
      newly created WI2DVF's that haven't been saved (like those for
      VPC_BARREL's) with have non-NULL dv's and SEEK_START's of -1. */
-  if (wi2dvf->entry[wi].dv && wi2dvf->entry[wi].seek_start >= -1)
+  if (wi2dvf->entry[wi].dv 
+      && (wi2dvf->entry[wi].seek_start >= -1
+	  || even_if_hidden))
     {
       assert (wi2dvf->entry[wi].dv->idf == wi2dvf->entry[wi].dv->idf);
       return wi2dvf->entry[wi].dv;
@@ -508,6 +570,17 @@ bow_wi2dvf_dv (bow_wi2dvf *wi2dvf, int wi)
 
   /* Return what we just read. */
   return wi2dvf->entry[wi].dv;
+}
+
+/* Return the "document vector" corresponding to "word index" WI.
+   This function will read the "document vector" out of the file
+   passed to bow_wi2dvf_new_from_file() if is hasn't been read
+   already.  If the DV has been "hidden" (by feature selection, for
+   example) it will return NULL.  */
+bow_dv *
+bow_wi2dvf_dv (bow_wi2dvf *wi2dvf, int wi)
+{
+  return bow_wi2dvf_dv_hidden (wi2dvf, wi, 0);
 }
 
 /* Compare two maps, and return 0 if they are equal.  This function was

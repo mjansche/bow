@@ -1,6 +1,6 @@
 /* Word vectors. */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -37,6 +37,19 @@ bow_wv_new (int capacity)
   ret = bow_malloc (sizeof (bow_wv) + sizeof (bow_we) * capacity);
   ret->num_entries = capacity;
   ret->normalizer = 1;
+  return ret;
+}
+
+/* Allocate a return a copy of WV */
+bow_wv *
+bow_wv_copy (bow_wv *wv)
+{
+  bow_wv *ret;
+  int wvi;
+
+  ret = bow_wv_new (wv->num_entries);
+  for (wvi = 0; wvi < wv->num_entries; wvi++)
+    ret->entry[wvi] = wv->entry[wvi];
   return ret;
 }
 
@@ -185,6 +198,31 @@ bow_wv_entry_for_wi (bow_wv *wv, int wi)
 	return NULL;
     }
   return NULL;
+}
+
+/* Return the count of word WI in vector WV; find it using binary search. */
+int
+bow_wv_broken_count_for_wi (bow_wv *wv, int wi)
+{
+  int left_wvi = 0;
+  int right_wvi = wv->num_entries-1;
+  int mid_wvi;
+
+  /* Perform binary search to find the WV entry for WI */
+  while (left_wvi < right_wvi)
+    {
+      mid_wvi = (left_wvi + right_wvi) / 2;
+      if (mid_wvi == left_wvi)
+	mid_wvi = right_wvi;
+      if (wv->entry[mid_wvi].wi == wi)
+	return wv->entry[mid_wvi].count;
+      else if (wv->entry[mid_wvi].wi > wi)
+	right_wvi = mid_wvi;
+      else
+	left_wvi = mid_wvi;
+    }
+  /* There was no entry for WI; the count is zero */
+  return 0;
 }
 
 /* Return the count entry of "word" with index WI in "word vector" WV */
@@ -353,7 +391,11 @@ bow_wv_set_weights_to_count (bow_wv *wv, bow_barrel *barrel)
   int wvi;
  
   /* null statement to avoid compilation warning */
-  barrel = barrel;
+  /* I love this statement :-) (please don't change it!) - Jason */
+  /* Avoids compilation warnings and doesn't cause a segmentation
+   * violation when BARREL == NULL */
+  if (barrel)
+    barrel = barrel;
 
   for (wvi = 0; wvi < wv->num_entries; wvi++)
     wv->entry[wvi].weight = wv->entry[wvi].count;
@@ -372,6 +414,8 @@ bow_wv_set_weights_by_event_model (bow_wv *wv, bow_barrel *barrel)
   int wvi;
   bow_dv *dv;
   int total_words = 0;
+
+  assert (barrel);
 
   if (bow_event_model == bow_event_document)
     {
@@ -441,6 +485,8 @@ bow_wv_set_weights_to_count_times_idf (bow_wv *wv, bow_barrel *barrel)
   int wi;
   bow_dv *dv;
 
+  assert (barrel);
+
   for (wvi = 0; wvi < wv->num_entries; wvi++)
     {
       wi = wv->entry[wvi].wi;
@@ -482,4 +528,15 @@ bow_wv_set_weights_to_log_count_times_idf (bow_wv *wv, bow_barrel *barrel)
 	  wv->entry[wvi].weight = 0;
 	}
     }
+}
+
+/* Return the sum of the weight entries. */
+float
+bow_wv_weight_sum (bow_wv *wv)
+{
+  int wvi;
+  float sum = 0;
+  for (wvi = 0; wvi < wv->num_entries; wvi++)
+    sum += wv->entry[wvi].weight;
+  return sum;
 }

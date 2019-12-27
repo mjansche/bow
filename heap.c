@@ -1,6 +1,6 @@
 /* Implementation of the ?? heap for the bow library */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Sean Slattery <slttery@cs.cmu.edu>
 
@@ -148,10 +148,13 @@ bow_dv_heap_update (bow_dv_heap *heap)
     }
 }
 
-/* Function to make a heap from all the vectors of documents in the big
-   data structure we've built - I hope it all fits.... */
+/* Function to make a heap from all the vectors of documents in the
+   big data structure we've built.  If EVEN_IF_HIDDEN is non-zero,
+   then words that have been "hidden" (by feature selection, for
+   example) will none-the-less also be included in the WV's returned
+   by future calls to the heap; think carefully before you do this! */
 bow_dv_heap *
-bow_make_dv_heap_from_wi2dvf(bow_wi2dvf *wi2dvf)
+bow_make_dv_heap_from_wi2dvf_hidden (bow_wi2dvf *wi2dvf, int even_if_hidden)
 {
   int wi;			/* a "word index", index into WI2DVF */
   int max_wi;			/* the highest "word index" */
@@ -167,7 +170,7 @@ bow_make_dv_heap_from_wi2dvf(bow_wi2dvf *wi2dvf)
   hi = 0;
   for (wi = 0; wi < max_wi; wi++)
     {
-      dv = bow_wi2dvf_dv (wi2dvf, wi);
+      dv = bow_wi2dvf_dv_hidden (wi2dvf, wi, even_if_hidden);
       if (dv)
 	{
 	  heap->entry[hi].dv = dv;
@@ -191,6 +194,14 @@ bow_make_dv_heap_from_wi2dvf(bow_wi2dvf *wi2dvf)
   heap->last_di = -2;
 
   return heap;
+}
+
+/* Function to make a heap from all the vectors of documents in the
+   big data structure we've built.  */
+bow_dv_heap *
+bow_make_dv_heap_from_wi2dvf (bow_wi2dvf *wi2dvf)
+{
+  return bow_make_dv_heap_from_wi2dvf_hidden (wi2dvf, 0);
 }
 
 /* Free a heap.  Seldom needs to be called from outside this function

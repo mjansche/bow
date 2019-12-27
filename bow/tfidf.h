@@ -1,4 +1,4 @@
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -21,13 +21,20 @@
 #define __BOW_TFIDF_H
 
 /* The method and parameters of TFIDF-like weight settings. */
-extern bow_method bow_method_tfidf;
-extern bow_method bow_method_tfidf_words;
-extern bow_method bow_method_tfidf_log_words;
-extern bow_method bow_method_tfidf_log_occur;
+extern rainbow_method bow_method_tfidf;
+extern rainbow_method bow_method_tfidf_words;
+extern rainbow_method bow_method_tfidf_log_words;
+extern rainbow_method bow_method_tfidf_log_occur;
 typedef struct _bow_tfidf_params {
-  enum { bow_tfidf_words, bow_tfidf_occurrences } df_counts;
-  enum { bow_tfidf_log, bow_tfidf_sqrt, bow_tfidf_straight } df_transform;
+  enum { 
+    bow_tfidf_words, 
+    bow_tfidf_occurrences, 
+  } df_counts;
+  enum { 
+    bow_tfidf_log, 
+    bow_tfidf_sqrt, 
+    bow_tfidf_straight
+  } df_transform;
 } bow_params_tfidf;
 
 /* The number of documents with non-zero dot-product with the query. 

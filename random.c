@@ -1,5 +1,5 @@
 /* random.c - pseudo-random number generators for libbow
-   Copyright (C) 1998 Andrew McCallum
+   Copyright (C) 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -40,11 +40,10 @@ bow_random_set_seed ()
 	{
 	  struct timeval tv;
 	  struct timezone tz;
-	  long seed;
 	  
 	  gettimeofday (&tv, &tz);
-	  seed = tv.tv_usec;
-	  srandom (seed);
+	  bow_random_seed = tv.tv_usec;
+	  srandom (bow_random_seed);
 	}
 #else
         srandom (time (NULL));
@@ -57,6 +56,14 @@ bow_random_set_seed ()
   return;
 }
 
+/* Set the seed to the same value it had the first time it was set
+   during this run. */
+void
+bow_random_reset_seed ()
+{
+  assert (bow_random_seed >= 0);
+  srandom (bow_random_seed);
+}
 
 /* Return an double between low and high, inclusive */
 double

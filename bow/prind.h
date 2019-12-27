@@ -1,4 +1,4 @@
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -21,7 +21,7 @@
 #define __BOW_PRIND_H
 
 /* The method and parameters of Prind weight settings. */
-extern bow_method bow_method_prind;
+extern rainbow_method bow_method_prind;
 typedef struct _bow_prind_params {
   /* If this is non-zero, use uniform class priors. */
   bow_boolean uniform_priors;

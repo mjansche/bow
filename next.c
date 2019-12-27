@@ -1,6 +1,6 @@
 /* Iterating through the documents in a wi2dvf, according to document type */
 
-/* Copyright (C) 1998 Andrew McCallum
+/* Copyright (C) 1998, 1999 Andrew McCallum
 
    Written by:  Andrew McCallum
 
@@ -205,7 +205,7 @@ bow_heap_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv,
 }
 
 int
-bow_cdoc_is_model (bow_cdoc *cdoc)
+bow_cdoc_is_train (bow_cdoc *cdoc)
 {
   return (cdoc->type == bow_doc_train);
 }
@@ -222,11 +222,23 @@ bow_cdoc_yes (bow_cdoc *cdoc)
   return (1);
 }
 
+int 
+bow_doc_yes (bow_doc *doc)
+{
+  return (1);
+}
+
 /* Return nonzero iff CDOC has type != TEST */
 int 
 bow_cdoc_is_nontest (bow_cdoc *cdoc)
 {
   return (cdoc->type != bow_doc_test);
+}
+
+int 
+bow_doc_is_nontest (bow_doc *doc)
+{
+  return (doc->type != bow_doc_test);
 }
 
 /* Return nonzero iff CDOC has type == IGNORE */
@@ -265,6 +277,6 @@ bow_nontest_next_wv(bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv)
 int 
 bow_model_next_wv(bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv)
 {
-  return (bow_heap_next_wv(heap, barrel, wv, bow_cdoc_is_model));
+  return (bow_heap_next_wv(heap, barrel, wv, bow_cdoc_is_train));
 }
 

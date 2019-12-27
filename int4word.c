@@ -1,6 +1,6 @@
 /* A convient interface to int4str.c, specifically for words. */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -87,6 +87,23 @@ bow_word2int (const char *word)
   return bow_str2int (word_map, word);
 }
 
+int
+bow_word2int_inc (const char *word, FILE *fp)
+{
+  int ret;
+
+  ret = bow_word2int_no_add (word);
+
+  if (ret == -1) 
+    {
+      ret = bow_word2int (word);
+      fseek (fp, 0, SEEK_END);
+      fprintf (fp, "%s\n", word);
+      fflush (fp);
+    }
+  return ret;
+}
+
 /* Given a WORD, return its "word index", WI, according to the global
    word-int mapping; if it's not yet in the mapping, return -1. */
 int
@@ -155,7 +172,7 @@ bow_words_write_to_file (const char *filename)
 {
   FILE *fp;
   
-  fp = bow_fopen (filename, "w");
+  fp = bow_fopen (filename, "wb");
   bow_words_write (fp);
   fclose (fp);
 }
@@ -175,11 +192,19 @@ bow_words_read_from_fp (FILE *fp)
 }
 
 void
+bow_words_read_from_fp_inc (FILE *fp)
+{
+  if (word_map)
+    bow_error ("The vocabulary map has already been created.");
+  word_map = bow_int4str_new_from_fp_inc (fp);
+}
+
+void
 bow_words_read_from_file (const char *filename)
 {
   FILE *fp;
 
-  fp = bow_fopen (filename, "r");
+  fp = bow_fopen (filename, "rb");
   bow_words_read_from_fp (fp);
   fclose (fp);
 }
@@ -201,9 +226,9 @@ bow_words_reread_from_file (const char *filename, int force_update)
 #if 0
   /* This is bogus -- bow_fopen will use bow_error if the open fails
      which in turn will call abort(3), which we MUST NOT DO. */
-  fp = bow_fopen (filename, "r");
+  fp = bow_fopen (filename, "rb");
 #else
-  if ((fp = fopen (filename, "r")))
+  if ((fp = fopen (filename, "rb")))
 #endif /* 0 */
   bow_words_read_from_fp (fp);
   fclose (fp);
@@ -296,6 +321,42 @@ bow_words_keep_top_by_infogain (int num_words_to_keep,
   bow_free (wi2ig);
 }
 
+/* Add to the word occurrence counts from the documents in FILENAME. */
+int
+bow_words_add_occurrences_from_file (const char *filename)
+{
+  FILE *fp;
+  char word[BOW_MAX_WORD_LENGTH];
+  int wi;
+  bow_lex *lex;
+  int total_word_count = 0;
+
+  fp = bow_fopen (filename, "r");
+  if (bow_fp_is_text (fp))
+    {
+      /* Loop once for each document in this file. */
+      while ((lex = bow_default_lexer->open_text_fp
+	      (bow_default_lexer, fp, filename)))
+	{
+	  /* Loop once for each lexical token in this document. */
+	  while (bow_default_lexer->get_word (bow_default_lexer, 
+					      lex, word, 
+					      BOW_MAX_WORD_LENGTH))
+	    {
+	      /* Increment the word's occurrence count. */
+	      wi = bow_word2int_add_occurrence (word);
+	      if (wi < 0)
+		continue;
+	      /* Increment total word count */
+	      total_word_count++;
+	    }
+	  bow_default_lexer->close (bow_default_lexer, lex);
+	}
+    }
+  fclose (fp);
+  return total_word_count;
+}
+
 /* Add to the word occurrence counts by recursively decending directory 
    DIRNAME and parsing all the text files; skip any files matching
    EXCEPTION_NAME. */
@@ -304,47 +365,17 @@ bow_words_add_occurrences_from_text_dir (const char *dirname,
 					 const char *exception_name)
 {
   int text_document_count = 0;
-  int total_word_count = 0;
+  int file_word_count, total_word_count = 0;
   int words_index_file (const char *filename, void *context)
     {
-      FILE *fp;
-      char word[BOW_MAX_WORD_LENGTH];
-      int wi;
-      bow_lex *lex;
-
       /* If the filename matches the exception name, return immediately. */
       if (exception_name && !strcmp (filename, exception_name))
 	return 0;
 
-      fp = bow_fopen (filename, "r");
-      if (bow_fp_is_text (fp))
-	{
-	  /* Loop once for each document in this file. */
-	  while ((lex = bow_default_lexer->open_text_fp
-		  (bow_default_lexer, fp, filename)))
-	    {
-	      /* Loop once for each lexical token in this document. */
-	      while (bow_default_lexer->get_word (bow_default_lexer, 
-						  lex, word, 
-						  BOW_MAX_WORD_LENGTH))
-		{
-		  /* Increment the word's occurrence count. */
-		  wi = bow_word2int_add_occurrence (word);
-		  if (wi < 0)
-		    continue;
-		  /* Increment total word count */
-		  total_word_count++;
-		}
-	      bow_default_lexer->close (bow_default_lexer, lex);
-	      text_document_count++;
-	      if (text_document_count % 2 == 0)
-		bow_verbosify (bow_progress,
-			       "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
-			       "%6d : %6d", 
-			       text_document_count, bow_num_words ());
-	    }
-	}
-      fclose (fp);
+      file_word_count = bow_words_add_occurrences_from_file (filename);
+      total_word_count += file_word_count;
+      if (file_word_count)
+	text_document_count++;
       return 0;
     }
 

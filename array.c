@@ -1,6 +1,6 @@
 /* Implementation of arrays that can grow. */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -75,6 +75,32 @@ bow_array_append (bow_array *array, void *entry)
   return (array->length)++;
 }
 
+/* Append an entry to the array by reading from fp.  Return its index,
+   or -1 if there are no more entries to be read. */
+int
+bow_array_append_from_fp_inc (bow_array *array, 
+			      int (*read_func)(void*,FILE*), 
+			      FILE *fp)
+{
+  int c = fgetc(fp);
+
+  if (feof(fp))  
+    return -1; /* we've hit eof -- bail out */
+  ungetc(c, fp);
+ 
+  if (array->length >= array->size)
+    {
+      /* The array must grow to accommodate the new entry. */
+      array->size *= array->growth_factor;
+      array->size /= array->growth_factor - 1;
+      array->entries = bow_realloc (array->entries, 
+				    array->size * array->entry_size);
+    }
+  (*read_func) (ADDR_ENTRY_AT_INDEX (array, array->length), fp);
+
+  return (array->length)++;
+}
+
 /* Return what will be the index of the next entry to be appended */
 int
 bow_array_next_index (bow_array *array)
@@ -104,13 +130,55 @@ bow_array_write (bow_array *array, int (*write_func)(void*,FILE*), FILE *fp)
     (*write_func) (ADDR_ENTRY_AT_INDEX (array, i), fp);
 }
 
+/* Write the incremental format header to the file-pointer FP */
+void
+bow_array_write_header_inc (bow_array *array, FILE *fp)
+{
+  bow_fwrite_int (array->entry_size, fp);
+  fflush (fp);
+}
+
+/* Write one entry in incremental format to the file-pointer FP, using the function
+   WRITE_FUNC. It will fseek to the appropriate location to write. */
+void
+bow_array_write_entry_inc (bow_array *array, int i, int (*write_func)(void*,FILE*), FILE *fp)
+{
+  fseek (fp, sizeof (int) + array->entry_size * i, SEEK_SET);
+ (*write_func) (ADDR_ENTRY_AT_INDEX (array, i), fp);
+ fflush (fp);
+}
+
 /* Return a new array, created by reading file-pointer FP, and using
-   the function READ_FUNC to read each of the array entries.  The
+   the function READ_FUNC to read each of the array entries. The
    returned array will have entry-freeing-function FREE_FUNC. */
 bow_array *
-bow_array_new_from_data_fp (int (*read_func)(void*,FILE*), 
-			    void (*free_func)(),
-			    FILE *fp)
+bow_array_new_from_fp_inc (int (*read_func)(void*,FILE*), 
+			   void (*free_func)(),
+			   FILE *fp)
+{
+  int entry_size;
+  bow_array *ret;
+
+  bow_fread_int (&entry_size, fp);
+  ret = bow_array_new (0, entry_size, free_func);
+ 
+  while (bow_array_append_from_fp_inc (ret, read_func, fp) != -1)
+    ;
+
+  return ret;
+}
+
+/* Return a new array, created by reading file-pointer FP, and using
+   the function READ_FUNC to read each of the array entries.  The
+   array entries will have size MIN_ENTRY_SIZE, or larger, if
+   indicated by the data in FP; this is useful when a structure is
+   re-defined to be larger.  The returned array will have
+   entry-freeing-function FREE_FUNC.  */
+bow_array *
+bow_array_new_with_entry_size_from_data_fp (int min_entry_size,
+					    int (*read_func)(void*,FILE*), 
+					    void (*free_func)(),
+					    FILE *fp)
 {
   int length;
   int entry_size;
@@ -131,12 +199,101 @@ bow_array_new_from_data_fp (int (*read_func)(void*,FILE*),
 
   bow_fread_int (&length, fp);
   bow_fread_int (&entry_size, fp);
+  if (entry_size < min_entry_size)
+    entry_size = min_entry_size;
   ret = bow_array_new (length, entry_size, free_func);
   for (i = 0; i < length; i++)
     (*read_func) (ADDR_ENTRY_AT_INDEX (ret, i), fp);
   ret->length = length;
   return ret;
 }
+
+/* Return a new array, created by reading file-pointer FP, and using
+   the function READ_FUNC to read each of the array entries.  The
+   returned array will have entry-freeing-function FREE_FUNC. */
+bow_array *
+bow_array_new_from_data_fp (int (*read_func)(void*,FILE*), 
+			    void (*free_func)(),
+			    FILE *fp)
+{
+  return bow_array_new_with_entry_size_from_data_fp (0, read_func,
+						     free_func, fp);
+}
+
+#if 0
+/* Define an iterator over a cdocs array */
+
+struct bow_cdocs_iterator_context {
+  bow_array *cdocs;
+  int ci;
+  int di;
+}
+#define CONTEXT ((struct bow_cdocs_iterator_context*)context)
+
+static void
+cdocs_iterator_reset (int ignored, void *context)
+{
+  CONTEXT->di = 0;
+}
+
+static int
+array_iterator_advance_to_next (void *context)
+{
+  bow_cdoc *cdoc;
+  if (CONTEXT->di >= CONTEXT->array->length)
+    return 0;
+  while (CONTEXT->di < CONTEXT->cdocs->length)
+    {
+      CONTEXT->di++;
+      cdoc = bow_array_entry_at_index (CONTEXT->cdocs, CONTEXT->di)
+      if (cdoc->class == CONTEXT->ci)
+	break;
+    }
+  if (CONTEXT->di >= CONTEXT->cdocs->length)
+    return 0;
+  return 1;
+}
+
+static int
+cdocs_iterator_index (void *context)
+{
+  if (CONTEXT->di >= CONTEXT->cdocs->length)
+    return INT_MIN;
+  return CONTEXT->di;
+}
+
+static double
+cdocs_iterator_count_for_doc (void *context)
+{
+  bow_cdocs *cdocs;
+  if (CONTEXT->di >= CONTEXT->cdocs->length)
+    return 0.0/0;		/* NaN */
+  cdoc = bow_array_entry_at_index (CONTEXT->cdocs, CONTEXT->di)
+  return cdoc->word_count;
+}
+
+
+bow_iterator_double *
+bow_array_iterator_for_ci_new (bow_array *array, int ci)
+{
+  bow_iterator_double *ret;
+  void *context;
+
+  ret = bow_malloc (sizeof (bow_iterator_double) + 
+		    sizeof (struct bow_array_iterator_context));
+  ret->reset = array_iterator_reset_at_wi;
+  ret->advance = array_iterator_advance_to_next_di;
+  ret->index = array_iterator_doc_index;
+  ret->value = array_iterator_count_for_doc;
+  context = ret->context = (char*)ret + sizeof (bow_iterator_double);
+  CONTEXT->array = array;
+  CONTEXT->ci = ci;
+  CONTEXT->dv = NULL;
+  CONTEXT->dvi = 0;
+  return ret;
+}
+#undef CONTEXT
+#endif
 
 /* Free the memory held by the array ARRAY. */
 void

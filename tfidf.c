@@ -1,6 +1,6 @@
 /* Weight-setting and scoring implementation for TFIDF. */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -43,6 +43,7 @@ bow_tfidf_set_weights (bow_barrel *barrel)
 {
   int wi;			/* a "word index" into WI2DVF */
   int max_wi;			/* the highest "word index" in WI2DVF. */
+  int ndocs;                    /* number of train documents looked at */
   double idf;			/* The IDF factor for a word */
   bow_dv *dv;			/* the "document vector" at index WI */
   double df;			/* "document frequency" */
@@ -80,6 +81,14 @@ bow_tfidf_set_weights (bow_barrel *barrel)
     }
 #endif
 
+  /* figure out the number of training documents */
+  for (wi=ndocs=0; wi<barrel->cdocs->length; wi++) {
+    cdoc = bow_array_entry_at_index (barrel->cdocs, wi);
+    if (cdoc->type == bow_doc_train) {
+      ndocs++;
+    }
+  }
+
   /* Loop over all vectors of documents (i.e. each word), calculate
      the IDF, then set the weights */
   for (wi = 0; wi < max_wi; wi++) 
@@ -102,7 +111,7 @@ bow_tfidf_set_weights (bow_barrel *barrel)
 	  if (((bow_params_tfidf*)(barrel->method->params))->df_counts
 	      == bow_tfidf_occurrences)
 	    {
-	      /* Make DV be the number of documents in which word WI occurs 
+	      /* Make DF be the number of documents in which word WI occurs 
 		 at least once.  (We can't just set it to DV->LENGTH because
 		 we have to check to make sure each document is part of the
 		 model. */
@@ -111,7 +120,7 @@ bow_tfidf_set_weights (bow_barrel *barrel)
 	  else if (((bow_params_tfidf*)(barrel->method->params))->df_counts
 		   == bow_tfidf_words)
 	    {
-	      /* Make DV be the total number of times word WI appears
+	      /* Make DF be the total number of times word WI appears
 		 in any document. */
 	      df += dv->entry[dvi].count;
 	    }
@@ -127,16 +136,15 @@ bow_tfidf_set_weights (bow_barrel *barrel)
 	}
       else
 	{
-	  /* BARREL->CDOCS->LENGTH is the total number of documents. */
 	  if (((bow_params_tfidf*)(barrel->method->params))->df_transform
 	      == bow_tfidf_log)
-	    idf = log2f (barrel->cdocs->length / df);
+	    idf = log2f (ndocs / df);
 	  else if (((bow_params_tfidf*)(barrel->method->params))->df_transform
 		   == bow_tfidf_sqrt)
-	    idf = sqrtf (barrel->cdocs->length / df);
+	    idf = sqrtf (ndocs / df);
 	  else if (((bow_params_tfidf*)(barrel->method->params))->df_transform
 		   == bow_tfidf_straight)
-	    idf = barrel->cdocs->length / df;
+	    idf = ndocs / df;
 	  else
 	    {
 	      idf = 0;		/* to avoid gcc warning */
@@ -371,7 +379,8 @@ bow_tfidf_score (bow_barrel *barrel, bow_wv *query_wv,
 	    i++;
 	  assert (i <= query_wv->num_entries);
 	  wis[dv->entry[dvi].di][i] = query_wv->entry[wvi].wi;
-	  assert (wis[dv->entry[dvi].di][i] != 1);
+	  /* Why was this here? 
+	     assert (wis[dv->entry[dvi].di][i] != 1); */
 	}
     } 
 
@@ -455,7 +464,7 @@ bow_params_tfidf bow_tfidf_params_tfidf_log_words =
 
 bow_params_tfidf bow_tfidf_params_tfidf =
 {
-  bow_tfidf_words,
+  bow_tfidf_occurrences,
   bow_tfidf_log
 };
 
@@ -466,7 +475,7 @@ bow_params_tfidf bow_tfidf_params_tfidf_log_occur =
 };
 
 #define TFIDF_METHOD(PARAM_NAME)					\
-bow_method bow_method_ ## PARAM_NAME =					\
+rainbow_method bow_method_ ## PARAM_NAME =				\
 {									\
   #PARAM_NAME,								\
   bow_tfidf_set_weights,						\
@@ -475,7 +484,7 @@ bow_method bow_method_ ## PARAM_NAME =					\
   bow_barrel_new_vpc_weight_then_merge,					\
   0,				/* no prior-setting function */		\
   bow_tfidf_score,							\
-  bow_wv_set_weights_to_count,						\
+  bow_wv_set_weights_to_count_times_idf,				\
   bow_wv_normalize_weights_by_vector_length,				\
   bow_barrel_free,							\
   &bow_tfidf_params_ ## PARAM_NAME					\
@@ -484,8 +493,10 @@ void _register_method_ ## PARAM_NAME ()					\
  __attribute__ ((constructor));						\
 void _register_method_ ## PARAM_NAME ()					\
 {									\
-  bow_method_register_with_name (&bow_method_ ## PARAM_NAME,		\
+  bow_method_register_with_name ((bow_method*)&                         \
+                                 bow_method_ ## PARAM_NAME,		\
 				 #PARAM_NAME,				\
+				 sizeof (rainbow_method),               \
 				 NULL);					\
 }
 

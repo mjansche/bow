@@ -1,5 +1,5 @@
 /* libbow.h - public declarations for the Bag-Of-Words Library, libbow.
-   Copyright (C) 1997, 1998 Andrew McCallum
+   Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -26,7 +26,7 @@
 /* These next two macros are automatically maintained by the Makefile,
    in conjunction with the file ./Version. */
 #define BOW_MAJOR_VERSION 0
-#define BOW_MINOR_VERSION 9
+#define BOW_MINOR_VERSION 95
 #define BOW_VERSION BOW_MAJOR_VERSION.BOW_MINOR_VERSION
 
 #include <stdio.h>
@@ -58,12 +58,9 @@
 ((void) ((expr) || (bow_error ("Assertion failed %s:%d:" __STRING(expr), __FILE__, __LINE__), NULL)))
 #endif
 
-#ifndef HAVE_SRANDOM /* for SunOS */
+#if !(HAVE_SRANDOM && HAVE_RANDOM) /* for SunOS */
 #undef srandom
 #define srandom srand
-#endif
-
-#ifndef HAVE_RANDOM /* for SunOS */
 #undef random
 #define random rand
 #endif
@@ -104,6 +101,20 @@
 
 typedef enum { bow_no, bow_yes } bow_boolean;
 
+typedef struct _bow_iterator_double {
+  /* Move to first item collection (optional row indicates which collection)*/
+  void (*reset) (int row_index, void *context);
+  /* Move to next item in collection.  Return zero at end. */
+  int (*advance)(void *context);
+  /* Index at current item, not necessarily contiguous.
+     Returns INT_MIN when invalid. */
+  int (*index) (void *context);
+  /* Value at current item. */
+  double (*value) (void *context);
+  /* Collection-specific context */
+  void *context;
+} bow_iterator_double;
+
 
 
 /* Lexing words from a file. */
@@ -122,44 +133,48 @@ typedef struct _bow_lex {
 
 /* A lexer is represented by a pointer to a structure of this type. */
 typedef struct _bow_lexer {
-  int sizeof_lex;		/* The size of this structure */
+  int sizeof_lex;		/* The size of the bow_lex (or subclass) */
+  struct _bow_lexer *next;	/* The next lexer in the "pipe-like" chain */
   /* Pointers to functions for opening, closing and getting words. */
   bow_lex* (*open_text_fp) (struct _bow_lexer *self, FILE *fp, 
 			    const char *filename);
-  /* Function which turns a character string into a bow_lex */
   bow_lex* (*open_str) (struct _bow_lexer *self, char *buf);
   int (*get_word) (struct _bow_lexer *self, bow_lex *lex, 
 		   char *buf, int buflen);
+  int (*get_raw_word) (struct _bow_lexer *self, bow_lex *lex, 
+		       char *buf, int buflen);
+  int (*postprocess_word) (struct _bow_lexer *self, bow_lex *lex,
+			   char *buf, int buflen);
   void (*close) (struct _bow_lexer *self, bow_lex *lex);
-  /* How to recognize the beginning and end of a document. */
-  const char *document_start_pattern;
-  const char *document_end_pattern;
-  /* NULL pattern means don't scan forward at all.
-     "" pattern means scan forward to EOF. */
 } bow_lexer;
 
-/* This is an augmented version of BOW_LEXER that works for simple,
-   context-free lexers. */
-typedef struct _bow_lexer_simple {
-  /* The basic lexer. */
-  bow_lexer lexer;
-  /* Parameters of the simple, context-free lexing. */
+/* Lexer global variables.  Default values are in lex-simple.c */
+
+/* How to recognize the beginning and end of a document.  NULL pattern
+   means don't scan forward at all.  "" means scan forward to EOF. */
+extern const char *bow_lexer_document_start_pattern;
+extern const char *bow_lexer_document_end_pattern;
+extern int *bow_lexer_case_sensitive;
+extern int (*bow_lexer_stoplist_func)(const char *);
+extern int (*bow_lexer_stem_func)(char *);
+extern int bow_lexer_toss_words_longer_than;
+extern int bow_lexer_toss_words_shorter_than;
+
+/* The parameters that control lexing.  Many of these may be changed
+   with command-line options. */
+typedef struct _bow_lexer_parameters {
   int (*true_to_start)(int character);          /* non-zero on char to start */
   int (*false_to_end)(int character);           /* zero on char to end */
-  int (*stoplist_func)(const char *);           /* one on token in stoplist */
-  int (*stem_func)(char *);	                /* modify arg by stemming */
-  int case_sensitive;		                /* boolean */
   int strip_non_alphas_from_end;                /* boolean */
   int toss_words_containing_non_alphas;	        /* boolean */
   int toss_words_containing_this_many_digits;
-  int toss_words_longer_than;
-} bow_lexer_simple;
+} bow_lexer_parameters;
 
 /* Get the raw token from the document buffer by scanning forward
    until we get a start character, and filling the buffer until we get
    an ending character.  The resulting token in the buffer is
    NULL-terminated.  Return the length of the token. */
-int bow_lexer_simple_get_raw_word (bow_lexer_simple *self, bow_lex *lex, 
+int bow_lexer_simple_get_raw_word (bow_lexer *self, bow_lex *lex, 
 				   char *buf, int buflen);
 
 /* Perform all the necessary postprocessing after the initial token
@@ -168,7 +183,7 @@ int bow_lexer_simple_get_raw_word (bow_lexer_simple *self, bow_lex *lex,
    toss words appearing in the stop list, stem the word, check the
    stoplist again, toss words of length one.  If the word is tossed,
    return zero, otherwise return the length of the word. */
-int bow_lexer_simple_postprocess_word (bow_lexer_simple *self, bow_lex *lex, 
+int bow_lexer_simple_postprocess_word (bow_lexer *self, bow_lex *lex, 
 				       char *buf, int buflen);
 
 /* Create and return a BOW_LEX, filling the document buffer from
@@ -197,17 +212,25 @@ int bow_lexer_simple_get_word (bow_lexer *self, bow_lex *lex,
 /* Here are some simple, ready-to-use lexers that are implemented in
    lex-simple.c */
 
+extern const bow_lexer *bow_simple_lexer;
+
 /* A lexer that throws out all space-delimited strings that have any
    non-alphabetical characters.  For example, the string `obtained
    from http://www.cs.cmu.edu' will result in the tokens `obtained'
    and `from', but the URL will be skipped. */
-extern const bow_lexer_simple *bow_alpha_only_lexer;
+extern const bow_lexer_parameters *bow_alpha_only_lexer_parameters;
 
 /* A lexer that keeps all alphabetic strings, delimited by
    non-alphabetic characters.  For example, the string
    `http://www.cs.cmu.edu' will result in the tokens `http', `www',
    `cs', `cmu', `edu'. */
-extern const bow_lexer_simple *bow_alpha_lexer;
+extern const bow_lexer_parameters *bow_alpha_lexer_parameters;
+
+/* A lexer that keeps all alphabetic strings, delimited by
+   non-alphabetic characters.  For example, the string
+   `http://www.cs.cmu.edu:8080' will result in the tokens `http', `www',
+   `cs', `cmu', `edu', `8080'. */
+extern const bow_lexer_parameters *bow_alphanum_lexer_parameters;
 
 /* A lexer that keeps all strings that begin and end with alphabetic
    characters, delimited by white-space.  For example,
@@ -215,33 +238,43 @@ extern const bow_lexer_simple *bow_alpha_lexer;
    This does not change the words at all---no down-casing, no stemming,
    no stoplist, no word tossing.  It's ideal for use when a
    --lex-pipe-command is used to do all the tokenizing.  */
-extern const bow_lexer_simple *bow_white_lexer;
+extern const bow_lexer_parameters *bow_white_lexer_parameters;
 
-extern const bow_lexer_simple *bow_suffixing_lexer;
+/* A lexer that prepends all tokens by the `Date:' string at the 
+   beginning of the line. */
+extern const bow_lexer *bow_suffixing_lexer;
 
-/* Some declarations for a generic indirect lexer.  See lex-indirect.c */
 
-typedef struct _bow_lexer_indirect {
-  bow_lexer lexer;
-  bow_lexer *underlying_lexer;
-} bow_lexer_indirect;
+/* Call-back functions that just call the next lexer.  */
 
-/* Open the underlying lexer. */
-bow_lex *bow_lexer_indirect_open_text_fp (bow_lexer *self, FILE *fp,
-					  const char *filename);
+/* Open using the next lexer. */
+bow_lex *bow_lexer_next_open_text_fp (bow_lexer *self, FILE *fp,
+				      const char *filename);
 
-/* Open the underlying lexer from a string. */
-bow_lex *bow_lexer_indirect_open_str (bow_lexer *self, char *buf);
+/* Open using the next lexer from a string. */
+bow_lex *bow_lexer_next_open_str (bow_lexer *self, char *buf);
+
+/* Get a word using the next lexer */
+int bow_lexer_next_get_word (bow_lexer *self, bow_lex *lex, 
+			     char *buf, int buflen);
+
+/* Get a raw word using the next lexer */
+int bow_lexer_next_get_raw_word (bow_lexer *self, bow_lex *lex, 
+				 char *buf, int buflen);
+
+/* Postprocess a word using the next lexer */
+int bow_lexer_next_postprocess_word (bow_lexer *self, bow_lex *lex, 
+				     char *buf, int buflen);
 
 /* Close the underlying lexer. */
-void bow_lexer_indirect_close (bow_lexer *self, bow_lex *lex);
+void bow_lexer_next_close (bow_lexer *self, bow_lex *lex);
 
 
 /* Some declarations for a simple N-gram lexer.  See lex-gram.c */
 
 /* An augmented version of BOW_LEXER that provides N-grams */
 typedef struct _bow_lexer_gram {
-  bow_lexer_indirect indirect_lexer;
+  bow_lexer lexer;
   int gram_size;
 } bow_lexer_gram;
 
@@ -258,7 +291,7 @@ extern const bow_lexer_gram *bow_gram_lexer;
 
 /* A lexer that ignores all HTML directives, ignoring all characters
    between angled brackets: < and >. */
-extern const bow_lexer_indirect *bow_html_lexer;
+extern const bow_lexer *bow_html_lexer;
 
 /* An unsorted, NULL-terminated array of strings, indicating headers
    which should be removed from an e-mail/newsgroup message.  If this
@@ -268,7 +301,7 @@ extern char **bow_email_headers_to_remove;
 
 /* A lexer that removes all header lines which is one of the headers contained
    in HEADERS_TO_REMOVE */
-extern const bow_lexer_indirect *bow_email_lexer;
+extern const bow_lexer *bow_email_lexer;
 
 
 /* The default lexer that will be used by various library functions
@@ -276,17 +309,7 @@ extern const bow_lexer_indirect *bow_email_lexer;
    point at whichever lexer you desire.  If you do not set it, it
    will point at bow_alpha_lexer. */
 extern bow_lexer *bow_default_lexer;
-
-/* Default instances of the lexers that can be modified by libbow's
-   argp cmdline argument processing. */
-extern bow_lexer_simple *bow_default_lexer_simple;
-extern bow_lexer_simple *bow_default_lexer_white;
-extern bow_lexer_simple *bow_default_lexer_suffixing;
-extern bow_lexer_indirect *bow_default_lexer_indirect;
-extern bow_lexer_gram *bow_default_lexer_gram;
-extern bow_lexer_indirect *bow_default_lexer_html;
-extern bow_lexer_indirect *bow_default_lexer_email;
-
+extern bow_lexer_parameters *bow_default_lexer_parameters;
 
 
 /* Functions that may be useful in writing a lexer. */
@@ -339,6 +362,12 @@ void bow_array_init (bow_array *array, int capacity,
 /* Append an entry to the array.  Return its index. */
 int bow_array_append (bow_array *array, void *entry);
 
+/* Append an entry to the array by reading from fp.  Return its index,
+   or -1 if there are no more entries to be read. */
+int bow_array_append_from_fp_inc (bow_array *array, 
+				  int (*read_func)(void*,FILE*), 
+				  FILE *fp);
+
 /* Return what will be the index of the next entry to be appended */
 int bow_array_next_index (bow_array *array);
 
@@ -350,6 +379,21 @@ void *bow_array_entry_at_index (bow_array *array, int index);
 void bow_array_write (bow_array *array, int (*write_func)(void*,FILE*), 
 		      FILE *fp);
 
+/* Write the incremental format header to the file-pointer FP */
+void bow_array_write_header_inc (bow_array *array, FILE *fp);
+
+/* Write one entry in incremental format to the file-pointer FP, using the function
+   WRITE_FUNC. It will fseek to the appropriate location to write. */
+void bow_array_write_entry_inc (bow_array *array, int i, int (*write_func)(void*,FILE*), FILE *fp);
+
+/* Return a new array, created by reading file-pointer FP, and using
+   the function READ_FUNC to read each of the array entries. The
+   returned array will have entry-freeing-function FREE_FUNC. */
+bow_array *
+bow_array_new_from_fp_inc (int (*read_func)(void*,FILE*), 
+			   void (*free_func)(),
+			   FILE *fp);
+
 /* Return a new array, created by reading file-pointer FP, and using
    the function READ_FUNC to read each of the array entries.  The
    returned array will have entry-freeing-function FREE_FUNC. */
@@ -357,6 +401,18 @@ bow_array *
 bow_array_new_from_data_fp (int (*read_func)(void*,FILE*), 
 			    void (*free_func)(),
 			    FILE *fp);
+
+/* Return a new array, created by reading file-pointer FP, and using
+   the function READ_FUNC to read each of the array entries.  The
+   array entries will have size MIN_ENTRY_SIZE, or larger, if
+   indicated by the data in FP; this is useful when a structure is
+   re-defined to be larger.  The returned array will have
+   entry-freeing-function FREE_FUNC.  */
+bow_array *
+bow_array_new_with_entry_size_from_data_fp (int min_entry_size,
+					    int (*read_func)(void*,FILE*), 
+					    void (*free_func)(),
+					    FILE *fp);
 
 /* Free the memory held by the array ARRAY. */
 void bow_array_free (bow_array *array);
@@ -414,6 +470,9 @@ void bow_int4str_write (bow_int4str *map, FILE *fp);
 /* Return a new int-str mapping, created by reading file-pointer FP. */
 bow_int4str *bow_int4str_new_from_fp (FILE *fp);
 
+/* Same as above, but in incremental format. */
+bow_int4str *bow_int4str_new_from_fp_inc (FILE *fp);
+
 /* Return a new int-str mapping, created by reading FILENAME. */
 bow_int4str *bow_int4str_new_from_file (const char *filename);
 
@@ -444,6 +503,14 @@ void bow_sarray_init (bow_sarray *sa, int capacity,
 int bow_sarray_add_entry_with_keystr (bow_sarray *sa, void *entry,
 				      const char *keystr);
 
+/* Append a new entry to the array.  Also make the entry accessible by
+   the string KEYSTR. Reflect changes on disk.
+   Returns the index of the new entry. */
+int
+bow_sarray_add_entry_with_keystr_inc (bow_sarray *sa, void *entry,
+				      const char *keystr, int (*write_func)(void*,FILE*),
+				      FILE *i4k_fp, FILE *array_fp);
+
 /* Return a pointer to the entry at index INDEX. */
 void *bow_sarray_entry_at_index (bow_sarray *sa, int index);
 
@@ -467,6 +534,14 @@ void bow_sarray_write (bow_sarray *sarray, int (*write_func)(void*,FILE*),
 bow_sarray *bow_sarray_new_from_data_fp (int (*read_func)(void*,FILE*), 
 					 void (*free_func)(),
 					 FILE *fp);
+
+/* Return a new sarray, created by reading file-pointers I4K_FP and ARRAY_FP, and using
+   the function READ_FUNC to read each of the icremental-format array entries from
+   FP_ARRAY.  The returned sarray will have entry-freeing-function FREE_FUNC. */
+bow_sarray *
+bow_sarray_new_from_data_fps_inc (int (*read_func)(void*,FILE*), 
+				  void (*free_func)(),
+				  FILE *i4k_fp, FILE *array_fp);
 
 /* Free the memory held by the bow_sarray SA. */
 void bow_sarray_free (bow_sarray *sa);
@@ -522,6 +597,11 @@ const char *bow_int2word (int wi);
 int bow_word2int (const char *word);
 
 /* Given a WORD, return its "word index", WI, according to the global
+   word-int mapping; if it's not yet in the mapping, add it, and
+   write the word to file-pointer fp as well. */
+int bow_word2int_inc (const char *word, FILE *fp);
+
+/* Given a WORD, return its "word index", WI, according to the global
    word-int mapping; if it's not yet in the mapping, return -1. */
 int bow_word2int_no_add (const char *word);
 
@@ -534,6 +614,9 @@ int bow_word2int_add_occurrence (const char *word);
    Essentially, setting this to non-zero makes bow_word2int() and
    bow_word2int_add_occurrence() behave like bow_str2int_no_add(). */
 extern int bow_word2int_do_not_add;
+
+/* Add to the word occurrence counts from the documents in FILENAME. */
+int bow_words_add_occurrences_from_file (const char *filename);
 
 /* Add to the word occurrence counts by recursively decending directory 
    DIRNAME and lexing all the text files; skip any files matching
@@ -579,6 +662,9 @@ void bow_words_read_from_file (const char *filename);
    from the last one, or FORCE_UPDATE is non-zero. */
 void bow_words_reread_from_file (const char *filename, int force_update);
 
+/* Read the int/word map (in incremental format) from file-pointer FP. */
+void bow_words_read_from_fp_inc (FILE *fp);
+
 
 /* Lists of words sorted by some score, for example, infogain */
 
@@ -612,6 +698,10 @@ int bow_wa_add (bow_wa *wa, int wi, float score);
    bow_wa_append(), otherwise an error is raised. */
 int bow_wa_add_to_end (bow_wa *wa, int wi, float score);
 
+/* Remove the entry corresponding to word WI.  Return the new length
+   of the word array. */
+int bow_wa_remove (bow_wa *wa, int wi);
+
 /* Add to WA all the WI/WEIGHT entries from WA2.  Uses bow_wa_add(). */
 int bow_wa_union (bow_wa *wa, bow_wa *wa2);
 
@@ -626,8 +716,9 @@ int bow_wa_overlay (bow_wa *wa1, bow_wa *wa2);
    not in WA2. */
 bow_wa *bow_wa_diff (bow_wa *wa1, bow_wa *wa2);
 
-/* Sort the word array. */
+/* Sort the word array with high values first. */
 void bow_wa_sort (bow_wa *wa);
+/* Sort the word array with high values last. */
 void bow_wa_sort_reverse (bow_wa *wa);
 
 /* Print the first N entries of the word array WA to stream FP. */
@@ -672,6 +763,9 @@ bow_wv *bow_wv_add (bow_wv **wv_array, int wv_array_length);
 /* Create and return a new "word vector" with uninitialized contents. */
 bow_wv *bow_wv_new (int capacity);
 
+/* Allocate a return a copy of WV */
+bow_wv * bow_wv_copy (bow_wv *wv);
+
 /* Return the number of word occurrences in the WV */
 int bow_wv_word_count (bow_wv *wv);
 
@@ -699,6 +793,9 @@ void bow_wv_normalize_weights_by_vector_length (bow_wv *wv);
    when all the weights in the vector are multiplied by the
    NORMALIZER, all the vector entries will to one. */
 void bow_wv_normalize_weights_by_summing (bow_wv *wv);
+
+/* Return the sum of the weight entries. */
+float bow_wv_weight_sum (bow_wv *wv);
 
 /* Return the number of bytes required for writing the "word vector" WV. */
 int bow_wv_write_size (bow_wv *wv);
@@ -757,6 +854,15 @@ typedef struct _bow_doc {
   const char *filename;
 } bow_doc;
 
+/* These are defined in split.c */
+int bow_doc_is_train (bow_doc *doc);
+int bow_doc_is_test (bow_doc *doc);
+int bow_doc_is_unlabeled (bow_doc *doc);
+int bow_doc_is_untagged (bow_doc *doc);
+int bow_doc_is_validation (bow_doc *doc);
+int bow_doc_is_ignore (bow_doc *doc);
+
+
 /* A "document" entry useful for standard classification tasks. */
 typedef struct _bow_cdoc {
   bow_doc_type type;		/* Is this document part of the model to be
@@ -791,6 +897,10 @@ int bow_fp_is_text (FILE *fp);
 
 /* Return a non-zero value if the char array BUF contains mostly text. */
 int bow_str_is_text (char *buf);
+
+/* bow_*_is_text() always returns `yes'.  This is useful for Japanese
+   byte codes. */
+extern int bow_is_text_always_yes;
 
 /* Calls the function CALLBACK for each of the filenames encountered
    when recursively descending the directory named DIRNAME.  CALLBACK
@@ -897,6 +1007,9 @@ extern unsigned int bow_dv_default_capacity;
 /* Add a new entry to the "document vector" *DV. */
 void bow_dv_add_di_count_weight (bow_dv **dv, int di, int count, float weight);
 
+/* Set the count & weight of the "document vector" *DV. */
+void bow_dv_set_di_count_weight (bow_dv **dv, int di, int count, float weight);
+
 /* Sum the WEIGHT into the document vector DV at document index DI,
    creating a new entry in the document vector if necessary. */
 void bow_dv_add_di_weight (bow_dv **dv, int di, float weight);
@@ -952,8 +1065,17 @@ bow_wi2dvf *bow_wi2dvf_new_from_data_file (const char *filename);
 
 /* Return the "document vector" corresponding to "word index" WI.  If
    is hasn't been read already, this function will read the "document
-   vector" out of the file passed to bow_wi2dvf_new_from_data_file(). */
+   vector" out of the file passed to bow_wi2dvf_new_from_data_file().
+   If the DV has been "hidden" (by feature selection, for example) it
+   will return NULL.*/
 bow_dv *bow_wi2dvf_dv (bow_wi2dvf *wi2dvf, int wi);
+
+/* Return the "document vector" corresponding to "word index" WI.  This
+   function will read the "document vector" out of the file passed to
+   bow_wi2dvf_new_from_file() if is hasn't been read already.  If the 
+   DV has been "hidden" (by feature selection, for example) it will not
+   be returned unless EVEN_IF_HIDDEN is non-zero. */
+bow_dv *bow_wi2dvf_dv_hidden (bow_wi2dvf *wi2dvf, int wi, int even_if_hidden);
 
 /* Return a pointer to the BOW_DE for a particular word/document pair, 
    or return NULL if there is no entry for that pair. */
@@ -978,6 +1100,10 @@ void bow_wi2dvf_add_di_wv (bow_wi2dvf **wi2dvf, int di, bow_wv *wv);
 void bow_wi2dvf_add_wi_di_count_weight (bow_wi2dvf **wi2dvf, int wi,
 					int di, int count, float weight);
 
+/* set the count and weight of the appropriate entry in the wi2dvf */
+void bow_wi2dvf_set_wi_di_count_weight (bow_wi2dvf **wi2dvf, int wi,
+					int di, int count, float weight);
+
 /* Remove the word with index WI from the vocabulary of the map WI2DVF */
 void bow_wi2dvf_remove_wi (bow_wi2dvf *wi2dvf, int wi);
 
@@ -996,6 +1122,10 @@ int bow_wi2dvf_hide_words_by_occur_count (bow_wi2dvf *wi2dvf, int count);
 
 /* Make visible all DVF's that were hidden with BOW_WI2DVF_HIDE_WI(). */
 void bow_wi2dvf_unhide_all_wi (bow_wi2dvf *wi2dvf);
+
+/* Set the WI2DVF->ENTRY[WI].IDF to the sum of the COUNTS for the
+   given WI. */
+void bow_wi2dvf_set_idf_to_count (bow_wi2dvf *wi2dvf);
 
 /* Write WI2DVF to file-pointer FP, in a machine-independent format.
    This is the format expected by bow_wi2dvf_new_from_fp(). */
@@ -1035,7 +1165,7 @@ typedef enum {
 
 /* A wrapper around a wi2dvf/cdocs combination. */
 typedef struct _bow_barrel {
-  struct _bow_method *method;	/* TFIDF, NaiveBayes, PrInd, or others. */
+  struct _rainbow_method *method; /* TFIDF, NaiveBayes, PrInd, others. */
   bow_array *cdocs;		/* The documents (or classes, for VPC) */
   bow_wi2dvf *wi2dvf;		/* The matrix of words vs documents */
   bow_int4str *classnames;	/* A map between classnames and indices */
@@ -1049,9 +1179,14 @@ typedef struct _bow_score {
   const char *name;
 } bow_score;
 
-/* The parameters of weighting and scoring in barrel's. */
 typedef struct _bow_method {
-  /* String identifer for the method, used for archiving. */
+  /* String identifer for the method, used for selection. */
+  const char *name;
+} bow_method;
+
+/* The parameters of weighting and scoring in barrel's. */
+typedef struct _rainbow_method {
+  /* String identifer for the method, used for selection. */
   const char *name;
   /* Functions for implementing parts of the method. */
   void (*set_weights)(bow_barrel *barrel);
@@ -1066,12 +1201,13 @@ typedef struct _bow_method {
   void (*free_barrel)(bow_barrel *barrel);
   /* Parameters of the method. */
   void *params;
-} bow_method;
+} rainbow_method;
 
-/* Macros that make it easier to call the BOW_METHOD functions */
+/* Macros that make it easier to call the RAINBOW_METHOD functions */
 
 #define bow_barrel_set_weights(BARREL)		\
-((*(BARREL)->method->set_weights)(BARREL))
+if ((*(BARREL)->method->set_weights))           \
+  ((*(BARREL)->method->set_weights)(BARREL))
 
 #define bow_barrel_scale_weights(BARREL, DOC_BARREL)		\
 if ((*(BARREL)->method->scale_weights))				\
@@ -1122,7 +1258,7 @@ struct argp_child;		/* forward declare this type */
    number of the CHILD so the command-line options for this option
    will appear separately.  If there is no argp_child for this 
    method, pass NULL for CHILD. */
-int bow_method_register_with_name (bow_method *m, const char *name,
+int bow_method_register_with_name (bow_method *m, const char *name, int size,
 				   struct argp_child *child);
 
 /* Return a pointer to a method structure that was previous registered 
@@ -1223,6 +1359,14 @@ void bow_barrel_keep_top_words_by_infogain (int num_words_to_keep,
 					    bow_barrel *barrel,
 					    int num_classes);
 
+/* Set the BARREL->WI2DVF->ENTRY[WI].IDF to the sum of the COUNTS for
+   the given WI among those documents in the training set. */
+void bow_barrel_set_idf_to_count_in_train (bow_barrel *barrel);
+
+/* Return the number of unique words among those documents with TYPE
+   tag (train, test, unlabeled, etc) equal to TYPE. */
+int bow_barrel_num_unique_words_of_type (bow_barrel *doc_barrel, int type);
+
 /* Write BARREL to the file-pointer FP in a machine independent format. */
 void bow_barrel_write (bow_barrel *barrel, FILE *fp);
 
@@ -1244,6 +1388,9 @@ void bow_barrel_print_word_count (bow_barrel *barrel, const char *word);
 
 /* For copying a class barrel.  Doesn't deal with class_probs at all. */
 bow_barrel *bow_barrel_copy (bow_barrel *barrel);
+
+/* Return an iterator for the columns of BARREL in class CI */
+bow_iterator_double *bow_barrel_iterator_for_ci_new(bow_barrel *barrel,int ci);
 
 /* Free the memory held by BARREL. */
 void bow_barrel_free (bow_barrel *barrel);
@@ -1381,6 +1528,7 @@ volatile void _bow_error (const char *format, ...);
    identical copies defined in io.c */
 
 void (*bow_malloc_hook) (void *ptr);
+void (*bow_realloc_hook) (void *old, void *new);
 void (*bow_free_hook) (void *ptr);
 
 #if ! defined (_BOW_MALLOC_INLINE_EXTERN)
@@ -1417,16 +1565,16 @@ bow_realloc (void *ptr, size_t s)
   ret = realloc (ptr, s);
   if (!ret)
     bow_error ("Memory exhausted.");
-  if (bow_malloc_hook)
-    (*bow_malloc_hook) (ret);
+  if (bow_realloc_hook)
+    (*bow_realloc_hook) (ptr, ret);
   return ret;
 }
 
 _BOW_MALLOC_INLINE_EXTERN void
 bow_free (void *ptr)
 {
-  if (bow_malloc_hook)
-    bow_malloc_hook (ptr);
+  if (bow_free_hook)
+    bow_free_hook (ptr);
   free (ptr);
 }
 
@@ -1440,7 +1588,7 @@ extern int bow_file_format_version;
 /* The default, initial value of above variable.  The above variable will
    take on a different value when reading from binary data archived with 
    a different format version. */
-#define BOW_DEFAULT_FILE_FORMAT_VERSION 6
+#define BOW_DEFAULT_FILE_FORMAT_VERSION 7
 
 /* Functions for conveniently recording and finding out the format
    version used to write binary data to disk. */
@@ -1636,6 +1784,14 @@ void bow_dv_heap_update (bow_dv_heap *heap);
    data structure we've built - I hope it all fits.... */
 bow_dv_heap *bow_make_dv_heap_from_wi2dvf (bow_wi2dvf *wi2dvf);
 
+/* Function to make a heap from all the vectors of documents in the
+   big data structure we've built.  If EVEN_IF_HIDDEN is non-zero,
+   then words that have been "hidden" (by feature selection, for
+   example) will none-the-less also be included in the WV's returned
+   by future calls to the heap; think carefully before you do this! */
+bow_dv_heap *bow_make_dv_heap_from_wi2dvf_hidden (bow_wi2dvf *wi2dvf, 
+						  int even_if_hidden);
+
 /* Function to create a heap of the vectors of documents associated
    with each word in the word vector. */
 bow_dv_heap *bow_make_dv_heap_from_wv (bow_wi2dvf *wi2dvf, bow_wv *wv);
@@ -1673,6 +1829,14 @@ void bow_set_doc_types (bow_array *docs, int num_classes,
 			bow_int4str *classnames);
 void bow_set_doc_types_for_barrel (bow_barrel *barrel);
 
+/* Mark all documents in the array DOCS to be of type TAG. */
+void bow_tag_docs (bow_array *docs, int tag);
+
+/* Change documents in the array DOCS of type TAG1 to be of type
+   TAG2. */
+void bow_tag_change_tags (bow_array *docs, int tag1, int tag2);
+
+
 /* This function sets up the data structure so we can step through the word
    vectors for each test document easily. */
 bow_dv_heap *bow_test_new_heap (bow_barrel *barrel);
@@ -1691,16 +1855,18 @@ int bow_heap_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv,
 		      int (*use_if_true)(bow_cdoc*));
 
 /* Return non-zero iff CDOC has type MODEL. */
-int bow_cdoc_is_model (bow_cdoc *cdoc);
+int bow_cdoc_is_train (bow_cdoc *cdoc);
 
 /* Return non-zero iff CDOC has type TEST. */
 int bow_cdoc_is_test (bow_cdoc *cdoc);
 
 /* Return one */
 int bow_cdoc_yes (bow_cdoc *cdoc);
+int bow_doc_yes (bow_doc *doc);
 
 /* Return nonzero iff CDOC has type != TEST */
 int bow_cdoc_is_nontest (bow_cdoc *cdoc);
+int bow_doc_is_nontest (bow_doc *doc);
 
 /* Return nonzero iff CDOC has type == IGNORE */
 int bow_cdoc_is_ignore (bow_cdoc *cdoc);
@@ -1731,6 +1897,10 @@ double bow_entropy (float *counts, int num_counts);
    in SIZE. */
 float *bow_infogain_per_wi_new (bow_barrel *barrel, int num_classes, 
 				int *size);
+
+/* Return a word array containing information gain scores, unsorted.
+   Only includes words with non-zero infogain. */
+bow_wa *bow_infogain_wa (bow_barrel *barrel, int num_classes);
 
 /* Return a malloc()'ed array containing an infomation-gain score for
    each word index, but the infogain scores are computing from
@@ -1780,6 +1950,10 @@ bow_headers2newsgroups(bow_sarray *headers);
 /* This function seeds the random number generator if needed.  Call
    before and random number generator usage, instead of srand */
 void bow_random_set_seed();
+
+/* Set the seed to the same value it had the first time it was set
+   during this run. */
+void bow_random_reset_seed ();
 
 /* Return an double between low and high, inclusive */
 double bow_random_double (double low, double high);
@@ -1884,5 +2058,17 @@ extern int bow_event_document_then_word_document_length;
    the function split.c:bow_test_set_files().  In this function
    compare filenames by their basename only, no their directories. */
 extern int bow_test_set_files_use_basename;
+
+
+/* flex options */
+
+typedef enum
+{
+  USE_STANDARD_LEXER = 0,
+  USE_MAIL_FLEXER,
+  USE_TAGGED_FLEXER
+} bow_flex_type;
+
+extern bow_flex_type bow_flex_option;
 
 #endif /* __libbow_h_INCLUDE */

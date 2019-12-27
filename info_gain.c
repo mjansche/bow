@@ -1,6 +1,6 @@
 /* Functions to calculate the information gain for each word in our corpus. */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Sean Slattery <slttery@cs.cmu.edu>
    and Andrew Kachites McCallum <mccallum@cs.cmu.edu>
@@ -460,6 +460,26 @@ bow_infogain_per_wi_new_using_pairs (bow_barrel *barrel, int num_classes,
       }
 #endif
   return NULL;
+}
+
+/* Return a word array containing information gain scores, unsorted.
+   Only includes words with non-zero infogain. */
+bow_wa *
+bow_infogain_wa (bow_barrel *barrel, int num_classes)
+{
+  float *wi2ig;			/* the array of information gains */
+  int wi2ig_size;
+  int wi;
+  bow_wa *wa = bow_wa_new (barrel->wi2dvf->num_words);
+
+  wi2ig = bow_infogain_per_wi_new (barrel, num_classes, &wi2ig_size);
+
+  /* Create and fill and array of `word-index and information-gain
+     structures' that can be sorted. */
+  for (wi = 0; wi < wi2ig_size; wi++)
+    if (wi2ig[wi] > 0)
+      bow_wa_append (wa, wi, wi2ig[wi]);
+  return wa;
 }
 
 

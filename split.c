@@ -1,6 +1,6 @@
 /* Splitting the documents into training and test sets. */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Sean Slattery <jslttery@cs.cmu.edu>
 
@@ -35,6 +35,7 @@ typedef enum {
   bow_files_source_number_remaining, /* ditto, but proportions from untagged */
   bow_files_source_remaining,     /* use remaining docs for a file type */
   bow_files_source_num_per_class, /* pick a random number from each class */
+  bow_files_source_num_per_class_remaining, /* ditto, but prop from untagged */
   bow_files_source_fancy_counts   /* pick the random number specified for each class */
 } bow_files_source_type;
 
@@ -105,20 +106,31 @@ static struct argp_option bow_split_options[] =
    "A number between 0 and 1 inclusive "
    "with a decimal point indicates a random fraction of all documents.  "
    "The number of documents selected from each class is determined "
-   "by attempting to match the proportions of the non-ignore documents; "
-   "however, if the number is followed by an `r' (for `remaining'), "
-   "then it attempts to match the proportions of the thus-far "
-   "untagged documents instead.  "
+   "by attempting to match the proportions of the non-ignore documents.  "
    "A number with no decimal point indicates the number of documents "
    "to select randomly.  "
-   "A suffix of `r' can be used similarly to above.  "
-   "(The above selection methods are actually run last, which is "
-   "important since this effects the meaning of `remaining'.)  "
    "Alternatively, a suffix of `pc' indicates the number of documents "
    "per-class to tag.  "
    "`remaining' selects all documents that remain untagged at the end.  "
    "Anything else is interpreted as a filename listing documents to select.  "
    "Default is `0.3'."},
+
+  /* The following text was removed from above:
+
+     "by attempting to match the proportions of the non-ignore documents; "
+     "however, if the number is followed by an `r' (for `remaining'), "
+     "then it attempts to match the proportions of the thus-far "
+     "untagged documents instead.  "
+     "A number with no decimal point indicates the number of documents "
+     "to select randomly.  "
+     "A suffix of `r' can be used similarly to above.  "
+     "(The above selection methods are actually run last, which is "
+     "important since this effects the meaning of `remaining'.)  "
+
+     We should document the "fancy counts" method here in this comment:
+
+   */
+
   {"train-set", TRAIN_SOURCE, "SOURCE", 0,
    "How to select the training documents.  Same format as --test-set.  Default is "
    "`remaining'."},
@@ -265,6 +277,16 @@ bow_split_parse_opt (int key, char *arg, struct argp_state *state)
       *files_source = bow_files_source_num_per_class;
       *number = atoi(arg);
     }
+  else if (length > 2 && 
+	   strchr(arg, 'p') == arg + length - 3 &&
+	   strchr(arg, 'c') == arg + length - 2 &&
+	   strchr(arg, 'r') == arg + length - 1 &&
+	   strspn(arg, "0123456789pcr"))
+    {
+      bow_error ("`pcr' not yet supported");
+      *files_source = bow_files_source_num_per_class_remaining;
+      *number = atoi(arg);
+    }
   else if (length > 2 &&
 	   arg[0] == '[' && arg[length-1] == ']')
     {
@@ -322,6 +344,37 @@ static struct argp_child bow_split_argp_child =
 
 
 
+/* Mark all documents in the array DOCS to be of type TAG. */
+void
+bow_tag_docs (bow_array *docs, int tag)
+{
+  int i;
+  bow_cdoc *doc;
+
+  for (i = 0; i < docs->length ; i++)
+    {
+      doc = bow_array_entry_at_index (docs, i);
+      doc->type = tag;
+    }
+}
+
+/* Change documents in the array DOCS of type TAG1 to be of type
+   TAG2. */
+void
+bow_tag_change_tags (bow_array *docs, int tag1, int tag2)
+{
+  int i;
+  bow_cdoc *doc;
+
+  for (i = 0; i < docs->length ; i++)
+    {
+      doc = bow_array_entry_at_index (docs, i);
+      if (doc->type == tag1)
+	doc->type = tag2;
+    }
+}
+
+
 /* Mark all documents in the array DOCS to be of type BOW_DOC_UNTAGGED. */
 void
 bow_set_all_docs_untagged (bow_array *docs)
@@ -348,6 +401,7 @@ bow_set_doc_types_randomly_by_count_per_class (bow_array *docs,
   int ci, di;
   bow_cdoc *cdoc = NULL;
   /* All the below include only the test/model docs, not the ignore docs.*/
+  int *num_untagged_per_class;
   int *local_num_per_class;
   int total_num_to_tag;
   int num_tagged;
@@ -356,6 +410,29 @@ bow_set_doc_types_randomly_by_count_per_class (bow_array *docs,
 
   /* Seed the random number generator if it hasn't been already */
   bow_random_set_seed ();
+
+  /* Count the number of untagged documents in each class, and if
+     this function is trying to tag more than are available, simply
+     have this function tag less */
+  num_untagged_per_class = alloca (num_classes * sizeof (int));
+  for (ci = 0; ci < num_classes; ci++)
+    num_untagged_per_class[ci] = 0;
+  for (di = 0; di < docs->length; di++)
+    {
+      cdoc = bow_array_entry_at_index (docs, di);
+      if (cdoc->type == bow_doc_untagged)
+	num_untagged_per_class[cdoc->class]++;
+    }
+  for (ci = 0; ci < num_classes; ci++)
+    if (num_per_class[ci] > num_untagged_per_class[ci])
+      {
+	bow_verbosify (bow_quiet, "Asked for %d documents of class %s; "
+		       "only %d available\n", 
+		       num_per_class[ci],
+		       bow_int2str (classnames, ci), 
+		       num_untagged_per_class[ci]);
+	num_per_class[ci] = num_untagged_per_class[ci];
+      }
 
   /* Create a local array of the number of taggings to perform in each class,
      which we will change by decrimenting it as we tag. */
@@ -542,7 +619,7 @@ bow_set_doc_types_randomly_by_fraction (bow_array *docs,
     }
 
   bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
-				       fraction * non_ignore_doc_count,
+				       rint (fraction * non_ignore_doc_count),
 				       type, 0);
 }
 
@@ -792,6 +869,22 @@ bow_set_doc_types (bow_array *docs, int num_classes, bow_int4str *classnames)
 							 types[ti].doc_type);
 	  bow_free(class_nums);
 	}
+      if (types[ti].source == bow_files_source_num_per_class_remaining)
+	{
+	  int ci;
+	  int *class_nums;
+
+	  bow_error ("prc suffix not yet implemented.");
+	  class_nums = bow_malloc (sizeof (int) * num_classes);
+	  for (ci = 0; ci < num_classes; ci ++)
+	    class_nums[ci] = types[ti].number;
+	  
+	  bow_set_doc_types_randomly_by_count_per_class (docs, num_classes,
+							 classnames,
+							 class_nums, 
+							 types[ti].doc_type);
+	  bow_free(class_nums);
+	}
       else if (types[ti].source == bow_files_source_fancy_counts)
 	{
 	  int *counts = bow_malloc (sizeof (int) * num_classes);
@@ -885,6 +978,16 @@ bow_set_doc_types_for_barrel (bow_barrel *barrel)
   bow_set_doc_types (barrel->cdocs, bow_barrel_num_classes (barrel), 
 		     barrel->classnames);
 }
+
+#define BOW_DOC_IS_X(X) \
+int bow_doc_is_ ## X (bow_doc *doc) { return (doc->type == bow_doc_ ## X); }
+
+BOW_DOC_IS_X(train)
+BOW_DOC_IS_X(test)
+BOW_DOC_IS_X(unlabeled)
+BOW_DOC_IS_X(untagged)
+BOW_DOC_IS_X(validation)
+BOW_DOC_IS_X(ignore)
 
 void _register_split_args () __attribute__ ((constructor));
 void _register_split_args ()

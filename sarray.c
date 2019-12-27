@@ -1,6 +1,6 @@
 /* Arrays of C struct's that can grow.  Entries can be retrieved
    either by integer index, or by string key. */
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -63,6 +63,33 @@ bow_sarray_add_entry_with_keystr (bow_sarray *sa, void *entry,
   return index;
 }
 
+/* Append a new entry to the array.  Also make the entry accessible by
+   the string KEYSTR. Reflect changes on disk.
+   Returns the index of the new entry. */
+int
+bow_sarray_add_entry_with_keystr_inc (bow_sarray *sa, void *entry,
+				      const char *keystr, int (*write_func)(void*,FILE*),
+				      FILE *i4k_fp, FILE *array_fp)
+{
+  int index, i;
+
+  assert (keystr && keystr[0]);
+  /* Make sure this key string is not already in the map. */
+  assert (bow_str2int_no_add (sa->i4k, keystr) == -1);
+  index = bow_str2int (sa->i4k, keystr);
+  i = bow_array_append (sa->array, entry);
+  assert (index == i);
+
+  /* Update information on disk */
+  fseek (i4k_fp, 0, SEEK_END);
+  fprintf (i4k_fp, "%s\n", keystr);
+  bow_array_write_entry_inc (sa->array, i, write_func, array_fp); 
+  fflush(i4k_fp);
+  fflush(array_fp);
+
+  return index;
+}
+
 /* Return a pointer to the entry at index INDEX. */
 void *
 bow_sarray_entry_at_index (bow_sarray *sa, int index)
@@ -77,7 +104,7 @@ bow_sarray_entry_at_keystr (bow_sarray *sa, const char *keystr)
   int index;
   index = bow_str2int_no_add (sa->i4k, keystr);
   if (index < 0)
-    bow_error ("No entry for key string `%s'", keystr);
+    return NULL;
   return bow_array_entry_at_index (sa->array, index);
 }
 
@@ -116,6 +143,23 @@ bow_sarray_new_from_data_fp (int (*read_func)(void*,FILE*),
   ret = malloc (sizeof (bow_sarray));
   ret->i4k = bow_int4str_new_from_fp (fp);
   ret->array = bow_array_new_from_data_fp (read_func, free_func, fp);
+  return ret;
+}
+
+/* Return a new sarray, created by reading file-pointers I4K_FP and ARRAY_FP, and using
+   the function READ_FUNC to read each of the icremental-format array entries from
+   FP_ARRAY.  The returned sarray will have entry-freeing-function FREE_FUNC. */
+bow_sarray *
+bow_sarray_new_from_data_fps_inc (int (*read_func)(void*,FILE*), 
+				  void (*free_func)(),
+				  FILE *i4k_fp, FILE *array_fp)
+{
+  bow_sarray *ret;
+
+  ret = malloc (sizeof (bow_sarray));
+  ret->i4k = bow_int4str_new_from_fp_inc (i4k_fp);
+  ret->array = bow_array_new_from_fp_inc (read_func, free_func, array_fp);
+  
   return ret;
 }
 

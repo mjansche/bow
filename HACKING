@@ -6,30 +6,20 @@ Source code revision control
    The BOW software package is revision-control-maintained as a CVS
    repository, with CVS version 1.9.
 
-   CVS is available at ftp://prep.ai.mit.edu.  Documentation is
+   CVS is available at ftp://ftp.gnu.org.  Documentation is
    available in texinfo format.
 
-   The repository is on sandbox.jprc.com.  To use it, first obtain a
-   login id from Andrew McCallum <mccallum@cs.cmu.edu>, then type at
-   your shell:
-
-      setenv CVSROOT :pserver:yourloginname@sandbox.jprc.com:/home/mccallum/lib/cvsroot
-      cvs login
-
-   Answer its password prompt, then check out the source and `cd' into
-   the source directory by typing
-
-      cvs co bow
-      cd bow
-
-   In order to compile libbow, you'll have to create `./configure' from
-   `./configure.in' by typing (in the bow directory)
+   The repository used to be publically available, but due to firewall
+   constraints is not longer.  If you are inside the firewall and have
+   checked out libbow, in order to compile libbow, you'll have to
+   create `./configure' from `./configure.in' by typing (in the bow
+   directory)
 
       autoconf
       (cd argp ; autoconf)
 
    You must have the autoconf program installed on your system.  It is
-   available from ftp://gnu.org/pub/gnu or its mirrors.
+   available from ftp://ftp.gnu.org/pub/gnu or its mirrors.
 
 
 Coding standards

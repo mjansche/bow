@@ -1,6 +1,6 @@
 /* Managing lists of document names. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -74,11 +74,15 @@ bow_map_filenames_from_dir (int (*callback)(const char *filename,
       perror (__PRETTY_FUNCTION__);
       getcwd (cwd, PATH_MAX);
       fprintf (stderr, "CWD is `%s'\n", cwd);
-      fprintf (stderr,"Couldn't open directory `%s'.  Opening as file.", dirname);
+      fprintf (stderr,"Couldn't open directory `%s'.  Skipping.\n", dirname);
+      return 1;
+#if 0
+      fprintf ("Opening as file.", dirname);
       (*callback) (dirname, context);
       return 1;
       /*fprintf (stderr,"Couldn't open directory `%s'.  Skipping.", dirname);*/
       /*bow_error ("Couldn't open directory `%s'", dirname);*/
+#endif
     }
 
 #if 0

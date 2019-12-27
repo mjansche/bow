@@ -1,4 +1,4 @@
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -24,6 +24,10 @@
    size-of-vocabulary instead. */
 double naivebayes_argp_m_est_m;
 
+/* the score normally returns P(c|X) - this makes the score return P(X|c) */
+extern int  naivebayes_score_returns_doc_pr;
+/* leave the scores in sorted order with regards to class indices */
+extern int  naivebayes_score_unsorted;
 
 void bow_naivebayes_set_weights (bow_barrel *barrel);
 
@@ -36,7 +40,7 @@ void bow_naivebayes_print_odds_ratio_for_all_classes (bow_barrel *barrel,
 
 
 /* The method and parameters of NaiveBayes weight settings. */
-extern bow_method bow_method_naivebayes;
+extern rainbow_method bow_method_naivebayes;
 typedef struct _bow_naivebayes_params {
   bow_boolean uniform_priors;
   bow_boolean normalize_scores;
@@ -57,5 +61,26 @@ void bow_naivebayes_print_word_probabilities_for_class (bow_barrel *barrel,
    CDOC->WORD_COUNT. */
 void bow_naivebayes_set_cdoc_word_count_from_wi2dvf_weights
 (bow_barrel *barrel);
+
+
+/* Return the probability of word WI in class CI. 
+   If LOO_CLASS is non-negative, then we are doing 
+   leave-out-one-document evaulation.  LOO_CLASS is the index
+   of the class from which the document has been removed.
+   LOO_WI_COUNT is the number of WI'th words that are in the document
+   LOO_W_COUNT is the total number of words in the docment
+
+   The last two argments help this function avoid searching for
+   the right entry in the DV from the beginning each time.
+   LAST_DV is a pointer to the DV to use.
+   LAST_DVI is a pointer to the index into the LAST_DV that is
+   guaranteed to have class index less than CI.
+*/
+double bow_naivebayes_pr_wi_ci (bow_barrel *barrel,
+				int wi, int ci,
+				int loo_class,
+				float loo_wi_count, float loo_w_count,
+				bow_dv **last_dv, int *last_dvi);
+
 
 #endif /* __BOW_NAIVEBAYES_H */

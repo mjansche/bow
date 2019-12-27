@@ -95,6 +95,24 @@ bow_wa_add_to_end (bow_wa *wa, int wi, float score)
   return wa->length;
 }
 
+/* Remove the entry corresponding to word WI.  Return the new length
+   of the word array. */
+int
+bow_wa_remove (bow_wa *wa, int wi)
+{
+  int wai;
+  for (wai = 0; wai < wa->length; wai++)
+    if (wa->entry[wai].wi == wi)
+      break;
+  if (wai < wa->length)
+    wa->length--;
+  else
+    return wa->length;
+  for ( ; wai < wa->length; wai++)
+    wa->entry[wai] = wa->entry[wai+1];
+  return wa->length;
+}
+
 int
 bow_wa_weight (bow_wa *wa, int wi, float *weight)
 {
@@ -192,6 +210,17 @@ bow_wa_sort (bow_wa *wa)
 void
 bow_wa_sort_reverse (bow_wa *wa)
 {
+#if 0
+  int wai1, wai2;
+  bow_ws ws;
+  bow_wa_sort (wa);
+  for (wai1 = 0, wai2 = wa->length-1; wai1 < wai2; wai1++, wai2--)
+    {
+      ws = wa->entry[wai1];
+      wa->entry[wai1] = wa->entry[wai2];
+      wa->entry[wai2] = ws;
+    }
+#endif
   qsort (wa->entry, wa->length, sizeof (bow_ws), compare_wa_high_last);
 }
 

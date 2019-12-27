@@ -1,6 +1,6 @@
 /* A lexer will special features for handling HTML. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -22,8 +22,10 @@
 #include <bow/libbow.h>
 #include <ctype.h>		/* for tolower() */
 
+#define PARAMS (bow_default_lexer_parameters)
+
 int
-bow_lexer_html_get_raw_word (bow_lexer_simple *self, bow_lex *lex, 
+bow_lexer_html_get_raw_word (bow_lexer *self, bow_lex *lex, 
 			     char *buf, int buflen)
 {
   int byte;			/* characters read from the FP */
@@ -31,6 +33,7 @@ bow_lexer_html_get_raw_word (bow_lexer_simple *self, bow_lex *lex,
   int html_bracket_nestings = 0;
 
   assert (lex->document_position <= lex->document_length);
+
   /* Ignore characters until we get an beginning character. */
   do
     {
@@ -58,10 +61,10 @@ bow_lexer_html_get_raw_word (bow_lexer_simple *self, bow_lex *lex,
 	  html_bracket_nestings = 0;
 	}
     }
-  while (html_bracket_nestings || !self->true_to_start (byte));
+  while (html_bracket_nestings || !PARAMS->true_to_start (byte));
 
   /* Add the first alphabetic character to the word. */
-  buf[0] = (self->case_sensitive) ? byte : tolower (byte);
+  buf[0] = (bow_lexer_case_sensitive) ? byte : tolower (byte);
 
   /* Add all the satisfying characters to the word - stripping out all HTML
      markup.  "<FONT SIZE=+2>R</FONT>ainbow " becomes "Rainbow" */
@@ -73,7 +76,7 @@ bow_lexer_html_get_raw_word (bow_lexer_simple *self, bow_lex *lex,
 	  lex->document_position--;
 	  break;
 	}
-      if (!self->false_to_end (byte) && html_bracket_nestings == 0)
+      if (!PARAMS->false_to_end (byte) && html_bracket_nestings == 0)
 	{
 	  lex->document_position--;
 	  break;
@@ -107,48 +110,18 @@ bow_lexer_html_get_raw_word (bow_lexer_simple *self, bow_lex *lex,
   return wordlen;
 }
 
-/* Scan a single token from the LEX buffer, placing it in BUF, and
-   returning the length of the token.  BUFLEN is the maximum number of
-   characters that will fit in BUF.  If the token won't fit in BUF,
-   an error is raised. */
-int
-bow_lexer_html_get_word (bow_lexer *self, bow_lex *lex, 
-			 char *buf, int buflen)
-{
-#define SELF ((bow_lexer_indirect*)self)
-  int wordlen;			/* number of characters in the word so far */
-
-  do 
-    {
-      /* Yipes, this UNDERLYING_LEXER had better be a BOW_LEXER_SIMPLE! */
-      wordlen = bow_lexer_html_get_raw_word 
-	((bow_lexer_simple*)SELF->underlying_lexer, lex, buf, buflen);
-      if (wordlen == 0)
-	return 0;
-    }
-  while ((wordlen = bow_lexer_simple_postprocess_word
-	  ((bow_lexer_simple*)SELF->underlying_lexer, lex, buf, buflen))
-	 == 0);
-  return wordlen;
-#undef SELF
-}
-
-/* This is declared in lex-simple.c */
-extern bow_lexer_simple _bow_alpha_lexer;
 
 /* A lexer that ignores all HTML directives, ignoring all characters
    between angled brackets: < and >. */
-const bow_lexer_indirect _bow_html_lexer =
+const bow_lexer _bow_html_lexer =
 {
-  {
-    sizeof (typeof (_bow_html_lexer)),
-    bow_lexer_simple_open_text_fp,
-    bow_lexer_simple_open_str,
-    bow_lexer_html_get_word,
-    bow_lexer_simple_close,
-    "",				/* document start pattern begins right away */
-    NULL			/* document end pattern goes to end */
-  },
-  (bow_lexer*)&_bow_alpha_lexer,/* default UNDERLYING_LEXER */
+  sizeof (bow_lex),
+  NULL,
+  bow_lexer_simple_open_text_fp,
+  bow_lexer_simple_open_str,
+  bow_lexer_simple_get_word,
+  bow_lexer_html_get_raw_word,
+  bow_lexer_next_postprocess_word,
+  bow_lexer_simple_close
 };
-const bow_lexer_indirect *bow_html_lexer = &_bow_html_lexer;
+const bow_lexer *bow_html_lexer = &_bow_html_lexer;

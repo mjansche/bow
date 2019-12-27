@@ -1,6 +1,6 @@
 /* Simple Good-Turing smoothing */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Kamal Nigam <knigam@cs.cmu.edu> and 
                 Rich Caruana <caruana@jprc.com>
@@ -90,8 +90,9 @@ static double Z[MAX_ROWS], log_r[MAX_ROWS], log_Z[MAX_ROWS],
 
 static long int bigN;
 static int rows;
-static double PZero, bigNprime, slope, intercept;
- 
+static double PZero, bigNprime;
+static double slope, intercept;
+
 static double sq(double x)
 {
   return(x * x);
@@ -133,7 +134,7 @@ static int row(int i)
     ++j;
   return((j < rows && r[j] == i) ? j : -1);
 }
- 	
+
 
 /*
         - terms 0-(k-1) will be smoothed

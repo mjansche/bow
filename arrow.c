@@ -1,6 +1,6 @@
 /* arrow - a document retreival front-end to libbow. */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -24,7 +24,11 @@
 #include <errno.h>		/* needed on DEC Alpha's */
 #include <sys/types.h>
 #include <sys/socket.h>
+
+#ifndef WINNT
 #include <sys/un.h>
+#endif /* WINNT */
+
 #include <netinet/in.h>
 #include <netdb.h>
 #include <stdio.h>
@@ -141,13 +145,13 @@ arrow_parse_opt (int key, char *arg, struct argp_state *state)
     case QUERY_SERVER_KEY:
       arrow_arg_state.what_doing = arrow_query_serving;
       arrow_arg_state.server_port_num = arg;
-      bow_default_lexer->document_end_pattern = "\n.\r\n";
+      bow_lexer_document_end_pattern = "\n.\r\n";
       break;
     case QUERY_FORK_SERVER_KEY:
       arrow_arg_state.serve_with_forking = 1;
       arrow_arg_state.what_doing = arrow_query_serving;
       arrow_arg_state.server_port_num = arg;
-      bow_default_lexer->document_end_pattern = "\n.\r\n";
+      bow_lexer_document_end_pattern = "\n.\r\n";
       break;
     case COO_KEY:
       arrow_arg_state.what_doing = arrow_printing_coo;
@@ -206,12 +210,12 @@ arrow_archive ()
   fnp = filename + strlen (filename);
 
   strcpy (fnp, VOCABULARY_FILENAME);
-  fp = bow_fopen (filename, "w");
+  fp = bow_fopen (filename, "wb");
   bow_words_write (fp);
   fclose (fp);
 
   strcpy (fnp, BARREL_FILENAME);
-  fp = bow_fopen (filename, "w");
+  fp = bow_fopen (filename, "wb");
   bow_barrel_write (arrow_barrel, fp);
   fclose (fp);
 }
@@ -231,12 +235,12 @@ arrow_unarchive ()
   fnp = filename + strlen (filename);
 
   strcpy (fnp, VOCABULARY_FILENAME);
-  fp = bow_fopen (filename, "r");
+  fp = bow_fopen (filename, "rb");
   bow_words_read_from_fp (fp);
   fclose (fp);
 
   strcpy (fnp, BARREL_FILENAME);
-  fp = bow_fopen (filename, "r");
+  fp = bow_fopen (filename, "rb");
   arrow_barrel = bow_barrel_new_from_data_fp (fp);
   /* Don't close this FP because we still need to read individual DV's. */
 
@@ -282,7 +286,7 @@ arrow_index (int argc, char *argv[])
 #endif
       bow_barrel_add_from_text_dir (arrow_barrel, argv[argi], 0, argv[argi]);
   if (bow_argp_method)
-    arrow_barrel->method = bow_argp_method;
+    arrow_barrel->method = (rainbow_method*)bow_argp_method;
   else
     arrow_barrel->method = &bow_method_tfidf;
   bow_barrel_set_weights (arrow_barrel);
@@ -319,9 +323,8 @@ arrow_query (FILE *in, FILE *out, int num_hits_to_show)
 {
   bow_score *hits;
   int actual_num_hits;
-  int i, j;
+  int i;
   bow_wv *query_wv;
-  bow_wv *new_query_wv;
 
   hits = alloca (sizeof (bow_score) * num_hits_to_show);
 
@@ -351,7 +354,7 @@ arrow_query (FILE *in, FILE *out, int num_hits_to_show)
       return 0;
     }
 
-#if 1
+#if 0
   /* Augment query with special suffixes */
 #define NUM_SUFFIXES 6
   new_query_wv = bow_wv_new (query_wv->num_entries * NUM_SUFFIXES);
@@ -470,7 +473,6 @@ void
 arrow_socket_init (const char *socket_name, int use_unix_socket)
 {
   int servlen, type, bind_ret;
-  struct sockaddr_un un_addr;
   struct sockaddr_in in_addr;
   struct sockaddr *sap;
 
@@ -481,10 +483,18 @@ arrow_socket_init (const char *socket_name, int use_unix_socket)
 
   if (type == AF_UNIX)
     {
+#ifdef WINNT
+      servlen = 0;  /* so that the compiler is happy */
+      sap = 0;
+      assert(WINNT == 0);
+#else /* !WINNT */
+      struct sockaddr_un un_addr;
+
       sap = (struct sockaddr *)&un_addr;
       bzero ((char *)sap, sizeof (un_addr));
       strcpy (un_addr.sun_path, socket_name);
       servlen = strlen (un_addr.sun_path) + sizeof(un_addr.sun_family) + 1;
+#endif /* WINNT */
     }
   else
     {
@@ -586,6 +596,195 @@ arrow_serve ()
     exit(0);
 }
 
+/* Beware of quickly written spaghetti code! */
+void
+arrow_serve2 ()
+{
+  int newsockfd, clilen;
+  struct sockaddr cli_addr;
+  FILE *in, *out;
+  int num_hits_to_show, actual_num_hits;
+  int pid;
+  char cmdbuf[128];
+  char filename[256];
+  char *query;
+  bow_wv *query_wv;
+  bow_score *hits;
+  int hi;
+
+  hits = alloca (sizeof (bow_score) * arrow_barrel->cdocs->length);
+ 
+  clilen = sizeof (cli_addr);
+  newsockfd = accept (arrow_sockfd, &cli_addr, &clilen);
+  
+  if (newsockfd == -1)
+    bow_error ("Not able to accept connections!\n");
+
+  bow_verbosify (bow_progress, "Accepted connection\n");
+
+  if (arrow_arg_state.serve_with_forking)
+    {
+      if ((pid = fork()) != 0)
+      {
+        /* parent - return to server mode */
+        close (newsockfd);
+        return;
+      }
+    }
+
+  assert(newsockfd >= 0);
+
+  in = fdopen (newsockfd, "r");
+  out = fdopen (newsockfd, "w");
+
+
+  /* Read in the first word from the input.  It is expected to be a
+     command: either "rank" or "query". */
+ again:
+  if (fscanf (in, "%s", cmdbuf) != 1)
+    goto done;
+
+  fprintf (stderr, "Doing command `%s'\n", cmdbuf);
+  if (strcmp ("query", cmdbuf) == 0)
+    {
+      filename[0] = '\0';
+      fscanf (in, "%a[^\r\n]", &query);
+      fprintf (stderr, "Got query `%s'\n", query);
+#if 0
+      fprintf (stderr, "`query' command not yet handled!\n");
+      free (query);
+      goto again;
+#endif
+    }
+  else if (strcmp ("rank", cmdbuf) == 0)
+    {
+      fscanf (in, "%s", filename);
+      fscanf (in, "%a[^\r\n]", &query);
+      fprintf (stderr, "Got filename `%s'\n", filename);
+      fprintf (stderr, "Got query `%s'\n", query);
+    }
+  else if (strcmp ("quit", cmdbuf) == 0)
+    {
+      goto done;
+    }
+  else if (strcmp ("help", cmdbuf) == 0)
+    {
+      fprintf (out, "<?xml version='1.0' encoding='US-ASCII' ?>\n"
+	       "<arrow-result><help>\n"
+	       "   Commands available to you\n"
+	       "   help                      print this message\n"
+	       "   rank <filename> <query>   give rank of <filename> <query>'s results\n"
+	       "   query <query>             search for <str>\n"
+	       "</help></arrow-result>\n.\n");
+      fflush (out);
+      fscanf (in, "%a[^\r\n]", &query);
+      free (query);
+      goto again;
+    }
+  else
+    {
+      bow_verbosify (bow_progress, "Unrecognized command `%s'.  "
+		     "Closing connection.\n",
+		     cmdbuf);
+      goto done;
+    }
+
+  /* Create a word vector from the query string. */
+  query_wv = bow_wv_new_from_text_string (query);
+  if (query_wv == NULL)
+    {
+      actual_num_hits = 0;
+      goto print;
+    }
+  fprintf (stderr, "Query WV has length %d\n", query_wv->num_entries);
+  free (query);
+
+  if (filename[0])
+    num_hits_to_show = arrow_barrel->cdocs->length;
+  else
+    num_hits_to_show = arrow_arg_state.num_hits_to_show;
+
+  bow_wv_set_weights (query_wv, arrow_barrel);
+  /* If none of the words have a non-zero IDF, just return zero. */
+  if (bow_wv_weight_sum (query_wv) == 0)
+    {
+      actual_num_hits = 0;
+      goto print;
+    }
+  bow_wv_normalize_weights (query_wv, arrow_barrel);
+
+
+  /* Get the best matching documents. */
+  actual_num_hits = bow_barrel_score (arrow_barrel, query_wv,
+				      hits, num_hits_to_show, -1);
+ print:
+  fprintf (stderr, "Got %d hits\n", actual_num_hits);
+  if (filename[0])
+    {
+      /* Handle a "rank" command */
+      int rank, hi;
+      bow_cdoc *cdoc;
+      int count = actual_num_hits;
+      for (rank = -1, hi = 0; hi < count; hi++)
+	{
+	  cdoc = bow_array_entry_at_index (arrow_barrel->cdocs, hits[hi].di);
+	  if (strcmp (cdoc->filename, filename) == 0)
+	    {
+	      rank = hi;
+	      break;
+	    }
+	}
+      fprintf (out, "<?xml version='1.0' encoding='US-ASCII' ?>\n"
+ 	       "<arrow-result>\n"
+ 	       "<rank-result>\n"
+ 	       "  <count>%d</count>\n", 
+ 	       count);
+      if (rank != -1)
+	fprintf (out, "  <rank>%d</rank>\n", rank);
+      fprintf (out, "</rank-result>\n"
+	       "</arrow-result>\n.\n");
+    }
+  else
+    {
+      /* Handle a "query" command */
+      fprintf (out, "<?xml version='1.0' encoding='US-ASCII' ?>\n"
+	       "<arrow-result>\n"
+	       "<hitlist>\n"
+	       "<count>%d</count>\n", 
+	       actual_num_hits);
+      for (hi = 0; hi < actual_num_hits; hi++)
+	{
+	  fprintf (out, 
+		   "<hit>\n"
+		   "   <id>%d</id>\n"
+		   "   <name>%s</name>\n"
+		   "   <score>%g</score>\n"
+		   "</hit>\n",
+		   hits[hi].di, hits[hi].name, hits[hi].weight);
+	}
+    }
+  fflush (out);
+
+  for (hi = 0; hi < actual_num_hits; hi++)
+    if (hits[hi].name)
+      bow_free ((void*)hits[hi].name);
+
+  /* Handle another query */
+  goto again;
+
+ done:
+  fclose(in);
+  fclose(out);
+
+  close(newsockfd);
+
+  bow_verbosify (bow_progress, "Closed connection\n");
+ 
+  /* Kill the child - don't want it hanging around, sucking up memory :) */
+  if (arrow_arg_state.serve_with_forking)
+    exit(0);
+}
+
 void
 arrow_coo ()
 {
@@ -629,7 +828,7 @@ main (int argc, char *argv[])
   signal (SIGCHLD, SIG_IGN);
 
   /* Default command-line argument values */
-  arrow_arg_state.num_hits_to_show = 1;
+  arrow_arg_state.num_hits_to_show = 10;
   arrow_arg_state.what_doing = arrow_indexing;
   arrow_arg_state.query_filename = NULL;
   arrow_arg_state.serve_with_forking = 0;
@@ -712,7 +911,7 @@ main (int argc, char *argv[])
 	    }
 
 	  while (1)
-	    arrow_serve ();
+	    arrow_serve2 ();
 	}
       else if (arrow_arg_state.what_doing == arrow_printing_coo)
 	{

@@ -29,7 +29,7 @@ to disk.
 @item
 
 @example
-rainbow -q ./testing/254
+rainbow --query=./testing/254
 @end example
 
 Tokenize the text document @file{./testing/254}, and classify it,
@@ -43,12 +43,11 @@ producing output like:
 @item
 
 @example
-rainbow -t 5
+rainbow --test-set=0.5 -t 5
 @end example
 
-Perform 5 trials, each consisting of a test/train split, a resetting of
-weights according to the new split, and outputs of the classification of
-the test documents.
+Perform 5 trials, each consisting of a new random test/train split and
+outputs of the classification of the test documents.
 
 @end itemize
 
@@ -63,7 +62,7 @@ http://www.cs.cmu.edu/~mccallum/bow
 
 
 @format
-Rainbow improvements coming soon:
+Rainbow improvements coming eventually:
    Better documentation.
    Incremental model training.
 @end format
@@ -72,5 +71,49 @@ Rainbow improvements coming soon:
 
 @section Arrow
 
-@samp{Arrow} is a standalone program that does document retrieval.
+@samp{Arrow} is a standalone program that does document retrieval by
+TFIDF.  
+
+Index all the documents in directory @samp{foo} by typing
+
+@example
+arrow --index foo
+@end example
+
+Make a single query by typing
+
+@example
+arrow --query
+@end example
+
+then typing your query, and pressing Control-D.
+
+If you want to make many queries, it will be more efficient to run arrow
+as a server, and query it multiple times without restarts by
+communicating through a socket.  Type, for example,
+
+@example
+arrow --query-server=9876
+@end example
+
+And access it through port number 9876.  For example:
+
+@example
+telnet localhost 9876
+@end example
+
+In this mode there is no need to press Control-D to end a query.  Simply
+type your query on one line, and press return.
+
+
+@section Crossbow
+
+@samp{Crossbow} is a standalone program that does document clustering.
 Sorry, there is no documentation yet.
+
+
+@section Archer
+
+@samp{Archer} is a standalone program that does document retrieval with
+AltaVista-type queries.  Sorry, there is no documentation yet, however,
+the basic interface is much like arrow.

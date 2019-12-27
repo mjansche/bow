@@ -1,6 +1,4 @@
-/* Implementation of helping functions for lexers that use a nested,
-   underlying lexer. */
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -19,29 +17,15 @@
    License along with this library; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
 
+#ifndef __BOW_NBSIMPLE_H
+#define __BOW_NBSIMPLE_H
 
-#include <bow/libbow.h>
+/* Get the total number of terms in each class; store this in
+   CDOC->WORD_COUNT. */
+void bow_nbsimple_set_cdoc_word_count_from_wi2dvf_weights (bow_barrel *barrel);
 
-#define SELF ((bow_lexer_indirect*)self)
+int bow_nbsimple_score (bow_barrel *barrel, bow_wv *query_wv, 
+			bow_score *bscores, int bscores_len,
+			int loo_class);
 
-/* Open the underlying lexer. */
-bow_lex *
-bow_lexer_indirect_open_text_fp (bow_lexer *self, FILE *fp,
-				 const char *filename)
-{
-  return SELF->underlying_lexer->open_text_fp (self, fp, filename);
-}
-
-/* Open the underlying lexer. */
-bow_lex *
-bow_lexer_indirect_open_str (bow_lexer *self, char *buf)
-{
-  return SELF->underlying_lexer->open_str (self, buf);
-}
-
-/* Close the underlying lexer. */
-void
-bow_lexer_indirect_close (bow_lexer *self, bow_lex *lex)
-{
-  SELF->underlying_lexer->close (self, lex);
-}
+#endif /* __BOW_NNSIMPLE_H */

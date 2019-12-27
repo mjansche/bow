@@ -1,6 +1,6 @@
 /* Produce a vector-per-class description of the model data in a barrel */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -21,6 +21,23 @@
 
 #include <bow/libbow.h>
 
+double bow_wi2dvf_sum (bow_wi2dvf *wi2dvf)
+{
+  int wi, max_wi, dvi;
+  double sum = 0;
+  bow_dv *dv;
+  max_wi = MIN (wi2dvf->size, bow_num_words ());
+
+  for (wi = 0; wi < max_wi; wi++)
+    {
+      dv = bow_wi2dvf_dv (wi2dvf, wi);
+      if (!dv)
+	continue;
+      for (dvi = 0; dvi < dv->length; dvi++)
+	sum += dv->entry[dvi].weight;
+    }
+  return sum;
+}
 
 /* Given a barrel of documents, create and return another barrel with
    only one vector per class. The classes will be represented as
@@ -40,6 +57,7 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel)
   int di;
   int num_docs_per_ci[num_classes];
   bow_cdoc *cdoc;
+  double sum = 0;
 
   assert (doc_barrel->classnames);
 
@@ -59,7 +77,7 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel)
   /* Make sure to set the VPC indicator */
   vpc_barrel->is_vpc = 1;
 
-  bow_verbosify (bow_progress, "Making vector-per-class... words ::       ");
+  bow_verbosify (bow_verbose, "Making vector-per-class... words ::       ");
 
   /* Count the number of documents in each class */
   for (ci = 0; ci < num_classes; ci++)
@@ -133,6 +151,8 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel)
 		    (&(vpc_barrel->wi2dvf), wi, ci, dv->entry[dvi].count,
 		     (bow_event_document_then_word_document_length
 		      * weight / cdoc->word_count));
+		  sum += (bow_event_document_then_word_document_length
+			  * weight / cdoc->word_count);
 		}
 	      else
 		{
@@ -147,9 +167,15 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel)
       vpc_dv = bow_wi2dvf_dv (vpc_barrel->wi2dvf, wi);
       if (vpc_dv)		/* xxx Why would this be NULL? */
 	vpc_dv->idf = dv->idf;
-      if (wi % 100 == 0)
-	bow_verbosify (bow_progress, "\b\b\b\b\b\b%6d", max_wi - wi);
+      if (max_wi - wi % 100 == 0)
+	bow_verbosify (bow_verbose, "\b\b\b\b\b\b%6d", max_wi - wi);
     }
+#if 0
+  bow_verbosify (bow_progress, "vpc_sum=%f\n", sum);
+  bow_verbosify (bow_progress, "wi2dvf_sum=%f\n", 
+		 bow_wi2dvf_sum (vpc_barrel->wi2dvf));
+#endif
+  bow_verbosify (bow_verbose, "\b\b\b\b\b\b");
   /* xxx OK to have some classes with no words
      assert (num_classes-1 == max_ci); */
   if (max_ci < 0)
@@ -162,8 +188,7 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel)
 		       bow_barrel_classname_at_index (doc_barrel, i));
       bow_verbosify (bow_progress, "\n");
     }
-  bow_verbosify (bow_progress, "\n");
-
+  bow_verbosify (bow_verbose, "\n");
 
   /* Initialize the CDOCS and CLASSNAMES parts of the VPC_BARREL.
      Create BOW_CDOC structures for each class, and append them to the
@@ -175,7 +200,8 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel)
 
       cdoc.type = bow_doc_train;
       cdoc.normalizer = -1.0f;
-      /* Make WORD_COUNT be the number of documents in the class. */
+      /* Make WORD_COUNT be the number of documents in the class.
+         This is for the document event model.*/
       cdoc.word_count = num_docs_per_ci[ci];
       if (doc_barrel->classnames)
 	{
@@ -190,7 +216,7 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel)
 	}
       cdoc.class_probs = NULL;
       cdoc.class = ci;
-      bow_verbosify (bow_progress, "%20d model documents in class `%s'\n",
+      bow_verbosify (bow_verbose, "%20d model documents in class `%s'\n",
 		     num_docs_per_ci[ci], cdoc.filename);
       /* Add a CDOC for this class to the VPC_BARREL */
       bow_array_append (vpc_barrel->cdocs, &cdoc);

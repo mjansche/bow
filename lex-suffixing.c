@@ -13,7 +13,7 @@ static int suffixing_appending_headers;
 static char suffixing_suffix[BOW_MAX_WORD_LENGTH];
 static int suffixing_suffix_length;
 
-int bow_lexer_html_get_raw_word (bow_lexer_simple *self, bow_lex *lex, 
+int bow_lexer_html_get_raw_word (bow_lexer *self, bow_lex *lex, 
 				 char *buf, int buflen);
 
 /* Put the string before the ':' into SUFFIXING_SUFFIX, and replace the
@@ -38,6 +38,11 @@ suffixing_snarf_suffix (bow_lex *lex)
   while (lex->document[lex->document_position] != ':')
     {
       assert (lex->document[lex->document_position] != '\n');
+      if (!isalpha (lex->document[lex->document_position]))
+	{
+	  lex->document_position++;
+	  continue;
+	}
       suffixing_suffix[suffixing_suffix_length++] = 
 	tolower (lex->document[lex->document_position++]);
       assert (suffixing_suffix_length < BOW_MAX_WORD_LENGTH);
@@ -66,11 +71,16 @@ bow_lexer_suffixing_open_text_fp (bow_lexer *self,
 {
   bow_lex *ret;
 
-  ret = bow_lexer_simple_open_text_fp ((bow_lexer*)bow_default_lexer_simple, 
-				       fp, filename);
+  ret = bow_lexer_simple_open_text_fp (self, fp, filename);
 
   if (ret)
     {
+      /* Make sure that the first line has a header-type suffix. */
+      int i;
+      for (i = 0; i < ret->document_length && ret->document[i] != ':'; i++)
+	if (!isalnum (ret->document[i]) || ret->document[i] == '\n')
+	    return 0;
+
       suffixing_doing_headers = 1;
       suffixing_appending_headers = 1;
       suffixing_snarf_suffix (ret);
@@ -87,7 +97,7 @@ bow_lexer_suffixing_open_str (bow_lexer *self, char *buf)
 {
   bow_lex *ret;
 
-  ret = bow_lexer_simple_open_str ((bow_lexer*)bow_default_lexer_simple, buf);
+  ret = bow_lexer_simple_open_str (self, buf);
 
   if (ret)
     {
@@ -100,23 +110,40 @@ bow_lexer_suffixing_open_str (bow_lexer *self, char *buf)
 
 
 int
-bow_lexer_suffixing_postprocess_word (bow_lexer_simple *self, bow_lex *lex, 
+bow_lexer_suffixing_postprocess_word (bow_lexer *self, bow_lex *lex, 
 				      char *buf, int buflen)
 {
   int len;
 
-  len = bow_lexer_simple_postprocess_word (bow_default_lexer_simple,
-					   lex, buf, buflen);
-  if (len != 0 && suffixing_doing_headers && suffixing_appending_headers)
+  /* Postprocess the word */
+  len = bow_lexer_next_postprocess_word (self, lex, buf, buflen);
+  if (len != 0 && suffixing_doing_headers)
     {
-      strcat (buf, suffixing_suffix);
-      len = strlen (buf);
-      assert (len < buflen);
+      if (suffixing_appending_headers)
+	{
+	  strcat (buf, suffixing_suffix);
+	  len = strlen (buf);
+	  assert (len < buflen);
+	}
+      else
+	{
+	  /* Skip the `Reference.*:' words the second time through */
+	  if (strstr (suffixing_suffix, "xxxreference"))
+	    len = 0;
+	}
     }
 
+#if 0
+  if (lex->document_position == lex->document_length)
+    return 0;
+#endif
+
+  /* Set up for the next word */
   if (suffixing_doing_headers && lex->document[lex->document_position] == '\0')
     {
-      if (lex->document[lex->document_position + 1] == '\n')
+      /* This was two newlines in a row or the end of the file. */
+      if (lex->document_position == (lex->document_length - 1)
+	  || lex->document[lex->document_position + 1] == '\n')
 	{
 #if HEADER_TWICE
 	  if (!suffixing_appending_headers)
@@ -135,7 +162,23 @@ bow_lexer_suffixing_postprocess_word (bow_lexer_simple *self, bow_lex *lex,
       else
 	{
 	  lex->document_position++;
-	  suffixing_snarf_suffix (lex);
+	  /* Handle email messages with multi-line headers */
+	  if (isalnum(lex->document[lex->document_position]))
+	    suffixing_snarf_suffix (lex);
+	  else
+	    {
+	      /* No need to grab a suffix, but must replace the \n with \0 */
+	      int i = 0;
+	      while (lex->document[lex->document_position + i] != '\n'
+		     /* This second condition is necessary if we are going
+			through	the header twice (when HEADER_TWICE=1) */
+		     && lex->document[lex->document_position + i] != '\0')
+		{
+		  i++;
+		  assert (lex->document_position + i < lex->document_length);
+		}
+	      lex->document[lex->document_position + i] = '\0';
+	    }
 	}
     }
 
@@ -154,14 +197,11 @@ bow_lexer_suffixing_get_word (bow_lexer *self, bow_lex *lex,
 
   do 
     {
-      /* Hmm... this looks like a hack.  Shouldn't we have something like
-	 bow_default_lexer->get_word ? */
-      wordlen = bow_lexer_html_get_raw_word ((bow_lexer_simple*)
-					     bow_default_lexer_simple, 
-					     lex, buf, buflen);
+      wordlen = bow_lexer_next_get_raw_word (self, lex, buf, buflen);
       if (wordlen == 0)
 	{
-	  if (suffixing_doing_headers)
+	  if (suffixing_doing_headers
+	      && lex->document_position < lex->document_length)
 	    /* We are just at the end of the headers, not at the end
                of the file.  bow_lexer_suffixing_postprocess_word()
                will deal with this */
@@ -171,7 +211,7 @@ bow_lexer_suffixing_get_word (bow_lexer *self, bow_lex *lex,
 	}
     }
   while (((wordlen = bow_lexer_suffixing_postprocess_word 
-	   ((bow_lexer_simple*)self, lex, buf, buflen)) == 0)
+	   (self, lex, buf, buflen)) == 0)
 	 || strstr (suffixing_suffix, "URL"));
 
   wordlen = strlen (buf);
@@ -180,29 +220,17 @@ bow_lexer_suffixing_get_word (bow_lexer *self, bow_lex *lex,
 
 
 
-/* A lexer that keeps all alphabetic strings, delimited by
-   non-alphabetic characters.  For example, the string
-   `http://www.cs.cmu.edu' will result in the tokens `http', `www',
-   `cs', `cmu', `edu'. */
-const bow_lexer_simple _bow_suffixing_lexer =
+/* A lexer that prepends all tokens by the `Date:' string at the 
+   beginning of the line. */
+const bow_lexer _bow_suffixing_lexer =
 {
-  {
-    sizeof (bow_lexer_simple),
-    bow_lexer_suffixing_open_text_fp,
-    bow_lexer_suffixing_open_str,
-    bow_lexer_suffixing_get_word,
-    bow_lexer_simple_close,
-    "",				/* document start pattern begins right away */
-    NULL			/* document end pattern goes to end */
-  },
-  bow_isalpha,			/* begin words with an alphabetic char */
-  bow_isalpha,			/* end words with any non-alphabetic char */
-  bow_stoplist_present,		/* use the default stoplist */
-  0,				/* don't use the Porter stemming algorithm */
-  0,				/* be case-INsensitive */
-  0,				/* don't strip non-alphas from end */
-  0,				/* don't toss words w/ non-alphas */
-  0,				/* don't toss words with digits */
-  59				/* toss words longer than 59 chars, uuenc=60 */
+  sizeof (bow_lex),
+  NULL,
+  bow_lexer_suffixing_open_text_fp,
+  bow_lexer_suffixing_open_str,
+  bow_lexer_suffixing_get_word,
+  NULL,
+  NULL,
+  bow_lexer_simple_close,
 };
-const bow_lexer_simple *bow_suffixing_lexer = &_bow_suffixing_lexer;
+const bow_lexer *bow_suffixing_lexer = &_bow_suffixing_lexer;

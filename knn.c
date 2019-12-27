@@ -1,6 +1,6 @@
 /* Weight-setting and scoring implementation for Naive-Bayes classification */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -22,6 +22,37 @@
 #include <bow/libbow.h>
 #include <math.h>
 #include <argp/argp.h>
+
+/* 
+
+My reading of the SMART documentation and code makes me think that the
+various tf weight options - particularly 'l' and 'a' apply only to
+words that occur in the document in question - which avoids any taking
+the log of 0. 
+
+If you want to check this, look at the table at
+http://pi0959.kub.nl:2080/Paai/Onderw/Smart/examp_10.html 
+(Linked to by the Advanced actions part of the SMART tutorial at
+http://pi0959.kub.nl:2080/Paai/Onderw/Smart/hands-on-tekst.html#advanced)
+and also look at the tfwt_log function in the SMART source tree at
+src/libconvert/weights_tf.c.
+
+The weighting options implemented here are:
+Position 1 - TF. If f == 0 then TF == 0. Otherwise, for f > 0
+'n' - none     - f
+'b' - binary   - 1
+'m' - max-norm - f / (max f in doc)
+'a' - aug-norm - 0.5 + 0.5 * (f / (max f in doc))
+'l' - log      - 1.0 + ln(f)
+
+Position 2 - IDF.
+'n' - none     - 1.0
+'t' - tfidf    - ln (total docs / docs containing term)
+
+Position 3 - NORM
+'n' - none     - 1.0
+'c' - cosine   - 1 / sqrt (sum (tf * idf)**2)
+*/
 
 /* Command-line options specific to kNN */
 
@@ -46,7 +77,13 @@ static struct argp_option knn_options[] =
    "Number of neighbours to use for nearest neighbour. Defaults to "
    "30."},
   {"knn-weighting", KNN_WEIGHTING_KEY, "xxx.xxx", 0,
-   "Weighting scheme to use, coded like SMART. Defaults to nnn.nnn"},
+   "Weighting scheme to use, coded like SMART. Defaults to nnn.nnn"
+   "The first three chars describe how the model documents are"
+   "weighted, the second three describe how the test document is"
+   "weighted. The codes for each position are described in knn.c."
+   "Classification consists of summing the scores per class for the"
+   "k nearest neighbour documents and sorting."
+  },
   {0, 0}
 };
 
@@ -177,41 +214,42 @@ bow_knn_set_weights (bow_barrel *barrel)
 		}
 	    }
 	}
-      /* The only idf method currently is to use ln(N/n) */
+      /* Set up the IDF for this word */
       dv->idf = log((double)total_model_docs / (double)num_docs);
     }
 
-  /* Final Step - calculate weights for methods that use max tf stuff
-   */ 
-  if (TF_A(doc_weights) || TF_M(doc_weights))
-    {
-      for (wi = 0; wi < max_wi; wi++) 
-	{ 
-	  dv = bow_wi2dvf_dv (barrel->wi2dvf, wi); 
-	  if (dv == NULL)  
-	    continue;  
-	  for (dvi = 0; dvi < dv->length; dvi++)   
-	    {  
-	      cdoc = bow_cdocs_di2doc(barrel->cdocs, dv->entry[dvi].di); 
-	      if (cdoc->type == bow_doc_train) 
+  /* Final Step - calculate weights for methods that use max tf
+     stuff. Also multiply in the IDF terms. */ 
+  for (wi = 0; wi < max_wi; wi++) 
+    { 
+      dv = bow_wi2dvf_dv (barrel->wi2dvf, wi); 
+      if (dv == NULL)  
+	continue;  
+      for (dvi = 0; dvi < dv->length; dvi++)   
+	{  
+	  cdoc = bow_cdocs_di2doc(barrel->cdocs, dv->entry[dvi].di); 
+	  if (cdoc->type == bow_doc_train) 
+	    {
+	      if (TF_A(doc_weights))
 		{
-		  if (TF_A(doc_weights))
-		    {
-		      /* 0.5 + 0.5 * (tf / max_tf_in_doc) */
-		      dv->entry[dvi].weight = 0.5 + 0.5 * ((double)dv->entry[dvi].count / (double)cdoc->word_count);
-		    }
-		  else if (TF_M(doc_weights))
-		    {
-		      /* tf / max_tf_in_doc */
-		      dv->entry[dvi].weight = (double)dv->entry[dvi].count / (double)cdoc->word_count;
-		    }
+		  /* 0.5 + 0.5 * (tf / max_tf_in_doc) */
+		  dv->entry[dvi].weight = 0.5 + 0.5 * ((double)dv->entry[dvi].count / (double)cdoc->word_count);
 		}
+	      else if (TF_M(doc_weights))
+		{
+		  /* tf / max_tf_in_doc */
+		  dv->entry[dvi].weight = (double)dv->entry[dvi].count / (double)cdoc->word_count;
+		}
+
+	      /* Do the IDF */
+	      if (IDF_T(doc_weights))
+		  dv->entry[dvi].weight *= dv->idf;
 	    }
 	}
     }
 
-  /* Now the idf for each word has been set and the weight has been
-     set using the tf method requested in doc_weights. */
+  /* Now our barrel has the tf*idf weight for each term in each
+     document in our model */
 }
 
 void bow_knn_normalise_weights (bow_barrel *barrel)
@@ -220,7 +258,7 @@ void bow_knn_normalise_weights (bow_barrel *barrel)
      document in the model. */
   if (NORM_C(doc_weights))
     {
-      bow_barrel_normalize_weights_by_summing(barrel);
+      bow_barrel_normalize_weights_by_vector_length(barrel);
     }
 }
 
@@ -240,6 +278,7 @@ bow_knn_classification_barrel (bow_barrel *barrel)
    weighting scheme in query_weights */
 void bow_knn_query_set_weights(bow_wv *query_wv, bow_barrel *barrel)
 {
+  bow_dv *dv;
   int wvi, max_tf;
 
   /* null to statement to avoid compilation warning */
@@ -268,20 +307,28 @@ void bow_knn_query_set_weights(bow_wv *query_wv, bow_barrel *barrel)
 	}
     }
 
-  /* Pass two - only for weighting schemes that need max_tf */
-  if (TF_M(query_weights) || TF_A(query_weights))
-    {
-      for(wvi = 0; wvi < query_wv->num_entries; wvi++) 
-	{ 
-	  if (TF_M(query_weights))
-	    {
-	      query_wv->entry[wvi].weight  = (double)query_wv->entry[wvi].count / (double) max_tf;
-	    }
-	  else
-	    {
-	      query_wv->entry[wvi].weight = 0.5 + 0.5 * ((double)query_wv->entry[wvi].count / (double) max_tf);
-	    }
+  /* Pass two - Get the correct weights for 'a' or 'm'. Do IDF if
+     required. */
+  for(wvi = 0; wvi < query_wv->num_entries; wvi++) 
+    { 
+      if (TF_M(query_weights))
+	{
+	  query_wv->entry[wvi].weight = (double)query_wv->entry[wvi].count / (double) max_tf;
 	}
+      else if (TF_A(query_weights))
+	{
+	  query_wv->entry[wvi].weight = 0.5 + 0.5 * ((double)query_wv->entry[wvi].count / (double) max_tf);
+	}
+
+      /* Cheat here - we can leverage off the fact that I've so
+	 far only implemented  one IDF method. Otherwise I'd have
+	 to store raw statistics for the word occurances for each
+	 word. */
+      if (IDF_T(query_weights))
+	  {
+	    dv = bow_wi2dvf_dv (barrel->wi2dvf,	query_wv->entry[wvi].wi);
+	    query_wv->entry[wvi].weight *= dv->idf;
+	  }
     }
 
   /* Done - the idf term was calculated earlier on */
@@ -306,7 +353,7 @@ bow_knn_get_k_best (bow_barrel *barrel, bow_wv *query_wv,
   bow_cdoc *doc; 
   int num_scores = 0;           /* How many elements are in this array */ 
   int current_di, wi, current_index, i; 
-  double current_score = 0.0, doc_tf; 
+  double current_score = 0.0, doc_tfidf; 
   float tmp; 
 
   /* Create the Heap of vectors of documents */ 
@@ -341,11 +388,14 @@ bow_knn_get_k_best (bow_barrel *barrel, bow_wv *query_wv,
       /* Reset the score */ 
       current_score = 0.0; 
  
-      /* Loop over all the words in this document, summing up the score */ 
+      /* Loop over all the words this document has in common with our
+	 query document, summing up the score. We know the words come
+	 out of the heap in index order and we know the words in the
+	 query word vector are in index order as well. */
       do 
         { 
           wi = heap->entry[0].wi; 
-          doc_tf = heap->entry[0].dv->entry[heap->entry[0].index].weight;
+          doc_tfidf = heap->entry[0].dv->entry[heap->entry[0].index].weight;
 
 	  /* Find the corresponding word in the query word vector */ 
 	  /* Note - we know this word is in the query because we built
@@ -358,20 +408,11 @@ bow_knn_get_k_best (bow_barrel *barrel, bow_wv *query_wv,
 	     happens outside this loop, we just need to check for the
 	     idf factor stuff. The tf weights are just fine. */
 
-	  /* First - multiply the tf weights */
-	  tmp = query_wv->entry[current_index].weight * doc_tf;
+	  /* Multiply the tfidf weights */
+	  /* printf("%f * %f\n", query_wv->entry[current_index].weight,
+		 doc_tfidf); */
 
-	  /* Check for query idf */
-	  if (IDF_T(query_weights))
-	    {
-	      tmp *= (double) heap->entry[0].dv->idf;
-	    }
-
-	  /* Check for doc idf */
-	  if (IDF_T(doc_weights)) 
-            { 
-              tmp *= (double) heap->entry[0].dv->idf; 
-            } 
+	  tmp = query_wv->entry[current_index].weight * doc_tfidf;
 
 	  /* Plop this into the current score */
 	  current_score += tmp;
@@ -431,7 +472,7 @@ bow_knn_get_k_best (bow_barrel *barrel, bow_wv *query_wv,
 	  scores[i].name = doc->filename;
         } 
     } 
- 
+
   bow_free (heap); 
  
   /* All done - return the number of elements we have */ 
@@ -479,10 +520,6 @@ bow_knn_score (bow_barrel *barrel, bow_wv *query_wv,
       scores_sum += neighbors[ni].weight;
     }
 
-  /* Normalize scores */
-  for (ci=0; ci < bow_barrel_num_classes (barrel); ci++)
-    scores[ci] /= scores_sum;
-
   num_scores = 0;
 
   /* Put SCORES into BSCORES in sorted order */
@@ -515,7 +552,7 @@ bow_knn_score (bow_barrel *barrel, bow_wv *query_wv,
 }
 
 
-bow_method bow_method_knn = 
+rainbow_method bow_method_knn = 
 {
   "knn",
   bow_knn_set_weights,
@@ -533,6 +570,8 @@ bow_method bow_method_knn =
 void _register_method_knn () __attribute__ ((constructor));
 void _register_method_knn ()
 {
-  bow_method_register_with_name (&bow_method_knn, "knn", &knn_argp_child);
+  bow_method_register_with_name ((bow_method*)&bow_method_knn, "knn",
+				 sizeof (rainbow_method),
+				 &knn_argp_child);
   bow_argp_add_child (&knn_argp_child);
 }

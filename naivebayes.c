@@ -1,6 +1,6 @@
 /* Weight-setting and scoring implementation for Naive-Bayes classification */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -28,6 +28,8 @@
 /* Default value for option "naivebayes-m-est-m".  When zero, then use
    size-of-vocabulary instead. */
 double naivebayes_argp_m_est_m = 0;
+int naivebayes_score_returns_doc_pr;
+int naivebayes_score_unsorted;
 static int naivebayes_binary_scoring = 0;
 static int naivebayes_normalize_log = 0;
 static int naivebayes_rescale_scores = 1;
@@ -272,6 +274,11 @@ bow_naivebayes_pr_wi_ci (bow_barrel *barrel,
     }
   num_w_ci = cdoc->word_count;
 
+#if 0
+  fprintf (stdout, "count-%-25s %f\n",
+	   bow_int2word (wi), num_wi_ci);
+#endif
+
   if (loo_class == ci)
     {
       num_wi_ci -= loo_wi_count;
@@ -293,8 +300,8 @@ bow_naivebayes_pr_wi_ci (bow_barrel *barrel,
       /* xxx This is not exactly right, because 
 	 BARREL->WI2DVF->NUM_WORDS might have changed with the
 	 removal of QUERY_WV's document. */
-      if (naivebayes_argp_m_est_m == 0 
-	  || bow_smoothing_method == bow_smoothing_laplace)
+      if (/* naivebayes_argp_m_est_m == 0 
+	     || */ bow_smoothing_method == bow_smoothing_laplace)
 	m_est_m = barrel->wi2dvf->num_words;
       else
 	m_est_m = naivebayes_argp_m_est_m;
@@ -342,6 +349,7 @@ bow_naivebayes_pr_wi_ci (bow_barrel *barrel,
       pr_w_c = 0;		/* to avoid gcc warning */
     }
 
+#if 0
   if (pr_w_c <= 0)
     bow_error ("A negative word probability was calculated. "
 	       "This can happen if you are using\n"
@@ -349,8 +357,27 @@ bow_naivebayes_pr_wi_ci (bow_barrel *barrel,
 	       "not being lexed in the same way as they\n"
 	       "were when the model was built");
   assert (pr_w_c > 0 && pr_w_c <= 1);
+#endif
 
   return pr_w_c;
+}
+
+double
+bow_naivebayes_total_word_count_for_ci (bow_barrel *class_barrel, int ci)
+{
+  double ret = 0;
+  int max_wi, wi, dvi;
+  bow_dv *dv;
+
+  max_wi = MIN (class_barrel->wi2dvf->size, bow_num_words());
+  for (wi = 0; wi < max_wi; wi++)
+    {
+      dv = bow_wi2dvf_dv (class_barrel->wi2dvf, wi);
+      for (dvi = 0; dv && dvi < dv->length; dvi++)
+	if (dv->entry[dvi].di == ci)
+	  ret += dv->entry[dvi].weight;
+    }
+  return ret;
 }
 
 void
@@ -366,8 +393,12 @@ bow_naivebayes_print_word_probabilities_for_class (bow_barrel *barrel,
     {
       pr_w = bow_naivebayes_pr_wi_ci (barrel, wi, ci, -1, 0, 0, NULL, NULL);
       if (pr_w >= 0)
-	printf ("%-30s  %10.8f\n", bow_int2word (wi), pr_w);
+	printf ("%-30s  %10f\n", 
+		bow_int2word (wi), 
+		pr_w);
     }
+  printf ("%-30s  %10.8f\n", "total_count", 
+	  bow_naivebayes_total_word_count_for_ci (barrel, ci));
 }
 
 bow_wa *
@@ -499,6 +530,8 @@ bow_naivebayes_set_cdoc_word_count_from_wi2dvf_weights (bow_barrel *barrel)
   int num_classes = bow_barrel_num_classes (barrel);
   double num_words_per_ci[num_classes];
 
+  for (ci = 0; ci < num_classes; ci++)
+    num_words_per_ci[ci] = 0;
   max_wi = MIN (barrel->wi2dvf->size, bow_num_words());
   for (wi = 0; wi < max_wi; wi++) 
     {
@@ -566,10 +599,10 @@ bow_naivebayes_set_weights (bow_barrel *barrel)
       num_words_per_ci[ci] = 0;
     }
 
-  /* If we are using a document (binomial) model, then we'll just use
-     the value of WORD_COUNT set in bow_barrel_new_vpc(), which is the
-     total number of *documents* in the class, not the number of
-     words. */
+  /* Set the CDOC->WORD_COUNT for each class.  If we are using a
+     document (binomial) model, then we'll just use the value of
+     WORD_COUNT set in bow_barrel_new_vpc(), which is the total number
+     of *documents* in the class, not the number of words. */
   /* Calculate P(w); store this in DV->IDF. */
   if (bow_event_model != bow_event_document)
     {
@@ -676,11 +709,12 @@ bow_naivebayes_score (bow_barrel *barrel, bow_wv *query_wv,
   double log_pr_tf;		/* log(P(w|C)^TF), ditto, log() of it */
   double rescaler;		/* Rescale SCORES by this after each word */
   double new_score;		/* a temporary holder */
-  int num_scores;		/* number of entries placed in SCORES */
+  int num_scores = 0;		/* number of entries placed in SCORES */
   int num_words_in_query = 0;
   double pr_w_d;		/* P(w|d) */
   double h_w_d;			/* entropy of P(W|d) */
   int wi;
+  int hi;
   int max_wi;
   double query_wv_total_weight;
   
@@ -701,34 +735,41 @@ bow_naivebayes_score (bow_barrel *barrel, bow_wv *query_wv,
   if (bow_print_word_scores)
     printf ("%s\n",
 	    "(CLASS PRIOR PROBABILIES)");
+
+  for (hi = 0; hi < bscores_len; hi++)
+    bscores[hi].name = NULL;
+
   for (ci = 0; ci < barrel->cdocs->length; ci++)
     {
-      bow_cdoc *cdoc;
-      cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
-      bscores[ci].name = NULL;
-      if (bow_uniform_class_priors)
-	/* Uniform prior means each class has probability 1/#classes. */
-	scores[ci] = -log (barrel->cdocs->length);
-      else
-	{
+      if (naivebayes_score_returns_doc_pr) {
+	scores[ci] = 0.0;
+      } else {
+	bow_cdoc *cdoc;
+	cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
+	if (bow_uniform_class_priors)
+	  /* Uniform prior means each class has probability 1/#classes. */
+	  scores[ci] = -log (barrel->cdocs->length);
+	else
+	  {
 #if 0 /* For now forget about this little detail, because rainbow-h
 	 trips up on it. */
 	  /* LOO_CLASS is not implemented for cases in which we are
 	     not doing uniform class priors. */
-	  assert (loo_class == -1);
+            assert (loo_class == -1);
 #endif
-	  assert (cdoc->prior >= 0.0f && cdoc->prior <= 1.0f);
-	  if (cdoc->prior == 0)
+	    assert (cdoc->prior >= 0.0f && cdoc->prior <= 1.0f);
+	    if (cdoc->prior == 0)
 	    scores[ci] = IMPOSSIBLE_SCORE_FOR_ZERO_CLASS_PRIOR;
-	  else
-	    scores[ci] = log (cdoc->prior);
-	}
-      assert (scores[ci] > -FLT_MAX + 1.0e5);
-      if (bow_print_word_scores)
+	    else
+	      scores[ci] = log (cdoc->prior);
+	  }
+	assert (scores[ci] > -FLT_MAX + 1.0e5);
+	if (bow_print_word_scores)
 	printf ("%16s %-40s  %10.9f\n", 
 		"",
 		(strrchr (cdoc->filename, '/') ? : cdoc->filename),
 		scores[ci]);
+      }
     }
 
   /* If we are doing leave-one-out evaluation, get the total number of
@@ -860,7 +901,8 @@ bow_naivebayes_score (bow_barrel *barrel, bow_wv *query_wv,
       /* Loop over all classes, re-scaling SCORES so that they
 	 don't get so small we loose floating point resolution.
 	 This scaling always keeps all SCORES positive. */
-      if (naivebayes_rescale_scores && rescaler < 0)
+      if (naivebayes_rescale_scores && rescaler < 0 &&
+	  !naivebayes_score_returns_doc_pr)
 	{
 	  for (ci = 0; ci < barrel->cdocs->length; ci++)
 	    {
@@ -880,7 +922,7 @@ bow_naivebayes_score (bow_barrel *barrel, bow_wv *query_wv,
   /* Rescale the SCORE one last time, this time making them all -2 or
      more negative, so that exp() will work well, especially around
      the higher-probability classes. */
-  if (naivebayes_final_rescale_scores)
+  if (naivebayes_final_rescale_scores && !naivebayes_score_returns_doc_pr)
     {
       rescaler = -DBL_MAX;
       for (ci = 0; ci < barrel->cdocs->length; ci++)
@@ -941,23 +983,29 @@ bow_naivebayes_score (bow_barrel *barrel, bow_wv *query_wv,
 	}
 
       /* Normalize the SCORES so they all sum to one. */
-      {
-	double scores_sum = 0;
-	for (ci = 0; ci < barrel->cdocs->length; ci++)
-	  if (scores[ci] != IMPOSSIBLE_SCORE_FOR_ZERO_CLASS_PRIOR)
-	    scores_sum += scores[ci];
-	for (ci = 0; ci < barrel->cdocs->length; ci++)
-	  {
+      if (!naivebayes_score_returns_doc_pr) 
+	{
+	  double scores_sum = 0;
+	  for (ci = 0; ci < barrel->cdocs->length; ci++)
 	    if (scores[ci] != IMPOSSIBLE_SCORE_FOR_ZERO_CLASS_PRIOR)
-	      scores[ci] /= scores_sum;
-	    /* assert (scores[ci] > 0); */
-	  }
-      }
+	      scores_sum += scores[ci];
+	  for (ci = 0; ci < barrel->cdocs->length; ci++)
+	    {
+	      if (scores[ci] != IMPOSSIBLE_SCORE_FOR_ZERO_CLASS_PRIOR)
+		scores[ci] /= scores_sum;
+	      /* assert (scores[ci] > 0); */
+	    }
+	}
     }
  
-  /* Return the SCORES by putting them (and the `class indices') into
-     SCORES in sorted order. */
-  {
+  if (naivebayes_score_unsorted) { 
+    for (ci=0; ci<barrel->cdocs->length; ci++) {
+      bscores[ci].weight = scores[ci];
+    }
+  } else {
+    /* Return the SCORES by putting them (and the `class indices') into
+       SCORES in sorted order. */
+
     num_scores = 0;
     for (ci = 0; ci < barrel->cdocs->length; ci++)
       {
@@ -994,7 +1042,7 @@ bow_params_naivebayes bow_naivebayes_params =
   bow_yes,			/* normalize_scores */
 };
 
-bow_method bow_method_naivebayes = 
+rainbow_method bow_method_naivebayes = 
 {
   "naivebayes",
   bow_naivebayes_set_weights,
@@ -1012,7 +1060,9 @@ bow_method bow_method_naivebayes =
 void _register_method_naivebayes () __attribute__ ((constructor));
 void _register_method_naivebayes ()
 {
-  bow_method_register_with_name (&bow_method_naivebayes, "naivebayes",
+  bow_method_register_with_name ((bow_method*)&bow_method_naivebayes,
+				 "naivebayes",
+				 sizeof (rainbow_method),
 				 &naivebayes_argp_child);
   bow_argp_add_child (&naivebayes_argp_child);
 }

@@ -48,6 +48,9 @@ const char *bow_exclude_filename = NULL;
 /* Pipe the files through this shell command before lexing. */
 const char *bow_lex_pipe_command = NULL;
 
+/* File containing the annotations to display for each file */
+const char *bow_annotation_filename = NULL;
+
 /* If non-zero, check for eencoding blocks before istext() says that
    the file is text. */
 int bow_istext_avoid_uuencode = 0;
@@ -95,7 +98,11 @@ enum {
   LEX_PIPE_COMMAND_KEY,
   ISTEXT_AVOID_UUENCODE_KEY,
   LEX_WHITE_KEY,
+  LEX_ALPHANUM_KEY,
   LEX_SUFFIXING_KEY,
+  SHORTEST_WORD_KEY,
+  FLEX_MAIL_KEY,
+  FLEX_TAGGED_KEY,
   REPLACE_STOPLIST_FILE_KEY,
   SCORE_PRINT_PRECISION,
   SMOOTHING_METHOD_KEY,
@@ -104,7 +111,8 @@ enum {
   EVENT_DOC_THEN_WORD_DOC_LENGTH_KEY,
   INFOGAIN_EVENT_MODEL_KEY,
   SMOOTHING_GOODTURING_K,
-  HDB_KEY
+  HDB_KEY,
+  ANNOTATION_KEY
 };
 
 static struct argp_option bow_options[] =
@@ -123,6 +131,9 @@ static struct argp_option bow_options[] =
    "The number of decimal digits to print when displaying document scores"},
   {"random-seed", SPLIT_SEED, "NUM", 0,
    "The non-negative integer to use for seeding the random number generator"},
+  {"annotations", ANNOTATION_KEY, "FILE", 0,
+   "The sarray file containing annotations for the files in the index"},
+
 #if HAVE_HDB
   {"hdb", HDB_KEY, 0, 0,
    "Assume ARG... names are HDB databases.  May not be used with "
@@ -148,6 +159,8 @@ static struct argp_option bow_options[] =
    "(usually the default, depending on lexer)"},
   {"use-stemming", 'S', 0, 0,
    "Modify lexed words with the `Porter' stemming function."},
+  {"shortest-word", SHORTEST_WORD_KEY, "LENGTH", 0,
+   "Toss lexed words that are shorter than LENGTH.  Default is usually 2."},
   {"gram-size", 'g', "N", 0,
    "Create tokens for all 1-grams,... N-grams."},
   {"exclude-filename", EXCLUDE_FILENAME_KEY, "FILENAME", 0,
@@ -170,8 +183,15 @@ static struct argp_option bow_options[] =
    "does not change the contents of the token at all---no downcasing, "
    "no stemming, no stoplist, nothing.  Ideal for use with an externally-"
    "written lexer interfaced to rainbow with --lex-pipe-cmd."},
+  {"lex-alphanum", LEX_ALPHANUM_KEY, 0, 0,
+   "Use a special lexer that includes digits in tokens, delimiting tokens "
+   "only by non-alphanumeric characters."},
   {"lex-suffixing", LEX_SUFFIXING_KEY, 0, 0,
    "Use a special lexer that adds suffixes depending on Email-style headers."},
+  {"flex-mail", FLEX_MAIL_KEY, 0, 0,
+   "Use a mail-specific flex lexer"},
+  {"flex-tagged", FLEX_TAGGED_KEY, 0, 0,
+   "Use a tagged flex lexer"},
   {"lex-for-usenet", 'U', 0, OPTION_HIDDEN,
    "Use a special lexer for UseNet articles, ignore some headers and "
    "uuencoded blocks."},
@@ -264,23 +284,90 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
       /* Lexing options. */
     case 'h':
       /* Avoid lexing news/mail headers by scanning fwd until two newlines */
-      bow_default_lexer->document_start_pattern = "\n\n";
+      bow_lexer_document_start_pattern = "\n\n";
       break;
+    case 'g':
+      /* Create tokens for all 1-grams,... N-grams */
+      {
+	int n = atoi (arg);
+	if (n <= 0)
+	  {
+	    fprintf (stderr,
+		     "--gram-size, -N:  gram size must be a positive int\n");
+	    return ARGP_ERR_UNKNOWN;
+	  }
+	else if (n > 1)
+	  {
+	    bow_lexer_gram *lex = bow_malloc (sizeof (bow_lexer_gram));
+	    memcpy (lex, bow_gram_lexer, sizeof (bow_lexer_gram));
+	    lex->gram_size = n;
+	    lex->lexer.next = bow_default_lexer;
+	    bow_default_lexer = (bow_lexer*) lex;
+	  }
+	break;
+      }
+    case 'H':
+      /* Skip HTML tokens when lexing */
+      {
+	bow_lexer *lex = bow_malloc (sizeof (bow_lexer));
+	memcpy (lex, bow_html_lexer, sizeof (bow_lexer));
+	lex->next = bow_default_lexer;
+	bow_default_lexer = lex;
+	break;
+      }
+    case LEX_WHITE_KEY:
+      /* Use the whitespace lexer parameters */
+      memcpy (bow_default_lexer_parameters, bow_white_lexer_parameters,
+	      sizeof (bow_lexer_parameters));
+      break;
+    case LEX_ALPHANUM_KEY:
+      /* Use the alphanum lexer */
+      memcpy (bow_default_lexer_parameters, bow_alphanum_lexer_parameters,
+	      sizeof (bow_lexer_parameters));
+      break;
+    case LEX_SUFFIXING_KEY:
+      /* Use the suffixing lexer for prepending tags like `Date:' etc */
+      {
+	/* By default it uses the html_lexer as its underlying lexer */
+	bow_lexer *ulex = bow_malloc (sizeof (bow_lexer));
+	bow_lexer *lex = bow_malloc (sizeof (bow_lexer));
+	memcpy (ulex, bow_html_lexer, sizeof (bow_lexer));
+	ulex->next = bow_default_lexer;
+	memcpy (lex, bow_suffixing_lexer, sizeof (bow_lexer));
+	lex->next = ulex;
+	bow_default_lexer = lex;
+	break;
+      }
+    case FLEX_MAIL_KEY:
+      bow_flex_option = USE_MAIL_FLEXER;
+      break;
+    case FLEX_TAGGED_KEY:
+      bow_flex_option = USE_TAGGED_FLEXER;
+      break;
+    case SHORTEST_WORD_KEY:
+      /* Set the length of the shortest token that will not be tossed */
+      {
+	int s = atoi (arg);
+	assert (s > 0);
+	bow_lexer_toss_words_shorter_than = s;
+	break;
+      }
     case 's':
       /* Do not toss lexed words that appear in the stoplist */
-      bow_default_lexer_simple->stoplist_func = NULL;
+      bow_lexer_stoplist_func = NULL;
       break;
     case 's'+KEY_OPPOSITE:
       /* Toss lexed words that appear in the stoplist */
-      bow_default_lexer_simple->stoplist_func = bow_stoplist_present;
+      bow_lexer_stoplist_func = bow_stoplist_present;
       break;
     case 'S':
       /* Modify lexed words with the `Porter' stemming function */
-      bow_default_lexer_simple->stem_func = bow_stem_porter;
+      bow_lexer_stem_func = bow_stem_porter;
       break;
     case 'S'+KEY_OPPOSITE:
-      /* Do not modify lexed words with a stemming function. (default) */
-      bow_default_lexer_simple->stem_func = NULL;
+      /* Do not modify lexed words with a stemmiog function. (default) */
+      /* Modify lexed words with the `Porter' stemming function */
+      bow_lexer_stem_func = NULL;
       break;
     case APPEND_STOPLIST_FILE_KEY:
       bow_stoplist_add_from_file (arg);
@@ -288,43 +375,13 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
     case REPLACE_STOPLIST_FILE_KEY:
       bow_stoplist_replace_with_file (arg);
       break;
-    case 'g':
-      /* Create tokens for all 1-grams,... N-grams */
-      {
-	int n = atoi (arg);
-	if (n == 0)
-	  {
-	    fprintf (stderr,
-		     "--gram-size, -N:  gram size must be a positive int\n");
-	    return ARGP_ERR_UNKNOWN;
-	  }
-	bow_default_lexer_gram->gram_size = n;
-      }
-    case 'H':
-      /* Skip HTML tokens when lexing */
-      bow_default_lexer_indirect->underlying_lexer = 
-	(bow_lexer*) bow_default_lexer_html;
-      break;
-    case LEX_WHITE_KEY:
-      /* Use the whitespace lexer */
-      bow_default_lexer_indirect->underlying_lexer = 
-	(bow_lexer*) bow_default_lexer_white;
-      break;
-    case LEX_SUFFIXING_KEY:
-      /* Use the suffixing lexer */
-      bow_default_lexer_indirect->underlying_lexer = 
-	(bow_lexer*) bow_default_lexer_suffixing;
-      break;
-    case 'H'+KEY_OPPOSITE:
-      /* Treat HTML tokens the same as any other chars when lexing (default) */
-      bow_default_lexer_indirect->underlying_lexer = 
-	(bow_lexer*) bow_default_lexer_simple;
+    case ANNOTATION_KEY:
+      bow_annotation_filename = arg;
       break;
     case 'U':
       /* Use a special lexer for UseNet articles, ignore some headers and
 	 uuencoded blocks. */
-      bow_default_lexer_indirect->underlying_lexer = 
-	(bow_lexer*) bow_default_lexer_email;
+      bow_error ("The -U option is broken.");
       break;
     case EXCLUDE_FILENAME_KEY:
       bow_exclude_filename = arg;
@@ -389,7 +446,8 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
 	bow_event_model = bow_event_document;
       else if (!strcmp (arg, "word"))
 	bow_event_model = bow_event_word;
-      else if (!strcmp (arg, "document-then-word"))
+      else if (!strcmp (arg, "document-then-word")
+	       || !strcmp (arg, "dw"))
 	bow_event_model = bow_event_document_then_word;
       else
 	bow_error ("--event-model: No such event model `%s'", arg);
@@ -455,8 +513,10 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
 	  {
 	    /* Assume this means the file exists. */
 	    if (!S_ISDIR (st.st_mode))
-	      bow_error ("`%s' already exists, but is not a directory");
+	      bow_error ("`%s' already exists, but is not a directory",
+			 bow_data_dirname);
 	  }
+#if !defined(DART) && !defined(FDART)
 	else
 	  {
 	    if (mkdir (bow_data_dirname, 0777) == 0)
@@ -466,6 +526,7 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
 	      bow_error ("Couldn't create default data directory `%s'",
 			 bow_data_dirname);
 	  }
+#endif
       }
 
     default:
@@ -518,7 +579,7 @@ const struct argp bow_argp =
 };
 
 
-#define MAX_NUM_CHILDREN 10
+#define MAX_NUM_CHILDREN 100
 struct argp_child bow_argp_children[MAX_NUM_CHILDREN] =
 {
   {
@@ -537,7 +598,7 @@ static int bow_argp_children_length = 1;
 void
 bow_argp_add_child (struct argp_child *child)
 {
-  assert (bow_argp_children_length-1 < MAX_NUM_CHILDREN);
+  assert (bow_argp_children_length+1 < MAX_NUM_CHILDREN);
   memcpy (bow_argp_children + bow_argp_children_length,
 	  child,
 	  sizeof (struct argp_child));

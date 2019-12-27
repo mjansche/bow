@@ -1,6 +1,6 @@
 /* Implementation of a one-to-one mapping of string->int, and int->string. */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -80,7 +80,7 @@ bow_int4str_new (int capacity)
 const char *
 bow_int2str (bow_int4str *map, int index)
 {
-  assert (index < map->str_array_length);
+  assert (index < map->str_array_length && index >= 0);
   return map->str_array[index];
 }
 
@@ -401,6 +401,29 @@ bow_int4str_new_from_fp (FILE *fp)
       /* Read the string from the file. */
       if (fgets (buf, BOW_MAX_WORD_LENGTH, fp) == 0)
 	bow_error ("Error reading data file.");
+      len = strlen (buf);
+      if (buf[len-1] == '\n')
+	buf[len-1] = '\0';
+      /* Add it to the mappings. */
+      bow_str2int (ret, buf);
+    }
+  return ret;
+}
+
+bow_int4str *
+bow_int4str_new_from_fp_inc (FILE *fp)
+{
+  int len;
+  char buf[BOW_MAX_WORD_LENGTH];
+  bow_int4str *ret;
+
+   /* Initialize mapping structures to default size. */
+
+  ret = bow_int4str_new (0);
+
+  while (fgets (buf, BOW_MAX_WORD_LENGTH, fp))
+    {
+      /* Read the string from the file. */
       len = strlen (buf);
       if (buf[len-1] == '\n')
 	buf[len-1] = '\0';

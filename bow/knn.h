@@ -1,4 +1,4 @@
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -21,7 +21,7 @@
 #define __BOW_KNN_H
 
 /* The method and parameters of k-nearest neighbour weight settings. */
-extern bow_method bow_method_knn;
+extern rainbow_method bow_method_knn;
 typedef struct _bow_knn_params {
   /* Number of neighbours to consider */
   int k;

@@ -1,6 +1,6 @@
 /* Weight-setting and scoring for Kuback-Leiber classification */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -451,7 +451,7 @@ bow_kl_score (bow_barrel *barrel, bow_wv *query_wv,
   return num_scores;
 }
 
-bow_method bow_method_kl = 
+rainbow_method bow_method_kl = 
 {
   "kl",
   bow_kl_set_weights,
@@ -472,6 +472,8 @@ void _register_method_kl ()
   static int done = 0;
   if (done)
     return;
-  bow_method_register_with_name (&bow_method_kl, "kl", NULL);
+  bow_method_register_with_name ((bow_method*)&bow_method_kl, "kl", 
+				 sizeof (rainbow_method),
+				 NULL);
   done = 1;
 }

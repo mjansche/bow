@@ -6,9 +6,6 @@ Bag-Of-Words Library ToDo's
 * Make new versions of structure-file-saving code that take a filename
   and a directory name.  It will be easier to use them.
 
-* Encapsulate the mechanism for looping through documents (with
-  words matching a WV).  Ala bow_test_text_wv.
-
 * Rename `bow_cdoc->length' to `bow_cdoc->norm'
 * Rename `bow_cdoc->filename' to `bow_cdoc->name'
 * Make `bow_cdoc->class' be a vector of floats.
@@ -18,8 +15,6 @@ Bag-Of-Words Library ToDo's
 * Rename all bow_dv_heap* to bow_dvheap*.
 * Rename bow_dv_heap_update() to bow_dvheap_next().
 
-
-* Split method header information into separate .h files.
 
 * change bow_cdoc->word_count from int to float (or double)
 

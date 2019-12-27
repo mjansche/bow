@@ -1,4 +1,4 @@
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -20,8 +20,10 @@
 #ifndef __BOW_KL_H
 #define __BOW_KL_H
 
+#include <bow/libbow.h>
+
 /* The method and parameters of KL weight settings. */
 
-extern bow_method bow_method_kl;
+extern rainbow_method bow_method_kl;
 
 #endif /* __BOW_KL_H */

@@ -66,6 +66,8 @@ _bow_barrel_normalize_weights (bow_barrel *barrel,
   bow_dv_heap *heap;		/* a heap of "document vectors" */
   bow_cdoc *cdoc;		/* The document we're working on */
 
+  assert (barrel);
+
   heap = bow_make_dv_heap_from_wi2dvf (barrel->wi2dvf);
 
   bow_verbosify (bow_progress, "Normalizing weights:          ");

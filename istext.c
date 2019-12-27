@@ -1,6 +1,6 @@
 /* istext.c - test if a file contains text or not. */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -28,6 +28,10 @@
 
 #define NUM_TEST_CHARS 4096
 
+/* bow_*_is_text() always returns `yes'.  This is useful for Japanese
+   byte codes. */
+int bow_is_text_always_yes = 0;
+
 /* Examine the first NUM_TEST_CHARS characters of `fp', and return a 
    non-zero value iff TEXT_PRINTABLE_PERCENT of them are printable. */
 int
@@ -39,6 +43,9 @@ bow_fp_is_text (FILE *fp)
   int num_spaces = 0;
   int fpos;
   int i;
+
+  if (bow_is_text_always_yes)
+    return 1;
 
   fpos = ftell (fp);
   num_read = fread (buf, sizeof (char), NUM_TEST_CHARS, fp);
@@ -118,6 +125,9 @@ bow_str_is_text (char *buf)
   int num_printable = 0;
   int num_spaces = 0;
   int i;
+
+  if (bow_is_text_always_yes)
+    return 1;
 
   /* Loop until we found the end or until we hit our limit */
   for (i = 0; buf[i] && i < NUM_TEST_CHARS; i++)

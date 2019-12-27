@@ -1,6 +1,6 @@
 /* A simple N-gram lexer. */
 
-/* Copyright (C) 1997, 1998 Andrew McCallum
+/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -28,9 +28,10 @@ bow_lex *
 bow_lexer_gram_open_text_fp (bow_lexer *self, FILE *fp,
 			     const char *filename)
 {
-  bow_lex *lex = bow_lexer_indirect_open_text_fp (self, fp, filename);
+  bow_lex *lex = bow_lexer_next_open_text_fp (self, fp, filename);
   if (lex == NULL)
     return NULL;
+  lex = bow_realloc (lex, self->sizeof_lex);
   LEX->gram_size_this_time = SELF->gram_size;
   return lex;
 }
@@ -38,7 +39,7 @@ bow_lexer_gram_open_text_fp (bow_lexer *self, FILE *fp,
 bow_lex *
 bow_lexer_gram_open_str (bow_lexer *self, char *buf)
 {
-  bow_lex *lex = bow_lexer_indirect_open_str (self, buf);
+  bow_lex *lex = bow_lexer_next_open_str (self, buf);
   if (lex == NULL)
     return NULL;
   LEX->gram_size_this_time = SELF->gram_size;
@@ -54,6 +55,10 @@ bow_lexer_gram_get_word (bow_lexer *self, bow_lex *lex,
   int s;
   int len;
   
+#if BOW_MCHECK
+  mprobe (lex);
+#endif /* BOW_MCHECK */
+
   tokens = alloca (sizeof (char*) * LEX->gram_size_this_time);
   for (i = 0; i < LEX->gram_size_this_time; i++)
     tokens[i] = alloca (BOW_MAX_WORD_LENGTH);
@@ -62,17 +67,13 @@ bow_lexer_gram_get_word (bow_lexer *self, bow_lex *lex,
   s = LEX->lex.document_position;
 
   /* Get the first token. */
-  if (SELF->indirect_lexer.underlying_lexer->get_word 
-      (SELF->indirect_lexer.underlying_lexer, lex,
-       tokens[0], BOW_MAX_WORD_LENGTH)
+  if (self->next->get_word (self->next, lex, tokens[0], BOW_MAX_WORD_LENGTH)
       == 0)
     return 0;
 
   /* Get the next n-1 tokens. */
   for (i = 1; i < LEX->gram_size_this_time; i++)
-    if (SELF->indirect_lexer.underlying_lexer->get_word
-	(SELF->indirect_lexer.underlying_lexer, lex,
-	 tokens[i], BOW_MAX_WORD_LENGTH)
+    if (self->next->get_word (self->next, lex, tokens[i], BOW_MAX_WORD_LENGTH)
 	== 0)
       *(tokens[i]) = '\0';
 
@@ -98,25 +99,25 @@ bow_lexer_gram_get_word (bow_lexer *self, bow_lex *lex,
   else
     LEX->gram_size_this_time--;
 
+#if BOW_MCHECK
+  mprobe (lex);
+#endif /* BOW_MCHECK */
+
   return strlen (buf);
 }
 
-/* This is declared in lex-simple.c */
-extern bow_lexer_simple _bow_alpha_lexer;
 
 const bow_lexer_gram _bow_gram_lexer =
 {
   {
-    {
-      sizeof (typeof (_bow_gram_lexer)),
-      bow_lexer_gram_open_text_fp,
-      bow_lexer_gram_open_str,
-      bow_lexer_gram_get_word,
-      bow_lexer_indirect_close,
-      "",			/* document start pattern begins right away */
-      NULL			/* document end pattern goes to end */
-    },
-    (bow_lexer*)&_bow_alpha_lexer,/* default UNDERLYING_LEXER */
+    sizeof (bow_lex_gram),
+    NULL,			/* This must be non-NULL at run-time */
+    bow_lexer_gram_open_text_fp,
+    bow_lexer_gram_open_str,
+    bow_lexer_gram_get_word,
+    NULL,
+    NULL,
+    bow_lexer_simple_close
   },
   1				/* default gram-size is 1 */
 };

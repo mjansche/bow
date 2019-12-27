@@ -1,5 +1,5 @@
 /* Managing the connection between document-vectors (wi2dvf's) and cdocs
-   Copyright (C) 1997, 1998 Andrew McCallum
+   Copyright (C) 1997, 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -19,30 +19,11 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
 
 #include <bow/libbow.h>
+#include <nan.h>
+#include <values.h>
 
 static int _bow_barrel_version = -1;
 #define BOW_DEFAULT_BARREL_VERSION 3
-
-
-/* Old, deprecated identifiers for methods. */
-/* Identifiers for methods */
-typedef enum _bow_method_id {
-  bow_method_id_tfidf_words,	/* TFIDF/Rocchio */
-  bow_method_id_tfidf_log_words,
-  bow_method_id_tfidf_log_occur,
-  bow_method_id_tfidf_prtfidf,
-  bow_method_id_naivebayes,	/* Naive Bayes */
-  bow_method_id_prind,		/* Fuhr's Probabilistic Indexing */
-  bow_method_id_max
-} bow_method_id;
-bow_method* _old_bow_methods[bow_method_id_max] = 
-{
-  [bow_method_id_tfidf_words] = &bow_method_tfidf_words,
-  [bow_method_id_tfidf_log_words] = &bow_method_tfidf_log_words,
-  [bow_method_id_tfidf_log_occur] = &bow_method_tfidf_log_occur,
-  [bow_method_id_naivebayes] = &bow_method_naivebayes,
-  [bow_method_id_prind] = &bow_method_prind
-};
 
 
 /* Create a new, empty `bow_barrel', with cdoc's of size ENTRY_SIZE
@@ -54,8 +35,9 @@ bow_barrel_new (int word_capacity,
   bow_barrel *ret;
 
   ret = bow_malloc (sizeof (bow_barrel));
-  ret->method = (bow_argp_method 
-		 ? : bow_method_at_name (bow_default_method_name));
+  ret->method = (rainbow_method*)
+    (bow_argp_method 
+     ? : bow_method_at_name (bow_default_method_name));
   ret->cdocs = bow_array_new (class_capacity, entry_size, free_func);
   ret->wi2dvf = bow_wi2dvf_new (word_capacity);
   ret->classnames = NULL;
@@ -86,6 +68,7 @@ bow_barrel_add_document (bow_barrel *barrel,
   di = bow_array_append (barrel->cdocs, cdoc);
   /* Add the words in WV. */
   bow_wi2dvf_add_di_wv (&(barrel->wi2dvf), di, wv);
+  /* xxx Why is this assert here? */
   assert (barrel->classnames == NULL);
   
   return di;
@@ -122,7 +105,11 @@ bow_barrel_add_from_text_dir (bow_barrel *barrel,
 	return 0;
 
       if (!(fp = fopen (filename, "r")))
-	bow_error ("Couldn't open file `%s' for reading.", filename);
+	{
+	  bow_verbosify (bow_progress,
+			 "Couldn't open file `%s' for reading.", filename);
+	  return 0;
+	}
       if (bow_fp_is_text (fp))
 	{
 	  /* Add all the words in this document. */
@@ -160,7 +147,11 @@ bow_barrel_add_from_text_dir (bow_barrel *barrel,
 	return 0;
 
       if (!(fp = fopen (filename, "r")))
-	bow_error ("Couldn't open file `%s' for reading.", filename);
+	{
+	  bow_verbosify (bow_progress,
+			 "Couldn't open file `%s' for reading.", filename);
+	  return 0;
+	}
       if (bow_fp_is_text (fp))
 	{
 	  /* The file contains text; snarf the words and put them in
@@ -403,10 +394,17 @@ bow_barrel_keep_top_words_by_infogain (int num_words_to_keep,
   qsort (wiig_list, wi2ig_size, sizeof (struct wiig_list_entry), 
 	 compare_wiig_list_entry);
 
+  num_words_to_keep = MIN (num_words_to_keep, wi2ig_size);
+
 #if 1
-  for (i = 0; i < 5; i++)
-    fprintf (stderr,
-	     "%20.10f %s\n", wiig_list[i].ig, bow_int2word (wiig_list[i].wi));
+  bow_verbosify (bow_progress, 
+		 "Showing here top %d words by information gain; "
+		 "%d put in model\n", 
+		 MIN(5,num_words_to_keep), num_words_to_keep);
+  for (i = 0; i < MIN(5,num_words_to_keep); i++)
+    bow_verbosify (bow_progress,
+		   "%20.10f %s\n", wiig_list[i].ig, 
+		   bow_int2word (wiig_list[i].wi));
 #endif
 
   bow_verbosify (bow_progress, 
@@ -428,6 +426,62 @@ bow_barrel_keep_top_words_by_infogain (int num_words_to_keep,
 
   bow_verbosify (bow_progress, "\n");
 }
+
+/* Set the BARREL->WI2DVF->ENTRY[WI].IDF to the sum of the COUNTS for
+   the given WI among those documents in the training set. */
+void
+bow_barrel_set_idf_to_count_in_train (bow_barrel *barrel)
+{
+  bow_wi2dvf *wi2dvf = barrel->wi2dvf;
+  int wi, nwi, dvi;
+  bow_dv *dv;
+  bow_cdoc *cdoc;
+
+  nwi = MIN (wi2dvf->size, bow_num_words());
+  for (wi = 0; wi < nwi; wi++)
+    {
+      dv = bow_wi2dvf_dv (wi2dvf, wi);
+      if (!dv)
+	continue;
+      dv->idf = 0;
+      for (dvi = 0; dvi < dv->length; dvi++)
+	{
+	  cdoc = bow_array_entry_at_index (barrel->cdocs, dv->entry[dvi].di);
+	  if (cdoc->type == bow_doc_train)
+	    dv->idf += dv->entry[dvi].count;
+	}
+    }
+}
+
+/* Return the number of unique words among those documents with TYPE
+   tag (train, test, unlabeled, etc) equal to TYPE. */
+int 
+bow_barrel_num_unique_words_of_type (bow_barrel *doc_barrel, int type)
+{
+  int wi, max_wi, dvi;
+  int num_unique = 0;
+  bow_dv *dv;
+  bow_cdoc *cdoc;
+
+  max_wi = MIN (doc_barrel->wi2dvf->size, bow_num_words());
+  for (wi = 0; wi < max_wi; wi++)
+    {
+      dv = bow_wi2dvf_dv (doc_barrel->wi2dvf, wi);
+      for (dvi = 0; dv && dvi < dv->length; dvi++)
+	{
+	  cdoc = bow_array_entry_at_index (doc_barrel->cdocs,
+					   dv->entry[dvi].di);
+	  if (cdoc->type == type)
+	    {
+	      num_unique++;
+	      break;
+	    }
+	}
+    }
+  return num_unique;
+}
+
+
 
 int
 _bow_barrel_cdoc_write (bow_cdoc *cdoc, FILE *fp)
@@ -489,14 +543,15 @@ bow_barrel_new_from_data_fp (FILE *fp)
   if (_bow_barrel_version < 3)
     {
       bow_fread_int (&method_id, fp);
-      ret->method = _old_bow_methods[method_id];
+      bow_error ("Can no longer read barrels earlier than version 3");
+      /* ret->method = _old_bow_methods[method_id]; */
     }
   else
     {
       char *method_string;
       bow_fread_string (&method_string, fp);
-      ret->method = bow_method_at_name (method_string);
-      free (method_string);
+      ret->method = (rainbow_method*) bow_method_at_name (method_string);
+      bow_free (method_string);
     }
   ret->cdocs = 
     bow_array_new_from_data_fp ((int(*)(void*,FILE*))_bow_barrel_cdoc_read,
@@ -522,7 +577,7 @@ bow_barrel_new_from_data_file (const char *filename)
   bow_dv *dv;
   int dv_count = 0;
 
-  fp = bow_fopen (filename, "r");
+  fp = bow_fopen (filename, "rb");
   ret_barrel = bow_barrel_new_from_data_fp (fp);
 
   if (ret_barrel)
@@ -1043,6 +1098,93 @@ bow_barrel_copy (bow_barrel *barrel)
 
   return (copy);
 }
+
+/* Define an iterator over the columns of a barrel  */
+
+struct bow_barrel_iterator_context {
+  bow_barrel *barrel;
+  int ci;
+  bow_dv *dv;
+  int dvi;
+};
+#define CONTEXT ((struct bow_barrel_iterator_context*)context)
+
+static void
+barrel_iterator_reset_at_wi (int wi, void *context)
+{
+  bow_cdoc *cdoc;
+  CONTEXT->dv =  bow_wi2dvf_dv (CONTEXT->barrel->wi2dvf, wi);
+  CONTEXT->dvi = 0;
+  /* Advance to the first document matching our criterion */
+  while (CONTEXT->dv && CONTEXT->dvi < CONTEXT->dv->length)
+    {
+      cdoc = bow_array_entry_at_index (CONTEXT->barrel->cdocs,
+				       CONTEXT->dv->entry[CONTEXT->dvi].di);
+      if (cdoc->class == CONTEXT->ci && cdoc->type == bow_doc_train)
+	break;
+      CONTEXT->dvi++;
+    }
+}
+
+static int
+barrel_iterator_advance_to_next_di (void *context)
+{
+  bow_cdoc *cdoc;
+  if (CONTEXT->dv == NULL) 
+    return 0;
+  CONTEXT->dvi++;
+  while (CONTEXT->dvi < CONTEXT->dv->length)
+    {
+      cdoc = bow_array_entry_at_index (CONTEXT->barrel->cdocs,
+				       CONTEXT->dv->entry[CONTEXT->dvi].di);
+      if (cdoc->class == CONTEXT->ci && cdoc->type == bow_doc_train)
+	break;
+      CONTEXT->dvi++;
+    }
+  if (CONTEXT->dvi >= CONTEXT->dv->length)
+    return 0;
+  return 1;
+}
+
+static int
+barrel_iterator_doc_index (void *context)
+{
+  if (CONTEXT->dv == NULL || CONTEXT->dvi >= CONTEXT->dv->length)
+    return INT_MIN;
+  return CONTEXT->dv->entry[CONTEXT->dvi].di;
+}
+
+static double
+barrel_iterator_count_for_doc (void *context)
+{
+  if (CONTEXT->dv == NULL || CONTEXT->dvi >= CONTEXT->dv->length)
+    return 0.0/0;		/* NaN */
+  return CONTEXT->dv->entry[CONTEXT->dvi].count;
+}
+
+
+bow_iterator_double *
+bow_barrel_iterator_for_ci_new (bow_barrel *barrel, int ci)
+{
+  bow_iterator_double *ret;
+  void *context;
+
+  ret = bow_malloc (sizeof (bow_iterator_double) + 
+		    sizeof (struct bow_barrel_iterator_context));
+  ret->reset = barrel_iterator_reset_at_wi;
+  ret->advance = barrel_iterator_advance_to_next_di;
+  ret->index = barrel_iterator_doc_index;
+  ret->value = barrel_iterator_count_for_doc;
+  context = ret->context = (char*)ret + sizeof (bow_iterator_double);
+  CONTEXT->barrel = barrel;
+  CONTEXT->ci = ci;
+  CONTEXT->dv = NULL;
+  CONTEXT->dvi = 0;
+  return ret;
+}
+#undef CONTEXT
+
+
 
 /* Free the memory held by BARREL. */
 void
