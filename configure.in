@@ -6,7 +6,7 @@ AC_INIT(int4str.c)
 # Let the user set CPPFLAGS and CFLAGS on the ./configure command-line
 AC_SUBST(CPPFLAGS)
 if test -z "$CFLAGS" ; then
-  CFLAGS="-g -O -Wall -Wno-implicit"  #provide a default for CFLAGS
+  CFLAGS="-g -O -Wall -Wimplicit"  #provide a default for CFLAGS
 fi
 AC_SUBST(CFLAGS)
 
@@ -21,6 +21,9 @@ AC_PROG_RANLIB
 # Needed by weight.c
 AC_CHECK_FUNCS(log2f)
 AC_CHECK_FUNCS(sqrtf)
+
+# Needed on DEC alpha machines
+AC_CHECK_HEADERS(alloca.h)
 
 # Find location of the perl interpreter executable
 #  first look for `perl5'

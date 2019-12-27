@@ -1,6 +1,6 @@
 /* Weight-setting and scoring for P(C|w) evidence classification */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -204,7 +204,7 @@ bow_evi_score (bow_barrel *barrel, bow_wv *query_wv,
 	  bow_cdoc *cdoc;
 
 	  cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
-	  assert (cdoc->type == model);
+	  assert (cdoc->type == bow_doc_train);
 
 	  score_increment = log ((pr_c_w[ci] / (1 - pr_c_w[ci]))
 				 * ((1 - pr_c[ci]) / pr_c[ci]));
@@ -273,6 +273,6 @@ void _register_method_evi ()
   static int done = 0;
   if (done)
     return;
-  bow_method_register_with_name (&bow_method_evi, "evi");
+  bow_method_register_with_name (&bow_method_evi, "evi", NULL);
   done = 1;
 }

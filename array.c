@@ -1,6 +1,6 @@
 /* Implementation of arrays that can grow. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -52,7 +52,7 @@ bow_array_init (bow_array *array, int capacity,
   array->entry_size = entry_size;
   array->free_func = free_func;
   array->growth_factor = 2;
-  array->entries = malloc (array->size * entry_size);
+  array->entries = bow_malloc (array->size * entry_size);
 }
 
 #define ADDR_ENTRY_AT_INDEX(ARRAY, INDEX)	\
@@ -73,6 +73,13 @@ bow_array_append (bow_array *array, void *entry)
   memcpy (ADDR_ENTRY_AT_INDEX (array, array->length), entry,
 	  array->entry_size);
   return (array->length)++;
+}
+
+/* Return what will be the index of the next entry to be appended */
+int
+bow_array_next_index (bow_array *array)
+{
+  return array->length;
 }
 
 /* Return a pointer to the array entry at index INDEX. */

@@ -1,6 +1,6 @@
 /* Error-printing and verbosifying functions
 
-   Copyright (C) 1997 Andrew McCallum
+   Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -64,6 +64,7 @@ _bow_error (const char *format, ...)
   vfprintf (stderr, format, ap);
   va_end (ap);
   fputc ('\n', stderr);
+  fflush (stderr);
 
 #if __linux__
   abort ();

@@ -14,6 +14,10 @@
    which must be examined by some other function (called later) in
    order to have any effect. */
 
+/* Flag to indicate whether ARG... files should be interpreted as HDB
+   databases */
+int bow_hdb = 0;
+
 /* Remove all but the top N words by selecting words with highest
    information gain */
 int bow_prune_vocab_by_infogain_n = 0;
@@ -48,6 +52,34 @@ const char *bow_lex_pipe_command = NULL;
    the file is text. */
 int bow_istext_avoid_uuencode = 0;
 
+/* Number of decimal places to print when printing classification scores */
+int bow_score_print_precision = 10;
+
+/* Which smoothing method to use to avoid zero word probabilities */
+bow_smoothing bow_smoothing_method = bow_smoothing_laplace;
+
+/* Remove words that occur in this many or fewer documents. */
+int bow_prune_words_by_doc_count_n = 0;
+
+/* Random seed to use for srand, if not equal to -1 */
+int bow_split_seed = -1;
+
+/* What "event-model" we will use for the probabilistic models. */
+bow_event_models bow_event_model = bow_event_word;
+
+/* What "event-model" we will use for calculating information gain of 
+   words with classes. */
+bow_event_models bow_infogain_event_model = bow_event_document;
+
+/* When using the bow_event_document_then_word event model, we
+   normalize the length of all the documents.  This determines the
+   normalized length. */
+int bow_event_document_then_word_document_length = 200;
+
+/* Smooth words that occur k or fewer times for Good-Turing smoothing */
+int bow_smoothing_goodturing_k = 7;
+
+
 /* Value added to key to get the key of the opposite option.  For
    example "do not use stoplist" has key 's'; "use stoplist" has key
    's'+KEY_OPPOSITE. */
@@ -62,7 +94,17 @@ enum {
   EXCLUDE_FILENAME_KEY,
   LEX_PIPE_COMMAND_KEY,
   ISTEXT_AVOID_UUENCODE_KEY,
-  LEX_WHITE_KEY
+  LEX_WHITE_KEY,
+  LEX_SUFFIXING_KEY,
+  REPLACE_STOPLIST_FILE_KEY,
+  SCORE_PRINT_PRECISION,
+  SMOOTHING_METHOD_KEY,
+  SPLIT_SEED,
+  EVENT_MODEL_KEY,
+  EVENT_DOC_THEN_WORD_DOC_LENGTH_KEY,
+  INFOGAIN_EVENT_MODEL_KEY,
+  SMOOTHING_GOODTURING_K,
+  HDB_KEY
 };
 
 static struct argp_option bow_options[] =
@@ -77,6 +119,14 @@ static struct argp_option bow_options[] =
   {"data-dir", 'd', "DIR", 0,
    "Set the directory in which to read/write word-vector data "
    "(default=~/.<program_name>)."},
+  {"score-precision", SCORE_PRINT_PRECISION, "NUM", 0,
+   "The number of decimal digits to print when displaying document scores"},
+  {"random-seed", SPLIT_SEED, "NUM", 0,
+   "The non-negative integer to use for seeding the random number generator"},
+  {"hdb", HDB_KEY, 0, 0,
+   "Assume ARG... names are HDB databases.  May not be used with "
+   "--lex-pipe-command.  Only useful with --index option.  Currently only "
+   "works with rainbow and arrow"},
 
   {0, 0, 0, 0,
    "Lexing options", 2},
@@ -85,10 +135,12 @@ static struct argp_option bow_options[] =
   {"no-stoplist", 's', 0, 0,
    "Do not toss lexed words that appear in the stoplist."},
   {"use-stoplist", 's'+KEY_OPPOSITE, 0, 0,
-   "Toss lexed words that appear in the stoplist. "
-   "(usually the default, depending on lexer)"},
+   "Toss lexed words that appear in the stoplist.  "
+   "(usually the default SMART stoplist, depending on lexer)"},
   {"append-stoplist-file", APPEND_STOPLIST_FILE_KEY, "FILE", 0,
    "Add words in FILE to the stoplist."},
+  {"replace-stoplist-file", REPLACE_STOPLIST_FILE_KEY, "FILE", 0,
+   "Empty the default stoplist, and add space-delimited words from FILE."},
   {"no-stemming", 'S'+KEY_OPPOSITE, 0, 0,
    "Do not modify lexed words with a stemming function. "
    "(usually the default, depending on lexer)"},
@@ -116,7 +168,9 @@ static struct argp_option bow_options[] =
    "does not change the contents of the token at all---no downcasing, "
    "no stemming, no stoplist, nothing.  Ideal for use with an externally-"
    "written lexer interfaced to rainbow with --lex-pipe-cmd."},
-  {"lex-for-usenet", 'U', 0, 0,
+  {"lex-suffixing", LEX_SUFFIXING_KEY, 0, 0,
+   "Use a special lexer that adds suffixes depending on Email-style headers."},
+  {"lex-for-usenet", 'U', 0, OPTION_HIDDEN,
    "Use a special lexer for UseNet articles, ignore some headers and "
    "uuencoded blocks."},
 
@@ -127,11 +181,13 @@ static struct argp_option bow_options[] =
    "information gain."},
   {"prune-vocab-by-occur-count", 'O', "N", 0,
    "Remove words that occur less than N times."},
+  {"prune-vocab-by-doc-count", 'D', "N", 0,
+   "Remove words that occur in N or fewer documents."},
 
   {0, 0, 0, 0,
    "Weight-vector setting/scoring method options", 5},
   {"method", 'm', "METHOD", 0,
-   "Set the weight-method; METHOD may be one of: "},
+   "Set the word weight-setting method; METHOD may be one of: "},
   {"print-word-scores", PRINT_WORD_SCORES_KEY, 0, 0,
    "During scoring, print the contribution of each word to each class."},
   {"uniform-class-priors", UNIFORM_CLASS_PRIORS_KEY, 0, 0,
@@ -140,6 +196,26 @@ static struct argp_option bow_options[] =
   {"binary-word-counts", BINARY_WORD_COUNTS_KEY, 0, 0,
    "Instead of using integer occurrence counts of words to set weights, "
    "use binary absence/presence."},
+  {"smoothing-method", SMOOTHING_METHOD_KEY, "METHOD", 0,
+   "Set the method for smoothing word probabilities to avoid zeros; "
+   "METHOD may be one of: goodturing, laplace, mestimate, wittenbell"},
+  {"smoothing-goodturing-k", SMOOTHING_GOODTURING_K, "NUM", 0,
+   "Smooth word probabilities for words that occur NUM or less times. "
+   "The default is 7."},
+  {"event-model", EVENT_MODEL_KEY, "EVENTNAME", 0,
+   "Set what objects will be considered the `events' of the probabilistic "
+   "model.  EVENTNAME can be one of: word, document, document-then-word.  "
+   "Default is `word'."},
+  {"event-document-then-word-document-length", 
+   EVENT_DOC_THEN_WORD_DOC_LENGTH_KEY,
+   "NUM", 0,
+   "Set the normalized length of documents when "
+   "--event-model=document-then-word"},
+  {"infogain-event-model", INFOGAIN_EVENT_MODEL_KEY, "EVENTNAME", 0,
+   "Set what objects will be considered the `events' when information gain "
+   "is calculated.  "
+   "EVENTNAME can be one of: word, document, document-then-word.  "
+   "Default is `document'."},
 
   {0, 0}
 };
@@ -160,8 +236,27 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
       /* Set name of the directory in which we'll store word-vector data. */
       bow_data_dirname = arg;
       break;
-
-
+    case SCORE_PRINT_PRECISION:
+      /* Set the number of digits to print */
+      bow_score_print_precision = atoi(optarg);
+      break;
+    case SPLIT_SEED:
+      /* Set the seed for the random number generator */
+      bow_split_seed = atoi (optarg);
+      if (bow_split_seed < 0)
+	{
+	  fprintf (stderr,
+		   "--split-seed: Seed must be non-negative.\n");
+	  return ARGP_ERR_UNKNOWN;
+	}
+      break;
+    case HDB_KEY:
+      bow_hdb = 1;
+      if (bow_lex_pipe_command)
+	bow_error ("--hdb and --lex-pipe-command options cannot be used in"
+		   " conjunction\n");
+      break;
+      
       /* Lexing options. */
 
     case 'h':
@@ -187,6 +282,9 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
     case APPEND_STOPLIST_FILE_KEY:
       bow_stoplist_add_from_file (arg);
       break;
+    case REPLACE_STOPLIST_FILE_KEY:
+      bow_stoplist_replace_with_file (arg);
+      break;
     case 'g':
       /* Create tokens for all 1-grams,... N-grams */
       {
@@ -209,6 +307,11 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
       bow_default_lexer_indirect->underlying_lexer = 
 	(bow_lexer*) bow_default_lexer_white;
       break;
+    case LEX_SUFFIXING_KEY:
+      /* Use the suffixing lexer */
+      bow_default_lexer_indirect->underlying_lexer = 
+	(bow_lexer*) bow_default_lexer_suffixing;
+      break;
     case 'H'+KEY_OPPOSITE:
       /* Treat HTML tokens the same as any other chars when lexing (default) */
       bow_default_lexer_indirect->underlying_lexer = 
@@ -225,6 +328,9 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
       break;
     case LEX_PIPE_COMMAND_KEY:
       bow_lex_pipe_command = arg;
+      if (bow_hdb)
+	bow_error ("--hdb and --lex-pipe-command options cannot be used in"
+		   " conjunction\n");
       break;
     case ISTEXT_AVOID_UUENCODE_KEY:
       bow_istext_avoid_uuencode = 1;
@@ -241,9 +347,28 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
       /* Remove words that occur less than N times */
       bow_prune_vocab_by_occur_count_n = atoi (arg);
       break;
+    case 'D':
+      /* Remove words that occur in N or fewer documents */
+      bow_prune_words_by_doc_count_n = atoi (arg);
+      break;
 
     case 'm':
       bow_argp_method = bow_method_at_name (arg);
+      break;
+    case SMOOTHING_METHOD_KEY:
+      if (!strcmp (arg, "goodturing"))
+	bow_smoothing_method = bow_smoothing_goodturing;
+      else if (!strcmp (arg, "laplace"))
+	bow_smoothing_method = bow_smoothing_laplace;
+      else if (!strcmp (arg, "mestimate"))
+	bow_smoothing_method = bow_smoothing_mestimate;
+      else if (!strcmp (arg, "wittenbell"))
+	bow_smoothing_method = bow_smoothing_wittenbell;
+      else
+	bow_error ("--smoothing-method: No such smoothing method `%s'", arg);
+      break;
+    case SMOOTHING_GOODTURING_K:
+      bow_smoothing_goodturing_k = atoi (arg);
       break;
     case PRINT_WORD_SCORES_KEY:
       bow_print_word_scores = 1;
@@ -255,6 +380,30 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
       /* Use binary absence/presence, instead of integer occurrence
          counts for words. */
       bow_binary_word_counts = 1;
+      break;
+    case EVENT_MODEL_KEY:
+      if (!strcmp (arg, "document"))
+	bow_event_model = bow_event_document;
+      else if (!strcmp (arg, "word"))
+	bow_event_model = bow_event_word;
+      else if (!strcmp (arg, "document-then-word"))
+	bow_event_model = bow_event_document_then_word;
+      else
+	bow_error ("--event-model: No such event model `%s'", arg);
+      break;
+    case EVENT_DOC_THEN_WORD_DOC_LENGTH_KEY:
+      bow_event_document_then_word_document_length = atoi (arg);
+      assert (bow_event_document_then_word_document_length > 0);
+      break;
+    case INFOGAIN_EVENT_MODEL_KEY:
+      if (!strcmp (arg, "document"))
+	bow_infogain_event_model = bow_event_document;
+      else if (!strcmp (arg, "word"))
+	bow_infogain_event_model = bow_event_word;
+      else if (!strcmp (arg, "document-then-word"))
+	bow_infogain_event_model = bow_event_document_then_word;
+      else
+	bow_error ("--infogain_event-model: No such event model `%s'", arg);
       break;
 
     case ARGP_KEY_INIT:
@@ -381,6 +530,7 @@ struct argp_child bow_argp_children[MAX_NUM_CHILDREN] =
 /* The number of children already initialized in the const assignment above. */
 static int bow_argp_children_length = 1;
 
+/* Add the options in CHILD to the list of command-line options. */
 void
 bow_argp_add_child (struct argp_child *child)
 {

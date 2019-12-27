@@ -1,4 +1,4 @@
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -22,6 +22,27 @@
 
 /* The method and parameters of EM weight settings. */
 extern bow_method bow_method_em;
+typedef enum {
+  bow_em_perturb_none = 0,
+  bow_em_perturb_with_gaussian,
+  bow_em_perturb_with_dirichlet
+} bow_em_perturb_method;
+
+extern bow_em_perturb_method bow_em_perturb_starting_point;
+extern int bow_em_num_em_runs;
+extern int em_cross_entropy;
+
+typedef struct _bow_em_pr_struct {
+  double score;
+  int correct;
+} bow_em_pr_struct;
+
+
+void
+bow_em_perturb_weights (bow_barrel *doc_barrel, bow_barrel *vpc_barrel);
+
+int
+bow_em_pr_struct_compare (const void *x, const void *y);
 
 void
 bow_em_compare_to_nb (bow_barrel *doc_barrel);

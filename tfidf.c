@@ -1,6 +1,6 @@
 /* Weight-setting and scoring implementation for TFIDF. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -29,6 +29,12 @@
 #define sqrtf sqrt
 #endif
 
+/* The number of documents with non-zero dot-product with the query. 
+   Set in bow_tfidf_score(). */
+int bow_tfidf_num_hit_documents;
+
+#define DOING_LOG_COUNTS 1
+
 
 /* Function to assign TFIDF weights to each element of each document
    vector. */
@@ -45,12 +51,6 @@ bow_tfidf_set_weights (bow_barrel *barrel)
 #endif
   int dvi;			/* an index into the DV */
   bow_cdoc *cdoc;
-
-#if 0
-#warning TFIDF is currently broken
-  bow_error ("Sorry, TFIDF is currently broken.\n"
-	     "It will be fixed in a future release.\n");
-#endif
 
   bow_verbosify (bow_progress, "Setting weights over words:          ");
   max_wi = MIN(barrel->wi2dvf->size, bow_num_words());
@@ -96,8 +96,8 @@ bow_tfidf_set_weights (bow_barrel *barrel)
       df = 0;
       for (dvi = 0; dvi < dv->length; dvi++)
 	{
-	  cdoc = bow_cdocs_di2doc (barrel->cdocs, dv->entry[dvi].di);
-	  if (cdoc->type != model)
+	  cdoc = bow_array_entry_at_index (barrel->cdocs, dv->entry[dvi].di);
+	  if (cdoc->type != bow_doc_train)
 	    continue;
 	  if (((bow_params_tfidf*)(barrel->method->params))->df_counts
 	      == bow_tfidf_occurrences)
@@ -130,25 +130,30 @@ bow_tfidf_set_weights (bow_barrel *barrel)
 	  /* BARREL->CDOCS->LENGTH is the total number of documents. */
 	  if (((bow_params_tfidf*)(barrel->method->params))->df_transform
 	      == bow_tfidf_log)
-	    df = log2f (df);
+	    idf = log2f (barrel->cdocs->length / df);
 	  else if (((bow_params_tfidf*)(barrel->method->params))->df_transform
 		   == bow_tfidf_sqrt)
-	    df = sqrtf (df);
+	    idf = sqrtf (barrel->cdocs->length / df);
 	  else if (((bow_params_tfidf*)(barrel->method->params))->df_transform
-		   != bow_tfidf_straight)
-	    bow_error ("Bad TFIDF parameter df_transform.");
-	  if (df > 0)
-	    idf = 1.0 / df;
+		   == bow_tfidf_straight)
+	    idf = barrel->cdocs->length / df;
 	  else
-	    idf = 0.0;
+	    {
+	      idf = 0;		/* to avoid gcc warning */
+	      bow_error ("Bad TFIDF parameter df_transform.");
+	    }
 	}
+      assert (idf == idf);	/* Make sure we don't have NaN. */
 
       /* Now loop through all the elements, setting their weights */
       for (dvi = 0; dvi < dv->length; dvi++)
+#if DOING_LOG_COUNTS
+	dv->entry[dvi].weight = log (dv->entry[dvi].count + 1) * idf;
+#else
 	dv->entry[dvi].weight = dv->entry[dvi].count * idf;
+#endif
       
       /* Record this word's idf */
-      assert (idf == idf);	/* Make sure we don't have NaN. */
       dv->idf = idf;
 
       if (wi % 10 == 0)
@@ -168,7 +173,7 @@ bow_tfidf_set_weights (bow_barrel *barrel)
    the wv. Also, if the length field in cdocs is non-zero, then the
    product is divided by that length. */
 int
-bow_tfidf_score (bow_barrel *barrel, bow_wv *query_wv, 
+bow_tfidf_score_old (bow_barrel *barrel, bow_wv *query_wv, 
 		 bow_score *scores, int best, int loo_class)
 {
   bow_dv_heap *heap;
@@ -205,7 +210,7 @@ bow_tfidf_score (bow_barrel *barrel, bow_wv *query_wv,
       doc = bow_cdocs_di2doc (barrel->cdocs, current_di);
     
       /* If it's not a model document, then move on to next one */
-      if (doc->type != model)
+      if (doc->type != bow_doc_train)
 	{
 	  do 
 	    {
@@ -299,28 +304,171 @@ bow_tfidf_score (bow_barrel *barrel, bow_wv *query_wv,
 }
 
 
-bow_params_tfidf bow_tfidf_params_words =
+
+int
+bow_tfidf_score (bow_barrel *barrel, bow_wv *query_wv, 
+		 bow_score *scores, int scores_size, int loo_class)
+{
+  int num_scores = 0;		/* How many elements are in this array */
+  int ci, i;
+  float *lscores;
+  int **wis;
+  int wvi, dvi;
+  bow_cdoc *cdoc;
+  int num_hit_documents = 0;
+
+#if 0
+  if (loo_class >= 0)
+    bow_error ("PrInd cannot implement Leave-One-Out scoring.");
+#endif
+
+  /* Yuck.  This is inefficient. */
+  lscores = bow_malloc (barrel->cdocs->length * sizeof (float));
+  wis = bow_malloc (barrel->cdocs->length * sizeof (int*));
+  for (i = 0; i < barrel->cdocs->length; i++)
+    {
+      lscores[i] = 0;
+      wis[i] = NULL;
+    }
+
+  /* Set the weights in the QUERY_WV.  Note: this is duplication of
+     effort, since it was already done, but it was done incorrectly
+     before, without the IDF. */
+#if DOING_LOG_COUNTS
+  bow_wv_set_weights_to_log_count_times_idf (query_wv, barrel);
+#else
+  bow_wv_set_weights_to_count_times_idf (query_wv, barrel);
+#endif
+  bow_wv_normalize_weights_by_vector_length (query_wv);
+
+  for (wvi = 0; wvi < query_wv->num_entries; wvi++)
+    {
+      bow_dv *dv = bow_wi2dvf_dv (barrel->wi2dvf, query_wv->entry[wvi].wi);
+
+      /* If the model doesn't know about this word, skip it. */
+      if (!dv)
+	continue;
+
+      /* Loop over all documents/classes that contain word WI,
+	 and increment their score. */
+      for (dvi = 0; dvi < dv->length; dvi++)
+	{
+	  cdoc = bow_array_entry_at_index (barrel->cdocs, dv->entry[dvi].di);
+	  lscores[dv->entry[dvi].di] += ((query_wv->entry[wvi].weight
+					  * query_wv->normalizer)
+					 * (dv->entry[dvi].weight
+					    * cdoc->normalizer));
+	  if (wis[dv->entry[dvi].di] == NULL)
+	    {
+	      int j;
+	      wis[dv->entry[dvi].di] = bow_malloc ((query_wv->num_entries+1)
+						   * sizeof (int));
+	      for (j = 0; j < (query_wv->num_entries+1); j++)
+		wis[dv->entry[dvi].di][j] = -1;
+	    }
+	  i = 0;
+	  while (wis[dv->entry[dvi].di][i] >= 0)
+	    i++;
+	  assert (i <= query_wv->num_entries);
+	  wis[dv->entry[dvi].di][i] = query_wv->entry[wvi].wi;
+	  assert (wis[dv->entry[dvi].di][i] != 1);
+	}
+    } 
+
+  for (ci = 0; ci < barrel->cdocs->length; ci++)
+    {
+      if (lscores[ci] == 0)
+	continue;
+      
+      num_hit_documents++;
+      
+      /* Store the result in the SCORES array */
+      /* If we haven't filled the list, or we beat the last item in the list */
+      if ((num_scores < scores_size)
+	  || (scores[num_scores - 1].weight < lscores[ci]))
+	{
+	  /* We're going to search up the list comparing element i-1 with
+	     our current score and moving it down the list if it's worse */
+	  if (num_scores < scores_size)
+	    {
+	      i = num_scores;
+	      num_scores++;
+	    }
+	  else
+	    i = num_scores - 1;
+
+	  /* Shift down all the bits of the array that need shifting */
+	  for (; (i > 0) && (scores[i - 1].weight < lscores[ci]); i--)
+	    scores[i] = scores[i-1];
+
+	  /* Insert our new score */
+	  scores[i].weight = lscores[ci];
+	  scores[i].di = ci;
+
+#if 1
+	  {
+	    /* Store the appearing words in NAME. */
+	    char buf[BOW_MAX_WORD_LENGTH * query_wv->num_entries];
+	    int j;
+
+	    assert (wis[ci]);
+	    buf[0] = '\0';
+	    for (j = 0; wis[ci][j] >= 0; j++)
+	      {
+		strcat (buf, bow_int2word (wis[ci][j]));
+		strcat (buf, " ");
+	      }
+	    scores[i].name = strdup (buf);
+	    assert (scores[i].name);
+	  }
+#else
+	  scores[i].name = NULL;
+#endif
+	}
+    }
+
+  bow_free (lscores);
+  for (i = 0; i < barrel->cdocs->length; i++)
+    {
+      if (wis[i])
+	bow_free (wis[i]);
+    }
+  bow_free (wis);
+
+  bow_tfidf_num_hit_documents = num_hit_documents;
+
+  /* All done - return the number of elements we have */
+  return num_scores;
+}
+
+bow_params_tfidf bow_tfidf_params_tfidf_words =
 {
   bow_tfidf_words,
   bow_tfidf_straight
 };
 
-bow_params_tfidf bow_tfidf_params_log_words =
+bow_params_tfidf bow_tfidf_params_tfidf_log_words =
 {
   bow_tfidf_words,
   bow_tfidf_log
 };
 
-bow_params_tfidf bow_tfidf_params_log_occur =
+bow_params_tfidf bow_tfidf_params_tfidf =
+{
+  bow_tfidf_words,
+  bow_tfidf_log
+};
+
+bow_params_tfidf bow_tfidf_params_tfidf_log_occur =
 {
   bow_tfidf_occurrences,
   bow_tfidf_log
 };
 
 #define TFIDF_METHOD(PARAM_NAME)					\
-bow_method bow_method_tfidf_ ## PARAM_NAME =				\
+bow_method bow_method_ ## PARAM_NAME =					\
 {									\
-  "tfidf_" #PARAM_NAME,							\
+  #PARAM_NAME,								\
   bow_tfidf_set_weights,						\
   0,				/* no weight scaling function */	\
   bow_barrel_normalize_weights_by_vector_length,			\
@@ -329,17 +477,19 @@ bow_method bow_method_tfidf_ ## PARAM_NAME =				\
   bow_tfidf_score,							\
   bow_wv_set_weights_to_count,						\
   bow_wv_normalize_weights_by_vector_length,				\
-  bow_barrel_free,                                                      \
+  bow_barrel_free,							\
   &bow_tfidf_params_ ## PARAM_NAME					\
 };									\
-void _register_method_tfidf_ ## PARAM_NAME ()				\
+void _register_method_ ## PARAM_NAME ()					\
  __attribute__ ((constructor));						\
-void _register_method_tfidf_ ## PARAM_NAME ()				\
+void _register_method_ ## PARAM_NAME ()					\
 {									\
-  bow_method_register_with_name (&bow_method_tfidf_ ## PARAM_NAME,	\
-				 "tfidf_" #PARAM_NAME);			\
+  bow_method_register_with_name (&bow_method_ ## PARAM_NAME,		\
+				 #PARAM_NAME,				\
+				 NULL);					\
 }
 
-TFIDF_METHOD(words)
-TFIDF_METHOD(log_words)
-TFIDF_METHOD(log_occur)
+TFIDF_METHOD(tfidf_words)
+TFIDF_METHOD(tfidf_log_words)
+TFIDF_METHOD(tfidf_log_occur)
+TFIDF_METHOD(tfidf)

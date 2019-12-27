@@ -1,6 +1,6 @@
 /* Implementation of a one-to-one mapping of string->int, and int->string. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -278,6 +278,7 @@ bow_int4str_new_from_string_file (const char *filename)
   bow_int4str *map;
   const static int BUFLEN = 1024;
   char buf[BUFLEN];
+  int reading_numbers = 0;
 
   map = bow_int4str_new (0);
 
@@ -286,7 +287,24 @@ bow_int4str_new_from_string_file (const char *filename)
   while (fscanf (fp, "%s", buf) == 1)
     {
       assert (strlen (buf) < BUFLEN);
-      bow_str2int (map, buf);
+      if (reading_numbers == -1)
+	{
+	  /* Say that we are WI reading numbers instead of word strings
+	     if the first word consists of nothing but digits. */
+	  if (strspn (buf, "0123456789") == strlen (buf))
+	    {
+	      reading_numbers = 1;
+	      bow_verbosify (bow_progress, 
+			     "Reading words from file `%s' as indices\n",
+			     filename);
+	    }
+	  else
+	    reading_numbers = 0;
+	}
+      if (reading_numbers)
+	bow_str2int (map, bow_int2word (atoi (buf)));
+      else
+	bow_str2int (map, buf);
     }
   fclose (fp);
   return map;
@@ -311,7 +329,7 @@ bow_int4str_new_from_text_file (const char *filename)
     {
       /* Loop once for each document in this file. */
       while ((lex = bow_default_lexer->open_text_fp
-	      (bow_default_lexer, fp)))
+	      (bow_default_lexer, fp, filename)))
 	{
 	  /* Loop once for each lexical token in this document. */
 	  while (bow_default_lexer->get_word (bow_default_lexer, 

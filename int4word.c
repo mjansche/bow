@@ -1,6 +1,6 @@
 /* A convient interface to int4str.c, specifically for words. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -20,7 +20,9 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
 
 #include <bow/libbow.h>
+#include <bow/hdb.h>
 #include <assert.h>
+#include <stdio.h>
 
 /* The int/string mapping for bow's vocabulary words. */
 static bow_int4str *word_map = NULL;
@@ -71,6 +73,8 @@ bow_int2word (int index)
 {
   if (!word_map)
     bow_error ("No words yet added to the int-word mapping.\n");
+  if (index >= word_map->str_array_length)
+    return NULL;
   return bow_int2str (word_map, index);
 }
 
@@ -82,6 +86,16 @@ bow_word2int (const char *word)
   if (bow_word2int_do_not_add)
     return bow_str2int_no_add (word_map, word);
   return bow_str2int (word_map, word);
+}
+
+/* Given a WORD, return its "word index", WI, according to the global
+   word-int mapping; if it's not yet in the mapping, return -1. */
+int
+bow_word2int_no_add (const char *word)
+{
+  if (!word_map)
+    _bow_int4word_initialize ();
+  return bow_str2int_no_add (word_map, word);
 }
 
 /* Like bow_word2int(), except it also increments the occurrence count 
@@ -112,7 +126,9 @@ bow_word2int_add_occurrence (const char *word)
 int
 bow_words_occurrences_for_wi (int wi)
 {
-  assert (wi < word_map_counts_size);
+  assert (wi >= 0);
+  if (wi >= word_map_counts_size)
+    return 0;
   return word_map_counts[wi];
 }
 
@@ -235,40 +251,115 @@ bow_words_keep_top_by_infogain (int num_words_to_keep,
   float *wi2ig;
   int wi2ig_size;
   bow_int4str *new_map;
-  float max_ig;
-  int wi, max_ig_wi = -1;
-
+  int wi;
+  struct wiig_list_entry {
+    float ig;
+    int wi;
+  } *wiig_list;
+  /* For sorting the above entries. */
+  int compare_wiig_list_entry (const void *e1, const void *e2)
+    {
+      if (((struct wiig_list_entry*)e1)->ig >
+	  ((struct wiig_list_entry*)e2)->ig)
+	return -1;
+      else if (((struct wiig_list_entry*)e1)->ig ==
+	  ((struct wiig_list_entry*)e2)->ig)
+	return 0;
+      else return 1;
+    }
+  
   new_map = bow_int4str_new (0);
   wi2ig = bow_infogain_per_wi_new (barrel, num_classes, &wi2ig_size);
 
-  if (num_words_to_keep > wi2ig_size)
+  /* Make a list of the info gain numbers paired with their WI's,
+     in prepartion for sorting. */
+  wiig_list = alloca (sizeof (struct wiig_list_entry) * wi2ig_size);
+  for (wi = 0; wi < wi2ig_size; wi++)
+    {
+      wiig_list[wi].wi = wi;
+      wiig_list[wi].ig = wi2ig[wi];
+    }
+  /* Sort the list */
+  qsort (wiig_list, wi2ig_size, sizeof (struct wiig_list_entry), 
+	 compare_wiig_list_entry);
+
+
+  if (num_words_to_keep > wi2ig_size || num_words_to_keep <= 0)
     num_words_to_keep = wi2ig_size;
 
   /* Add NUM_WORDS_TO_KEEP words to the new vocabulary. */
-  while (num_words_to_keep--)
-    {
-      max_ig = -1.0f;
-      /* Find the word with the highest info gain. */
-      for (wi = 0; wi < wi2ig_size; wi++)
-	{
-	  assert (wi2ig[wi] >= 0 || wi2ig[wi] == -FLT_MAX);
-	  if (wi2ig[wi] > max_ig)
-	    {
-	      max_ig = wi2ig[wi];
-	      max_ig_wi = wi;
-	    }
-	}
-      assert (max_ig >= 0);
-      /* Add the highest info gain word. */
-      bow_str2int (new_map, bow_int2word (max_ig_wi));
-      /* Punch WI's info gain to the ground so we can find the
-	 next highest. */
-      wi2ig[max_ig_wi] = -FLT_MAX;
-    }
+  for (wi = 0; wi < num_words_to_keep; wi++)
+    if (bow_wi2dvf_dv (barrel->wi2dvf, wiig_list[wi].wi))
+      bow_str2int (new_map, bow_int2word (wiig_list[wi].wi));
 
   /* Replace the old map with the new map. */
   bow_words_set_map (new_map, 1);
   bow_free (wi2ig);
+}
+
+/* Add to the word occurrence counts reading all entries in HDB
+   database DIRNAME and parsing all the text files; skip any files
+   matching EXCEPTION_NAME. */
+int
+bow_words_add_occurrences_from_hdb (const char *dirname,
+				    const char *exception_name)
+{
+  int text_document_count = 0;
+  int total_word_count = 0;
+  char *filename, *data;
+
+  /* Open HDB database */
+  if (! hdb_open ((char *) dirname, 0))
+    {
+      bow_error ("bow_words_add_occurrences_from_hdb: Not able to open %s"
+		 " as an HDB\n  database\n", dirname);
+    }
+  bow_verbosify (bow_progress,
+		 "Counting words... files : unique-words :: "
+		 "                 ");
+  /* Loop through all filename/data pairs in the database */
+  while (hdb_each (&filename, &data, 0))
+    {
+      char word[BOW_MAX_WORD_LENGTH];
+      int wi;
+      bow_lex lex;
+
+      /* If the filename matches the exception name, return immediately. */
+      if (exception_name && !strcmp (filename, exception_name))
+	continue;
+
+      if (bow_str_is_text (data))
+	{
+	  lex.document = data;
+	  lex.document_length = strlen (data);
+	  lex.document_position = 0;
+	  
+	  /* Loop once for each lexical token in this document. */
+	  while (bow_default_lexer->get_word (bow_default_lexer, 
+					      &lex, word, 
+					      BOW_MAX_WORD_LENGTH))
+	    {
+	      /* Increment the word's occurrence count. */
+	      wi = bow_word2int_add_occurrence (word);
+	      if (wi < 0)
+		continue;
+	      /* Increment total word count */
+	      total_word_count++;
+	    }
+	  text_document_count++;
+	  if (text_document_count % 2 == 0)
+		bow_verbosify (bow_progress,
+			       "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
+			       "%6d : %6d", 
+			       text_document_count, bow_num_words ());
+	}
+      free (filename);
+      free (data);
+    }
+
+  hdb_close ();
+  bow_verbosify (bow_progress, "\n");
+  return total_word_count;
 }
 
 /* Add to the word occurrence counts by recursively decending directory 
@@ -296,7 +387,7 @@ bow_words_add_occurrences_from_text_dir (const char *dirname,
 	{
 	  /* Loop once for each document in this file. */
 	  while ((lex = bow_default_lexer->open_text_fp
-		  (bow_default_lexer, fp)))
+		  (bow_default_lexer, fp, filename)))
 	    {
 	      /* Loop once for each lexical token in this document. */
 	      while (bow_default_lexer->get_word (bow_default_lexer, 

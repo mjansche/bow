@@ -20,6 +20,7 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
 
 #include <bow/libbow.h>
+#include <bow/hdb.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -29,6 +30,47 @@
 #include <stdio.h>
 
 int bow_map_verbosity_level = bow_chatty;
+
+/* Calls the function CALLBACK for each of the files found in the
+   database DIRNAME_ARG.  See bow_map_filenames_from_dir for more info */
+int
+bow_map_filenames_from_hdb (int (*callback)(const char *filename,
+					    char *data,
+					    void *context),
+			    void *context,
+			    const char *dirname,
+			    const char *exclude_patterns)
+{
+  char *filename, *data;
+  int num_files = 0;
+
+  /* Open HDB database */
+  if (! hdb_open ((char *) dirname, 0))
+    {
+      bow_error ("bow_words_add_occurrences_from_hdb: Not able to open %s"
+		 " as an HDB\n  database\n", dirname);
+    }
+
+  if (bow_verbosity_use_backspace 
+      && bow_verbosity_level >= bow_map_verbosity_level)
+    bow_verbosify (bow_progress, "%s:       ", dirname);
+  
+  while (hdb_each (&filename, &data, 0))
+    {
+      /* Need some verbosity stuff in here... */
+      (*callback) (filename, data, context);
+      num_files++;
+      if (!bow_verbosify (bow_screaming, "%6d Adding %s\n",
+			  num_files, filename))
+	if (bow_verbosity_level >= bow_map_verbosity_level)
+	  bow_verbosify (bow_progress, "\b\b\b\b\b\b%6d", num_files);
+      free (filename);
+      free (data);
+    }
+  hdb_close ();
+
+  return num_files;
+}
 
 /* Calls the function CALLBACK for each of the filenames encountered
    when recursively descending the directory named DIRNAME.  CALLBACK
@@ -74,7 +116,11 @@ bow_map_filenames_from_dir (int (*callback)(const char *filename,
       perror (__PRETTY_FUNCTION__);
       getcwd (cwd, PATH_MAX);
       fprintf (stderr, "CWD is `%s'\n", cwd);
-      bow_error ("Couldn't open directory `%s'", dirname);
+      fprintf (stderr,"Couldn't open directory `%s'.  Opening as file.", dirname);
+      (*callback) (dirname, context);
+      return 1;
+      /*fprintf (stderr,"Couldn't open directory `%s'.  Skipping.", dirname);*/
+      /*bow_error ("Couldn't open directory `%s'", dirname);*/
     }
 
 #if 0

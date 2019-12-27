@@ -186,7 +186,7 @@ struct argp
 {
   /* An array of argp_option structures, terminated by an entry with both
      NAME and KEY having a value of 0.  */
-  __const struct argp_option *options;
+  struct argp_option *options;
 
   /* What to do with an option from this structure.  KEY is the key
      associated with the option, and ARG is any associated argument (NULL if

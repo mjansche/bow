@@ -182,6 +182,7 @@ const bow_lexer_indirect _bow_email_lexer =
   {
     sizeof (typeof (_bow_email_lexer)),
     bow_lexer_simple_open_text_fp,
+    bow_lexer_simple_open_str,
     bow_lexer_email_get_word,
     bow_lexer_simple_close,
     "",			/* document start pattern begins right away */

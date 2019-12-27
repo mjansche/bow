@@ -1,10 +1,11 @@
-#!/usr/bin/perl
+#!/usr/local/bin/perl
 # The above line is modified by ./Makefile to match the system's
 # installed location for Perl.
 
 # Script to process the output from Andrew's rainbow program and produce
 # useful summaries of the results. Feed the results intot stdin and 
 # all the summaries will arrive on stdout
+# Memory savings courtesy of Jason :)
 
 # If you pass the `-s' command line argument, print only the accuracy
 # average and standard deviation.
@@ -52,6 +53,14 @@ while (&read_trial() != 0) {
 
 exit;
 
+# generic sorting function
+sub bystring 
+{
+    if ($a gt $b) { return 1; }
+    elsif ($a eq $b) { return 0; }
+    return -1;
+}
+
 # Function to read in the results for one trial into three arrays - @ids, 
 # @actual_classifications and @predicted_classifications
 # What is the English description of these?
@@ -65,7 +74,9 @@ sub read_trial {
     undef @predicted_classifications;
     undef %classes_to_codes;
     undef @codes_to_classes;
+    $num_pages = 0;
 
+    $do_sort = 1;
     while (($line = <>) && ($line !~ /^\#[0-9]+$/)) {
 	
 	chop $line;
@@ -73,7 +84,9 @@ sub read_trial {
 	@line = split(' ', $line);
 
 	# Remove the filename from @line and append it to @ids
-	push(@ids, shift @line);
+	# push(@ids, shift @line);
+	shift @line;
+	$num_pages++;
 
 	if (length ($prune_from_classname) > 0) {
 	    # Remove $prune_from_classname from end of the actual classname
@@ -98,22 +111,51 @@ sub read_trial {
 	    push(@codes_to_classes, $line[0]);
 	}
 
-	push(@actual_classifications, shift @line);
-			    
-	push(@predicted_classifications, [ @line ]);
+#	$pred_class = $line[0];
+#	$pred_class =~ /^(.+):[\.0-9e+\-]+$/;
 
 	# Make sure we have codes for everything
-	foreach $pred (@line) {
-	    $pred =~ /^(.+):[\.0-9e+\-]+$/;
-
-	    if (grep(/^$1$/, @codes_to_classes) == 0) {
-		$classes_to_codes{$1} = @codes_to_classes;
-		push(@codes_to_classes, $1);
+	foreach $pred (@line)
+	{
+	    if ($pred =~ /^(.+):[\.0-9e+\-]+$/)
+	    {
+		if (grep(/^$1$/, @codes_to_classes) == 0) {
+		    $classes_to_codes{$1} = @codes_to_classes;
+		    push(@codes_to_classes, $1);
+		}
 	    }
 	}
+
+	# order the classes according to their names
+	if ($do_sort)
+	{
+	    @codes_to_classes = sort bystring @codes_to_classes;
+	    for ($i=0; $i < @codes_to_classes; $i++)
+	    {
+		$classes_to_codes{$codes_to_classes[$i]} = $i;
+	    }
+	    $do_sort = 0;
+	}
+			    
+#	$act_class = $line[0];
+#	push(@actual_classifications, shift @line);
+### Use integer codes instead of strings
+	$class_label = shift @line;
+	$class_id = $classes_to_codes{$class_label};
+	push(@actual_classifications, $class_id);
+
+#	push(@predicted_classifications, [ @line ]);
+#	push(@predicted_classifications, shift @line);
+### Use integer codes instead of strings
+	$class_tag = shift @line;
+	$class_tag =~ /^(.+):[\.0-9e+\-]+$/;
+	$class_label = $1;
+	$class_id = $classes_to_codes{$class_label};
+	push(@predicted_classifications, $class_id);
     }
 
-    if (@ids > 0) {
+#    if (@ids > 0) {
+    if ($num_pages > 0) {
 	return 1;
     } else {
 	return 0;
@@ -130,9 +172,11 @@ sub calculate_accuracy {
     $correct = 0;
     $total = 0;
 
-    for ($i = 0; $i < @ids; $i++) {
-	$predicted_classifications[$i][0] =~ /^(.+):[\.0-9e+\-]+$/;
-	if ($actual_classifications[$i] eq $1) {
+#    for ($i = 0; $i < @ids; $i++) {
+    for ($i = 0; $i < $num_pages; $i++) {
+#	$predicted_classifications[$i][0] =~ /^(.+):[\.0-9e+\-]+$/;
+#	$predicted_classifications[$i] =~ /^(.+):[\.0-9e+\-]+$/;
+	if ($actual_classifications[$i] == $predicted_classifications[$i]) {
 	    $correct++;
 	}
 	$total++;
@@ -182,13 +226,17 @@ sub confusion {
 
     print "\n - Confusion details, row is actual, column is predicted\n";
     # Loop over all the examples
-    for ($i = 0; $i < @ids; $i++) {
+#    for ($i = 0; $i < @ids; $i++) {
+    for ($i = 0; $i < $num_pages; $i++) {
 
-	$actual = $actual_classifications[$i];
-	$actual_code = $classes_to_codes{$actual};
+#	$actual = $actual_classifications[$i];
+#	$actual_code = $classes_to_codes{$actual};
+	$actual_code = $actual_classifications[$i];
 
-	$predicted_classifications[$i][0] =~ /^(.+):[\.0-9e+\-]+$/;
-	$predicted_code = $classes_to_codes{$1};
+#	$predicted_classifications[$i][0] =~ /^(.+):[\.0-9e+\-]+$/;
+#	$predicted_classifications[$i] =~ /^(.+):[\.0-9e+\-]+$/;
+#	$predicted_code = $classes_to_codes{$1};
+	$predicted_code = $predicted_classifications[$i];
 
 	$confusion[$actual_code][$predicted_code] += 1;
     }
@@ -235,3 +283,5 @@ sub confusion {
     }
     print "\n";
 }
+
+

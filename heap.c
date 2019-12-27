@@ -1,6 +1,6 @@
 /* Implementation of the ?? heap for the bow library */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Sean Slattery <slttery@cs.cmu.edu>
 
@@ -184,6 +184,11 @@ bow_make_dv_heap_from_wi2dvf(bow_wi2dvf *wi2dvf)
   heap->length = hi;
   for (hi = (heap->length)/2; hi > 0; hi--) 
     bow_heapify (heap, hi);
+
+  heap->heap_wv = NULL;
+  /* This special -2 value used in split.c */
+  heap->heap_wv_di = -2;
+  heap->last_di = -2;
 
   return heap;
 }

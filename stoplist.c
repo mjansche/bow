@@ -1,6 +1,6 @@
 /* Determine if a word is on the stoplist or not. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -69,6 +69,16 @@ bow_stoplist_add_from_file (const char *filename)
   bow_verbosify (bow_verbose, "Added %d words from `./.bow-stopwords'\n",
 		 count);
   return count;
+}
+
+/* Empty the default stoplist, and add space-delimited words from FILENAME. */
+void
+bow_stoplist_replace_with_file (const char *filename)
+{
+  if (stopword_map)
+    bow_int4str_free (stopword_map);
+  stopword_map = bow_int4str_new (0);
+  bow_stoplist_add_from_file (filename);
 }
 
 void

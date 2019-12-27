@@ -1,6 +1,6 @@
 /* Functions to calculate the information gain for each word in our corpus. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Sean Slattery <slttery@cs.cmu.edu>
    and Andrew Kachites McCallum <mccallum@cs.cmu.edu>
@@ -24,18 +24,13 @@
 #include <bow/libbow.h>
 #include <math.h>
 
-/* A bogus hack.  If non-zero, leave out the last class from the infogain
-   calculations. */
-#define LEAVE_OUT_LAST_CLASS 0
-
 #if !HAVE_LOG2F
 #define log2f log
 #endif
 
-/* Helper function to calculate the entropy given counts for each type of
-   element. */
+/* Return the entropy given counts for each type of element. */
 double
-bow_entropy (float counts[], int num_classes)
+bow_entropy (float *counts, int num_counts)
 {
   double total = 0;		/* How many elements we have in total */
   double entropy = 0.0;
@@ -43,7 +38,7 @@ bow_entropy (float counts[], int num_classes)
   int i;
 
   /* First total the array. */
-  for (i = 0; i < num_classes; i++)
+  for (i = 0; i < num_counts; i++)
     total += counts[i];
 
   /* If we have no elements, then the entropy is zero. */
@@ -52,12 +47,12 @@ bow_entropy (float counts[], int num_classes)
   }
 
   /* Now calculate the entropy */
-  for (i = 0; i < num_classes; i++)
+  for (i = 0; i < num_counts; i++)
     {
       if (counts[i] != 0)
 	{
-	  fraction = (float)counts[i] / (float)total;
-	  entropy -= (fraction * log2f (fraction));
+	  fraction = counts[i] / total;
+	  entropy -= fraction * log2f (fraction);
 	}
     }
 
@@ -67,7 +62,8 @@ bow_entropy (float counts[], int num_classes)
 /* Return a malloc()'ed array containing an infomation-gain score for
    each word index. */
 float *
-bow_infogain_per_wi_new (bow_barrel *barrel, int num_classes, int *size)
+bow_infogain_per_wi_new_document_event (bow_barrel *barrel, int num_classes, 
+					int *size)
 {
   float grand_totals[num_classes];  /* Totals for each class. */
   float with_word[num_classes];	    /* Totals for the set of model docs
@@ -93,7 +89,7 @@ bow_infogain_per_wi_new (bow_barrel *barrel, int num_classes, int *size)
 
   max_wi = MIN (barrel->wi2dvf->size, bow_num_words());
   *size = max_wi;
-  ret = bow_malloc (max_wi * sizeof (int));
+  ret = bow_malloc (max_wi * sizeof (float));
 
   /* First set all the arrays to zero */
   for(i = 0; i < num_classes; i++) 
@@ -107,11 +103,7 @@ bow_infogain_per_wi_new (bow_barrel *barrel, int num_classes, int *size)
   for (i = 0; i < barrel->cdocs->length ; i++)
     {
       doc = bow_cdocs_di2doc (barrel->cdocs, i);
-      if (doc->type == model 
-#if LEAVE_OUT_LAST_CLASS
-	  && doc->class != num_classes-1
-#endif
-	  ) 
+      if (doc->type == bow_doc_train) 
 	{
 	  grand_totals[doc->class] += doc->prior;
 	  grand_total += doc->prior;
@@ -139,11 +131,7 @@ bow_infogain_per_wi_new (bow_barrel *barrel, int num_classes, int *size)
 	{
 	  di = dv->entry[j].di;
 	  doc = bow_cdocs_di2doc (barrel->cdocs, di);
-	  if (doc->type == model
-#if LEAVE_OUT_LAST_CLASS
-	      && doc->class != num_classes-1
-#endif
-	      )
+	  if (doc->type == bow_doc_train)
 	    {
 	      with_word[doc->class] += doc->prior;
 	      with_word_total += doc->prior;
@@ -185,6 +173,142 @@ bow_infogain_per_wi_new (bow_barrel *barrel, int num_classes, int *size)
     }
   bow_verbosify (bow_progress, "\n");
   return ret;
+}
+
+/* Return a malloc()'ed array containing an infomation-gain score for
+   each word index. */
+float *
+bow_infogain_per_wi_new_word_event (bow_barrel *barrel, int num_classes, 
+				    int *size)
+{
+  float grand_totals[num_classes];  /* Totals for each class. */
+  float with_word[num_classes];	    /* Totals for the set of model docs
+				       with this word. */
+  float without_word[num_classes];  /* Totals for the set of model docs
+				       without this word. */
+  int max_wi;			    /* the highest "word index" in WI2DVF. */
+  bow_cdoc *doc;                    /* The working cdoc. */
+  double total_entropy;             /* The entropy of the total collection. */
+  double with_word_entropy;         /* The entropy of the set of docs with
+				       the word in question. */
+  double without_word_entropy;      /* The entropy of the set of docs without
+				       the word in question. */
+  float grand_total; 
+  float with_word_total = 0;
+  float without_word_total = 0;
+  int i, j, wi, di;
+  bow_dv *dv;
+  float *ret;
+
+  bow_verbosify (bow_progress, 
+		 "Calculating info gain... words ::          ");
+
+  max_wi = MIN (barrel->wi2dvf->size, bow_num_words());
+  *size = max_wi;
+  ret = bow_malloc (max_wi * sizeof (float));
+
+  /* First set the arrays to zero */
+  for(i = 0; i < num_classes; i++) 
+    grand_totals[i] = 0;
+  grand_total = 0;
+
+  /* Now set up the grand totals. */
+  for (wi = 0; wi < max_wi; wi++) 
+    {
+      /* Get this document vector */
+      dv = bow_wi2dvf_dv (barrel->wi2dvf, wi);
+      if (dv == NULL)
+	continue;
+      for (j = 0; j < dv->length; j++)
+	{
+	  di = dv->entry[j].di;
+	  doc = bow_array_entry_at_index (barrel->cdocs, di);
+	  if (doc->type == bow_doc_train)
+	    {
+	      grand_totals[doc->class] += dv->entry[j].count;
+	      grand_total += dv->entry[j].count;
+	    }
+	}
+    }
+
+  /* Calculate the total entropy */
+  total_entropy = bow_entropy (grand_totals, num_classes);
+
+
+  /* Now calculate the information gain of each word. */
+  for (wi = 0; wi < max_wi; wi++) 
+    {
+      /* Get this document vector */
+      dv = bow_wi2dvf_dv (barrel->wi2dvf, wi);
+      if (dv == NULL)
+	{
+	  ret[wi] = 0;
+	  continue;
+	}
+
+      /* Reset arrays to zero */
+      for(i = 0; i < num_classes; i++) 
+	{
+	  with_word[i] = 0;
+	  without_word[i] = 0;
+	}
+      with_word_total = 0;
+
+      /* Create totals for this dv. */
+      for (j = 0; j < dv->length; j++)
+	{
+	  di = dv->entry[j].di;
+	  doc = bow_cdocs_di2doc (barrel->cdocs, di);
+	  if (doc->type == bow_doc_train)
+	    {
+	      with_word[doc->class] += dv->entry[j].count;
+	      with_word_total += dv->entry[j].count;
+	    }
+	}
+
+      /* Create without word totals. */
+      for (j = 0; j < num_classes; j++)
+	{
+	  without_word[j] = grand_totals[j] - with_word[j];
+	}
+      without_word_total = grand_total - with_word_total;
+
+      /* Calculate entropies */
+      with_word_entropy = bow_entropy(with_word, num_classes);
+      without_word_entropy = bow_entropy(without_word, num_classes);
+
+      /* Calculate and store the information gain. */
+      ret[wi] = (total_entropy 
+		 - ((((double)with_word_total / (double)grand_total) 
+		     * with_word_entropy)
+		    + (((double)without_word_total / (double)grand_total) 
+		       * without_word_entropy)));
+      /* Not comparing with 0 here because of round-off error. */
+      assert (ret[wi] >= -1e-7);
+
+      if (ret[wi] < 0)
+	ret[wi] = 0;
+
+      if (wi % 100 == 0)
+	bow_verbosify (bow_progress,
+		       "\b\b\b\b\b\b\b\b\b%9d", max_wi - wi);
+    }
+  bow_verbosify (bow_progress, "\n");
+  return ret;
+}
+
+float *
+bow_infogain_per_wi_new (bow_barrel *barrel, int num_classes, int *size)
+{
+  if (bow_infogain_event_model == bow_event_word)
+    return bow_infogain_per_wi_new_word_event (barrel, num_classes, size);
+  else if (bow_infogain_event_model == bow_event_document)
+    return bow_infogain_per_wi_new_document_event (barrel, num_classes, size);
+  else if (bow_infogain_event_model == bow_event_document_then_word)
+    bow_error ("document_then_word for infogain not implemented");
+  else
+    bow_error ("bad bow_infogain_event_model");
+  return NULL;
 }
 
 /* Return a malloc()'ed array containing an infomation-gain score for
@@ -237,7 +361,7 @@ bow_infogain_per_wi_new_using_pairs (bow_barrel *barrel, int num_classes,
   for (i = 0; i < barrel->cdocs->length ; i++)
     {
       doc1 = bow_cdocs_di2doc (barrel->cdocs, i);
-      if (doc1->type == model) 
+      if (doc1->type == bow_doc_train) 
 	{
 	  count[doc1->class] += doc1->prior;
 	  count_total += doc1->prior;
@@ -276,7 +400,7 @@ bow_infogain_per_wi_new_using_pairs (bow_barrel *barrel, int num_classes,
 	      doc1 = bow_cdocs_di2doc (barrel->cdocs, dv1->entry[dvi1].di);
 	      doc2 = bow_cdocs_di2doc (barrel->cdocs, dv2->entry[dvi2].di);
 	      /* We found a document with both WI1 and WI2 */
-	      if (doc1->type == model && doc2->type == model)
+	      if (doc1->type == bow_doc_train && doc2->type == bow_doc_train)
 		{
 		  count_with_pair[doc1->class] += doc1->prior;
 		  count_with_pair_total += doc1->prior;

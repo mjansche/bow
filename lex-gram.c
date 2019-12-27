@@ -1,6 +1,6 @@
 /* A simple N-gram lexer. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -25,9 +25,20 @@
 #define LEX ((bow_lex_gram*)lex)
 
 bow_lex *
-bow_lexer_gram_open_text_fp (bow_lexer *self, FILE *fp)
+bow_lexer_gram_open_text_fp (bow_lexer *self, FILE *fp,
+			     const char *filename)
 {
-  bow_lex *lex = bow_lexer_indirect_open_text_fp (self, fp);
+  bow_lex *lex = bow_lexer_indirect_open_text_fp (self, fp, filename);
+  if (lex == NULL)
+    return NULL;
+  LEX->gram_size_this_time = SELF->gram_size;
+  return lex;
+}
+
+bow_lex *
+bow_lexer_gram_open_str (bow_lexer *self, char *buf)
+{
+  bow_lex *lex = bow_lexer_indirect_open_str (self, buf);
   if (lex == NULL)
     return NULL;
   LEX->gram_size_this_time = SELF->gram_size;
@@ -99,6 +110,7 @@ const bow_lexer_gram _bow_gram_lexer =
     {
       sizeof (typeof (_bow_gram_lexer)),
       bow_lexer_gram_open_text_fp,
+      bow_lexer_gram_open_str,
       bow_lexer_gram_get_word,
       bow_lexer_indirect_close,
       "",			/* document start pattern begins right away */

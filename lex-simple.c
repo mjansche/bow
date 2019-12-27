@@ -1,6 +1,6 @@
 /* Implementation of some simple, context-free lexers. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -31,12 +31,16 @@
 /* This function is defined in scan.c */
 extern int bow_scan_fp_for_string (FILE *fp, const char *string, int oneline);
 
+/* This function is defined in scan.c */
+extern int bow_scan_str_for_string (char *buf, const char *string, int oneline);
+
 /* Create and return a BOW_LEX, filling the document buffer from
    characters in FP, starting after the START_PATTERN, and ending with
    the END_PATTERN. */
 bow_lex *
 bow_lexer_simple_open_text_fp (bow_lexer *self, 
-			       FILE *fp)
+			       FILE *fp,
+			       const char *filename)
 {
   int document_size = 2048;	/* the initial size of the document buffer */
   int len;			/* an index into RET->DOCUMENT */
@@ -78,6 +82,9 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
 	 file descriptor position isn't where stdio left it. */
       pre_pipe_fp = fp;
       lseek (fileno (fp), ftell (fp), SEEK_SET);
+      /* Set the environment variable RAINBOW_LEX_FILENAME to the
+	 fully qualified pathname of the file being read. */
+      setenv ("RAINBOW_LEX_FILENAME", filename, 1);
       fp = popen (redirected_command, "r");
       if (!fp)
 	bow_error ("Could not create pipe to `%s'\n", bow_lex_pipe_command);
@@ -144,6 +151,8 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
       return NULL;
     }
 
+  /* If this code is reintroduced, make sure to modify
+     bow_lexer_simple_open_str accordingly */
 #if 0
   /* xxx CAREFUL!  If BOW_LEX_PIPE_COMMAND was used, FP isn't what you
      want it to be. */
@@ -160,6 +169,107 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
       len -= end_pattern_len;
     }
 #endif
+  
+  /* Remember, it may be the case that LEN is zero. */
+  ret->document_position = 0;
+  ret->document_length = len;
+  assert (ret->document_length < document_size);
+  ((char*)ret->document)[ret->document_length] = '\0';
+  return ret;
+}
+
+/* Create and return a BOW_LEX, filling the document buffer from
+   characters in BUF, starting after the START_PATTERN, and ending with
+   the END_PATTERN.  NOTE: BUF is not modified, nor does it need to 
+   be saved for future use. */
+bow_lex *
+bow_lexer_simple_open_str (bow_lexer *self, 
+			   char *buf)
+{
+  int document_size = 2048;	/* the initial size of the document buffer */
+  int len;			/* an index into RET->DOCUMENT */
+  bow_lex *ret;			/* the BOW_LEX we will return.  */
+  const char *end_pattern_ptr;
+  int byte;			/* a character read from FP */
+  int bufpos = 0;
+  int start_pos = 0;
+  
+  if (!buf)
+    return NULL;
+  
+  /* Create space for the document buffer. */
+  ret = bow_malloc (self->sizeof_lex);
+  ret->document = bow_malloc (document_size);
+  
+  /* Make sure DOCUMENT_START_PATTERN is not NULL; this would cause
+     it to scan forward to EOF. */
+  assert (self->document_start_pattern);
+  
+  /* Scan forward in the file until we find the start pattern. */
+  start_pos = bow_scan_str_for_string (buf, self->document_start_pattern, 0);
+  
+  /* Make sure the DOCUMENT_END_PATTERN isn't the empty string; this
+     would cause it to match and finish filling immediately. */
+  assert (!self->document_end_pattern || self->document_end_pattern[0]);
+  
+  if (bow_lex_pipe_command)
+    bow_verbosify (bow_quiet,
+		   "bow_lexer_simple_open_str: Ignoring lex-pipe command\n");
+  
+  /* Fill the document buffer until we find the terminating null character,
+     or until we get to the DOCUMENT_END_PATTERN. */
+  for (len = 0, end_pattern_ptr = self->document_end_pattern,
+	 bufpos = start_pos;
+       /* We got terminating null */
+       (((byte = buf[bufpos++]) != '\0')
+	/* We found the DOCUMENT_END_PATTERN */ 
+	&& !(end_pattern_ptr 
+	     && *end_pattern_ptr == byte && *(end_pattern_ptr+1) == '\0'));
+       len++)
+    {
+      if (len >= document_size-1)
+	{
+	  /* The RET->DOCUMENT buffer must grow to accommodate more chars. */
+	  /* We need `DOCUMENT_SIZE-1' in the above test, because we
+	     must have room for the terminating '\0'! */
+	  document_size *= 2;
+	  ret->document = bow_realloc (ret->document, document_size);
+	}
+      
+      /* Put the byte in the document buffer. */
+      ret->document[len] = byte;
+      
+      /* If the byte matches the next character of the DOCUMENT_END_PATTERN
+	 then prepare to match the next character of the pattern,
+	 otherwise reset to the beginning of the pattern. */
+      if (end_pattern_ptr)
+	{
+	  if (byte == *end_pattern_ptr)
+	    end_pattern_ptr++;
+	  else if (byte == self->document_end_pattern[0])
+	    end_pattern_ptr = self->document_end_pattern+1;
+	  else
+	    end_pattern_ptr = self->document_end_pattern;
+	}
+    }
+  
+  if (len == 0)
+    {
+      bow_free (ret->document);
+      bow_free (ret);
+      return NULL;
+    }
+  
+  /* Include this code if we decid to push document_end_pattern back
+     into document. */
+#if 0
+  {
+    int end_pattern_len = (self->document_end_pattern
+			   ? strlen (self->document_end_pattern)
+			   : 0);
+    len -= end_pattern_len;
+  }
+#endif
 
   /* Remember, it may be the case that LEN is zero. */
   ret->document_position = 0;
@@ -168,6 +278,7 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
   ((char*)ret->document)[ret->document_length] = '\0';
   return ret;
 }
+
 
 /* Close the LEX buffer, freeing the memory held by it. */
 void
@@ -364,6 +475,7 @@ const bow_lexer_simple _bow_alpha_lexer =
   {
     sizeof (typeof (_bow_alpha_lexer)),
     bow_lexer_simple_open_text_fp,
+    bow_lexer_simple_open_str,
     bow_lexer_simple_get_word,
     bow_lexer_simple_close,
     "",				/* document start pattern begins right away */
@@ -390,6 +502,7 @@ const bow_lexer_simple _bow_alpha_only_lexer =
   {
     sizeof (typeof (_bow_alpha_only_lexer)),
     bow_lexer_simple_open_text_fp,
+    bow_lexer_simple_open_str,
     bow_lexer_simple_get_word,
     bow_lexer_simple_close,
     "",				/* document start pattern begins right away */
@@ -418,6 +531,7 @@ const bow_lexer_simple _bow_white_lexer =
   {
     sizeof (typeof (_bow_white_lexer)),
     bow_lexer_simple_open_text_fp,
+    bow_lexer_simple_open_str,
     bow_lexer_simple_get_word,
     bow_lexer_simple_close,
     "",				/* document start pattern begins right away */

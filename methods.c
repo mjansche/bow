@@ -1,5 +1,5 @@
 /* Managing all the word-vector weighting/scoring methods
-   Copyright (C) 1997 Andrew McCallum
+   Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@jprc.com>
 
@@ -19,19 +19,27 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
 
 #include <bow/libbow.h>
+#include <argp/argp.h>
+
+#define METHOD_ARGP_GROUP_OFFSET 2000
 
 bow_sarray *bow_methods = NULL;
 
 /* Associate method M with the string NAME, so the method structure can
    be retrieved later with BOW_METHOD_AT_NAME(). */
 int
-bow_method_register_with_name (bow_method *m, const char *name)
+bow_method_register_with_name (bow_method *m, const char *name,
+			       struct argp_child *child)
 {
+  int method_number;
   if (!bow_methods)
     {
       bow_methods = bow_sarray_new (0, sizeof (bow_method), 0);
     }
-  return bow_sarray_add_entry_with_keystr (bow_methods, m, name);
+  method_number = bow_sarray_add_entry_with_keystr (bow_methods, m, name);
+  if (child)
+    child->argp->options[0].group = METHOD_ARGP_GROUP_OFFSET + method_number;
+  return method_number;
 }
 
 /* Return a pointer to a method structure that was previous registered 

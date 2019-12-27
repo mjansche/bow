@@ -1,7 +1,7 @@
 /* Weight-setting and scoring implementation for PrInd classification
    (Fuhr's Probabilistic Indexing) */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -22,6 +22,69 @@
 
 #include <bow/libbow.h>
 #include <math.h>
+#include <argp.h>
+
+
+static struct argp_option prind_options[] =
+{
+  {0,0,0,0,
+   "Probabilistic Indexing options, --method=prind:", 80},
+  {"prind-non-uniform-priors", 'U', 0, 0,
+   "Make PrInd use non-uniform class priors."},
+  {"prind-no-foilgain-weight-scaling", 'G', 0, 0,
+   "Don't have PrInd scale its weights by Quinlan's FoilGain."},
+  {"prind-no-score-normalization", 'N', 0, 0,
+   "Don't have PrInd normalize its class scores to sum to one."},
+  {0,0}
+};
+
+error_t
+prind_parse_opt (int key, char *arg, struct argp_state *state)
+{
+  switch (key)
+    {
+    case 'U':
+      /* Don't have PrTFIDF use uniform class prior probabilities */
+      ((bow_params_prind*)(bow_method_prind.params))->uniform_priors
+	= bow_no;
+      break;
+    case 'G':
+      /* Don't scale weights (by foilgain or anything else) */
+      {
+	int i;
+	bow_method *m;
+	for (i = 0; i < bow_methods->array->length; i++)
+	  {
+	    m = bow_sarray_entry_at_index (bow_methods, i);
+	    if (m)
+	      m->scale_weights = NULL;
+	  }
+	break;
+      }
+    case 'N':
+      /* Don't normalize the scores from PrInd. */
+      ((bow_params_prind*)(bow_method_prind.params))->normalize_scores
+	= bow_no;
+      break;
+    default:
+      return ARGP_ERR_UNKNOWN;
+    }
+  return 0;
+}
+
+static const struct argp prind_argp =
+{
+  prind_options,
+  prind_parse_opt
+};
+
+static struct argp_child prind_argp_child =
+{
+  &prind_argp,		/* This child's argp structure */
+  0,			/* flags for child */
+  0,			/* optional header in help message */
+  0			/* arbitrary group number for ordering */
+};
 
 
 /* Function to assign `PrInd'-style weights to each element of
@@ -74,7 +137,7 @@ bow_prind_set_weights (bow_barrel *barrel)
 	{
 	  cdoc = bow_array_entry_at_index (barrel->cdocs, 
 					   dv->entry[dvi].di);
-	  if (cdoc->type != model)
+	  if (cdoc->type != bow_doc_train)
 	    continue;
 	  /* Summing total number of words in each class */
 	  cdoc->word_count += dv->entry[dvi].count;
@@ -103,7 +166,7 @@ bow_prind_set_weights (bow_barrel *barrel)
 	  cdoc = bow_array_entry_at_index (barrel->cdocs, 
 					   dv->entry[dvi].di);
 	  /* Skip this document/class if it is not part of the model. */
-	  if (cdoc->type != model)
+	  if (cdoc->type != bow_doc_train)
 	    {
 	      dv->entry[dvi].weight = 0;
 	      continue;
@@ -191,7 +254,7 @@ bow_prind_score (bow_barrel *barrel, bow_wv *query_wv,
 	  cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
 
 	  /* Skip this document/class if it is not part of the model. */
-	  if (cdoc->type != model)
+	  if (cdoc->type != bow_doc_train)
 	    {
 	      scores[ci] = 0;
 	      continue;
@@ -304,6 +367,11 @@ bow_method bow_method_prind =
 void _register_method_prind () __attribute__ ((constructor));
 void _register_method_prind ()
 {
-  bow_method_register_with_name (&bow_method_prind, "prind");
+  static int done = 0;
+  if (done) 
+    return;
+  bow_method_register_with_name (&bow_method_prind, "prind", NULL);
+  bow_argp_add_child (&prind_argp_child);
+  done = 1;
 }
 

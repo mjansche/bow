@@ -1,5 +1,5 @@
 /* Managing the connection between document-vectors (wi2dvf's) and cdocs
-   Copyright (C) 1997 Andrew McCallum
+   Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -19,6 +19,7 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
 
 #include <bow/libbow.h>
+#include <bow/hdb.h>
 
 static int _bow_barrel_version = -1;
 #define BOW_DEFAULT_BARREL_VERSION 3
@@ -90,6 +91,97 @@ bow_barrel_add_document (bow_barrel *barrel,
 }
 
 /* Add statistics to the barrel BARREL by indexing all the documents
+   in HDB database DIRNAME.  Return the number of additional
+   documents indexed. */
+int
+bow_barrel_add_from_hdb (bow_barrel *barrel, 
+			 const char *dirname, 
+			 const char *except_name,
+			 const char *classname)
+{
+  int text_file_count, binary_file_count;
+  int class;
+  char *filename, *data;
+ 
+  if (!(barrel->classnames))
+    barrel->classnames = bow_int4str_new (0);
+  class = bow_str2int (barrel->classnames, classname);
+  bow_verbosify (bow_progress,
+		 "Gathering stats... files : unique-words :: "
+		 "                 ");
+  text_file_count = binary_file_count = 0;
+
+  /* Open HDB database */
+  if (! hdb_open ((char *)dirname, 0))
+    {
+      bow_error ("bow_words_add_occurrences_from_hdb: Not able to open %s"
+		 " as an HDB\n  database\n", dirname);
+    }
+
+  /* Loop through all filename/data pairs in the database */
+  while (hdb_each (&filename, &data, 0))
+    {
+      bow_cdoc cdoc;
+      bow_cdoc *cdocp;
+      int di;			/* a document index */
+      int num_words;
+
+      /* If the filename matches the exception name, return immediately. */
+      if (except_name && !strcmp (filename, except_name))
+	continue;
+
+      if (bow_str_is_text (data))
+	{
+	  /* The file contains text; snarf the words and put them in
+	     the WI2DVF map. */
+	  cdoc.type = bow_doc_train;
+	  cdoc.class = class;
+	  /* Set to one so bow_infogain_per_wi_new() works correctly
+	     by default. */
+	  cdoc.prior = 1.0f;
+	  assert (cdoc.class >= 0);
+	  cdoc.filename = strdup (filename);
+	  assert (cdoc.filename);
+	  cdoc.class_probs = NULL;
+	  /* Add the CDOC to CDOCS, and determine the "index" of this
+             document. */
+	  di = bow_array_append (barrel->cdocs, &cdoc);
+	  /* Add all the words in this document. */
+	  /*
+	    num_words = bow_wi2dvf_add_di_text_fp (&(barrel->wi2dvf), di, fp,
+						 filename);
+	  */
+	  num_words = bow_wi2dvf_add_di_text_str (&(barrel->wi2dvf), di, data,
+						  filename);
+	  /* Fill in the new CDOC's idea of WORD_COUNT */
+	  cdocp = bow_array_entry_at_index (barrel->cdocs, di);
+	  cdocp->word_count = num_words;
+	  text_file_count++;
+	}
+      else
+	{
+	  bow_verbosify (bow_progress,
+			 "\nFile `%s' skipped because not text\n",
+			 filename);
+	  binary_file_count++;
+	}
+      bow_verbosify (bow_progress,
+		     "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
+		     "%6d : %8d", 
+		     text_file_count, bow_num_words ());
+      free (filename);
+      free (data);
+    }
+  hdb_close ();
+
+  bow_verbosify (bow_progress, "\n");
+  if (binary_file_count > text_file_count)
+    bow_verbosify (bow_quiet,
+		   "Found mostly binary files, which were ignored.\n");
+  return text_file_count;
+}
+
+/* Add statistics to the barrel BARREL by indexing all the documents
    found when recursively decending directory DIRNAME.  Return the number
    of additional documents indexed. */
 int
@@ -119,8 +211,10 @@ bow_barrel_add_from_text_dir (bow_barrel *barrel,
 	{
 	  /* The file contains text; snarf the words and put them in
 	     the WI2DVF map. */
-	  cdoc.type = model;
+	  cdoc.type = bow_doc_train;
 	  cdoc.class = class;
+	  /* Set to one so bow_infogain_per_wi_new() works correctly
+	     by default. */
 	  cdoc.prior = 1.0f;
 	  assert (cdoc.class >= 0);
 	  cdoc.filename = strdup (filename);
@@ -130,7 +224,8 @@ bow_barrel_add_from_text_dir (bow_barrel *barrel,
              document. */
 	  di = bow_array_append (barrel->cdocs, &cdoc);
 	  /* Add all the words in this document. */
-	  num_words = bow_wi2dvf_add_di_text_fp (&(barrel->wi2dvf), di, fp);
+	  num_words = bow_wi2dvf_add_di_text_fp (&(barrel->wi2dvf), di, fp,
+						 filename);
 	  /* Fill in the new CDOC's idea of WORD_COUNT */
 	  cdocp = bow_array_entry_at_index (barrel->cdocs, di);
 	  cdocp->word_count = num_words;
@@ -145,8 +240,8 @@ bow_barrel_add_from_text_dir (bow_barrel *barrel,
 	}
       fclose (fp);
       bow_verbosify (bow_progress,
-		     "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
-		     "%6d : %6d", 
+		     "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
+		     "%6d : %8d", 
 		     text_file_count, bow_num_words ());
       return 1;
     }
@@ -195,7 +290,7 @@ bow_barrel_set_cdoc_priors_to_class_uniform (bow_barrel *barrel)
 	  for ( ; old_size < ci2dc_size; old_size++)
 	    ci2dc[old_size] = 0;
 	}
-      if (cdoc->type == model)
+      if (cdoc->type == bow_doc_train)
 	{
 	  if (ci2dc[cdoc->class] == 0)
 	    num_non_zero_ci2dc_entries++;
@@ -207,7 +302,7 @@ bow_barrel_set_cdoc_priors_to_class_uniform (bow_barrel *barrel)
   for (di = 0; di < barrel->cdocs->length; di++)
     {
       cdoc = bow_array_entry_at_index (barrel->cdocs, di);
-      if (cdoc->type == model)
+      if (cdoc->type == bow_doc_train)
 	{
 	  cdoc->prior = (1.0 /
 			 (num_non_zero_ci2dc_entries * ci2dc[cdoc->class]));
@@ -225,7 +320,7 @@ bow_barrel_set_cdoc_priors_to_class_uniform (bow_barrel *barrel)
     for (di = 0; di < barrel->cdocs->length; di++)
       {
 	cdoc = bow_array_entry_at_index (barrel->cdocs, di);
-	if (cdoc->type == model)
+	if (cdoc->type == bow_doc_train)
 	  prior_total += cdoc->prior;
       }
     assert (prior_total < 1.1 && prior_total > 0.9);
@@ -250,6 +345,26 @@ bow_barrel_prune_words_not_in_map (bow_barrel *barrel,
       if (bow_str2int_no_add (map, bow_int2word (wi)) == -1)
 	{
 	  /* Word WI is not in MAP.  Remove it from the BARREL. */
+	  bow_wi2dvf_hide_wi (barrel->wi2dvf, wi);
+	}
+    }
+}
+
+/* Modify the BARREL by removing those entries for words that are in
+   the int/str mapping MAP. */
+void
+bow_barrel_prune_words_in_map (bow_barrel *barrel,
+			       bow_int4str *map)
+{
+  int i;
+  int wi;
+  
+  /* For each word in MAP. */
+  for (i = 0; i < map->str_array_length; i++)
+    {
+      if ((wi = bow_word2int (bow_int2str (map, i))) != -1)
+	{
+	  /* Word WI is in MAP.  Remove it from the BARREL. */
 	  bow_wi2dvf_hide_wi (barrel->wi2dvf, wi);
 	}
     }
@@ -490,7 +605,9 @@ bow_barrel_new_from_printed_barrel_file (const char *filename,
   int sparse_format = 1;
   int di;
   bow_cdoc cdoc;
-  int wi, count;
+  int wi;
+  float count;
+  int int_count;
   char datafilename[BOW_MAX_WORD_LENGTH];
   char classname[BOW_MAX_WORD_LENGTH];
   int word_count_column;
@@ -498,7 +615,7 @@ bow_barrel_new_from_printed_barrel_file (const char *filename,
   char *buf, *line;
   bow_barrel *ret;
   /* Returns 1 on success, 0 on failure. */
-  int read_word_count (char **string, int *wi, int *count)
+  int read_word_count (char **string, int *wi, float *count)
     {
       char word[BOW_MAX_WORD_LENGTH];
       int ret = 0;
@@ -506,20 +623,20 @@ bow_barrel_new_from_printed_barrel_file (const char *filename,
       switch (word_format)
 	{
 	case word_index:
-	  if (sscanf (*string, "%d %d%n", wi, count, &num_chars_read) == 2)
+	  if (sscanf (*string, "%d %f%n", wi, count, &num_chars_read) == 2)
 	    ret = 1;
 	  break;
 	case word_string:
-	  if (sscanf (*string, "%s %d%n", word, count, &num_chars_read) == 2)
+	  if (sscanf (*string, "%s %f%n", word, count, &num_chars_read) == 2)
 	    ret = 1;
 	  *wi = bow_word2int (word);
 	  break;
 	case word_string_and_index:
-	  if (sscanf (*string,"%s %d %d%n",word,wi,count,&num_chars_read) == 3)
+	  if (sscanf (*string,"%s %d %f%n",word,wi,count,&num_chars_read) == 3)
 	    ret = 1;
 	  break;
 	case word_empty:
-	  if (sscanf (*string, "%d%n", count, &num_chars_read) == 1)
+	  if (sscanf (*string, "%f%n", count, &num_chars_read) == 1)
 	    ret = 1;
 	  *wi = word_count_column;
 	  break;
@@ -562,15 +679,18 @@ bow_barrel_new_from_printed_barrel_file (const char *filename,
       cdoc.filename = strdup (datafilename);
       assert (cdoc.filename);
       cdoc.class = bow_str2int (ret->classnames, classname);
-      cdoc.type = model;
+      cdoc.type = bow_doc_train;
       cdoc.prior = 1.0f;
       cdoc.class_probs = NULL;
       di = bow_array_append (ret->cdocs, &cdoc);
       while (read_word_count (&line, &wi, &count))
 	{
 	  if (count)
-	    bow_wi2dvf_add_wi_di_count_weight (&(ret->wi2dvf),
-					       wi, di, count, 0);
+	    {
+	      int_count = rint (count);
+	      bow_wi2dvf_add_wi_di_count_weight (&(ret->wi2dvf),
+						 wi, di, int_count, count);
+	    }
 	  else
 	    assert (sparse_format == 0);
 	}
@@ -716,9 +836,16 @@ bow_new_slow_barrel_printf (bow_barrel *barrel, FILE *fp, const char *format)
 /* Print barrel to FP in various formats.   Defaults are first in lists:
    s - sparse       OR  a - all 
    i - integer      OR  b - binary
-   c - combination  OR  n - word index   OR  w - word string   OR e - empty */
+   c - combination  OR  n - word index   OR  w - word string   OR e - empty
+   OR
+   I - UC Irvine format, same as Sahami's "feat-sel" format.
+   */
+/* Print document, but print only those documents for which the
+   function PRINT_IF_TRUE returns non-zero. */
 void
-bow_barrel_printf (bow_barrel *barrel, FILE *fp, const char *format)
+bow_barrel_printf_selected (bow_barrel *barrel, FILE *fp, 
+			    const char *format,
+			    int (*print_if_true)(bow_cdoc*))
 {
   enum {
     word_index,
@@ -730,6 +857,7 @@ bow_barrel_printf (bow_barrel *barrel, FILE *fp, const char *format)
     binary_count,
     integer_count
   } word_count_format = integer_count;
+  int doing_uci_format = 0;
   int sparse_format = 1;
   bow_dv_heap *heap;
   bow_wv *wv;
@@ -737,6 +865,7 @@ bow_barrel_printf (bow_barrel *barrel, FILE *fp, const char *format)
   bow_cdoc *cdoc;
   int wi, wvi;
   bow_dv *dv;
+  int last_di;
   void print_word_count (int wi, int count)
     {
       if (word_count_format == binary_count)
@@ -758,6 +887,14 @@ bow_barrel_printf (bow_barrel *barrel, FILE *fp, const char *format)
 	}
     }
 
+  if (format && strchr (format, 'I'))
+    {
+      doing_uci_format = 1;
+      sparse_format = 0;
+      word_count_format = binary_count;
+      word_format = word_empty;
+    }
+
   if (format && strchr (format, 'a'))
     sparse_format = 0;
 
@@ -771,14 +908,25 @@ bow_barrel_printf (bow_barrel *barrel, FILE *fp, const char *format)
   else if (format && strchr (format, 'e'))
     word_format = word_empty;
 
+  if (doing_uci_format)
+    {
+      /* Print the number of dimentions and the number of features */
+      printf ("%d\n%d\n", 
+	      barrel->wi2dvf->num_words, 
+	      barrel->cdocs->length);
+    }
+
   heap = bow_test_new_heap (barrel);
   wv = NULL;
-  while ((di = bow_model_next_wv (heap, barrel, &wv))
+  last_di = -1;
+  while ((di = bow_heap_next_wv (heap, barrel, &wv, print_if_true))
 	 != -1)
     {
+      /* Print documents that have no words in them. while (last_di ); */
       cdoc = bow_array_entry_at_index (barrel->cdocs, di);
-      printf ("%s %s  ", cdoc->filename, 
-	      bow_barrel_classname_at_index (barrel, cdoc->class));
+      if (!doing_uci_format)
+	printf ("%s %s  ", cdoc->filename, 
+		bow_barrel_classname_at_index (barrel, cdoc->class));
       if (sparse_format)
 	{
 	  for (wvi = 0; wvi < wv->num_entries; wvi++)
@@ -794,16 +942,24 @@ bow_barrel_printf (bow_barrel *barrel, FILE *fp, const char *format)
 	      if (wv->entry[wvi].wi < wi && wvi < wv->num_entries)
 		wvi++;
 	      assert (wv->entry[wvi].wi >= wi || wvi >= wv->num_entries);
-	      if (wv->entry[wvi].wi == wi)
+	      if ((wvi < wv->num_entries) && wv->entry[wvi].wi == wi)
 		print_word_count (wi, wv->entry[wvi].count);
 	      else
 		print_word_count (wi, 0);
 	    }
 	}
+      if (doing_uci_format)
+	/* Print the class index. */
+	printf (": %d", cdoc->class);
       printf ("\n");
     }
 }
 
+void
+bow_barrel_printf (bow_barrel *barrel, FILE *fp, const char *format)
+{
+  bow_barrel_printf_selected (barrel, fp, format, bow_cdoc_yes);
+}
 
 /* Print on stdout the number of times WORD occurs in the various
    docs/classes of BARREL. */
@@ -839,6 +995,69 @@ bow_barrel_print_word_count (bow_barrel *barrel, const char *word)
     }
 }
 
+/* For copying a class barrel.  Doesn't deal with class_probs at all. */
+bow_barrel *
+bow_barrel_copy (bow_barrel *barrel)
+{
+  int ci;
+  int wi;
+  int dvi;
+  bow_dv *dv;
+  bow_dv *copy_dv;
+  bow_barrel *copy = bow_barrel_new(barrel->wi2dvf->size, 
+				    bow_barrel_num_classes(barrel),
+				    barrel->cdocs->entry_size,
+				    barrel->cdocs->free_func);
+
+  copy->method = barrel->method;
+  copy->is_vpc = 1;
+
+  copy->classnames = bow_int4str_new(0);
+
+  /* Initialize the CDOCS and CLASSNAMES parts of the copy.
+     Create BOW_CDOC structures for each class, and append them to the
+     copy->cdocs array. */
+  for (ci = 0; ci < bow_barrel_num_classes(barrel) ; ci++)
+    {
+      bow_cdoc *old_cdoc = bow_array_entry_at_index(barrel->cdocs, ci);
+
+      bow_cdoc cdoc;
+
+      cdoc.type = old_cdoc->type;
+      cdoc.normalizer = old_cdoc->normalizer;
+      cdoc.word_count = old_cdoc->word_count;
+      cdoc.prior = old_cdoc->prior;
+      cdoc.filename = strdup (old_cdoc->filename);
+      cdoc.class = old_cdoc->class;
+      cdoc.class_probs = NULL;
+      bow_array_append (copy->cdocs, &cdoc);
+
+      bow_str2int (copy->classnames, cdoc.filename);
+    }
+
+  /* set up the wi2dvf structure */
+  for (wi = 0; wi < barrel->wi2dvf->size; wi++)
+    {
+      dv = bow_wi2dvf_dv (barrel->wi2dvf, wi);
+      if (!dv)
+	continue;
+
+      for (dvi = 0; dvi < dv->length; dvi++)
+	bow_wi2dvf_add_wi_di_count_weight 
+	  (&(copy->wi2dvf), 
+	   wi, dv->entry[dvi].di, 
+	   dv->entry[dvi].count,
+	   dv->entry[dvi].weight);
+      
+      /* Set the IDF of the class's wi2dvf directly from the doc's
+	 wi2dvf */
+      
+      copy_dv = bow_wi2dvf_dv (copy->wi2dvf, wi);
+      copy_dv->idf = dv->idf;
+    }
+
+  return (copy);
+}
 
 /* Free the memory held by BARREL. */
 void

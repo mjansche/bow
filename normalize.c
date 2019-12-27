@@ -1,6 +1,6 @@
 /* Functions for normalizing weights in a bow_barrel */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -87,7 +87,7 @@ _bow_barrel_normalize_weights (bow_barrel *barrel,
       cdoc = bow_cdocs_di2doc (barrel->cdocs, current_di);
 
       /* If it's not a model document, then move on to next one */
-      if (cdoc->type != model)
+      if (cdoc->type != bow_doc_train)
 	{
 	  do 
 	    {
@@ -163,6 +163,12 @@ bow_wv_normalize_weights_by_vector_length (bow_wv *wv)
   float total = 0.0f;
   int wvi;
 
+  if (wv->num_entries == 0)
+    {
+      wv->normalizer = 0;
+      return;
+    }
+
   for (wvi = 0; wvi < wv->num_entries; wvi++)
     total += wv->entry[wvi].weight * wv->entry[wvi].weight;
 
@@ -179,6 +185,12 @@ bow_wv_normalize_weights_by_summing (bow_wv *wv)
 {
   float total = 0.0f;
   int wvi;
+
+  if (wv->num_entries == 0)
+    {
+      wv->normalizer = 0;
+      return;
+    }
 
   for (wvi = 0; wvi < wv->num_entries; wvi++)
     total += wv->entry[wvi].weight;

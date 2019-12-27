@@ -1,6 +1,6 @@
 /* Define and set the default lexer. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -25,12 +25,14 @@
    argp cmdline argument processing. */
 static bow_lexer_simple _bow_default_lexer_simple;
 static bow_lexer_simple _bow_default_lexer_white;
+static bow_lexer_simple _bow_default_lexer_suffixing;
 static bow_lexer_gram _bow_default_lexer_gram;
 static bow_lexer_indirect _bow_default_lexer_html;
 static bow_lexer_indirect _bow_default_lexer_email;
 
 bow_lexer_simple *bow_default_lexer_simple;
 bow_lexer_simple *bow_default_lexer_white;
+bow_lexer_simple *bow_default_lexer_suffixing;
 bow_lexer_indirect *bow_default_lexer_indirect;
 bow_lexer_gram *bow_default_lexer_gram;
 bow_lexer_indirect *bow_default_lexer_html;
@@ -56,6 +58,7 @@ _bow_default_lexer_init ()
 
   _bow_default_lexer_simple = *bow_alpha_lexer;
   _bow_default_lexer_white = *bow_white_lexer;
+  _bow_default_lexer_suffixing = *bow_suffixing_lexer;
   _bow_default_lexer_gram = *bow_gram_lexer;
   _bow_default_lexer_html = *bow_html_lexer;
   _bow_default_lexer_email = *bow_email_lexer;
@@ -69,6 +72,7 @@ _bow_default_lexer_init ()
 
   bow_default_lexer_simple = &_bow_default_lexer_simple;
   bow_default_lexer_white = &_bow_default_lexer_white;
+  bow_default_lexer_suffixing = &_bow_default_lexer_suffixing;
   bow_default_lexer_gram = &_bow_default_lexer_gram;
   bow_default_lexer_html = &_bow_default_lexer_html;
   bow_default_lexer_email = &_bow_default_lexer_email;

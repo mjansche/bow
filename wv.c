@@ -1,6 +1,6 @@
 /* Word vectors. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -123,13 +123,13 @@ bow_wv_new_from_lex (bow_lex *lex)
 }
 
 bow_wv *
-bow_wv_new_from_text_fp (FILE *fp)
+bow_wv_new_from_text_fp (FILE *fp, const char *filename)
 {
   bow_wv *ret;			/* the word vector this function will return */
   bow_lex *lex;
 
   /* NOTE: This will read just the first document from the file. */
-  lex = bow_default_lexer->open_text_fp (bow_default_lexer, fp);
+  lex = bow_default_lexer->open_text_fp (bow_default_lexer, fp, filename);
   if (lex == NULL)
     return NULL;
   ret = bow_wv_new_from_lex (lex);
@@ -156,6 +156,17 @@ bow_wv_new_from_text_string (char *the_string)
   free (lex->document);
   free (lex);
   return ret;
+}
+
+/* Return the number of word occurrences in the WV */
+int
+bow_wv_word_count (bow_wv *wv)
+{
+  int i, c = 0;
+
+  for (i = 0; i < wv->num_entries; i++)
+    c += wv->entry[i].count;
+  return c;
 }
 
 /* Return a pointer to the "word entry" with index WI in "word vector WV */
@@ -362,6 +373,32 @@ bow_wv_set_weights_to_count_times_idf (bow_wv *wv, bow_barrel *barrel)
 	{
 	  wv->entry[wvi].weight = 
 	    (wv->entry[wvi].count * dv->idf);
+	}
+      else
+	{
+	  /* This word was not part of the model at all. */
+	  wv->entry[wvi].weight = 0;
+	}
+    }
+}
+
+/* Assign the values of the "word vector entry's" WEIGHT field
+   equal to the log(COUNT) times the word's IDF, taken from the BARREL. */
+void
+bow_wv_set_weights_to_log_count_times_idf (bow_wv *wv, bow_barrel *barrel)
+{
+  int wvi;
+  int wi;
+  bow_dv *dv;
+
+  for (wvi = 0; wvi < wv->num_entries; wvi++)
+    {
+      wi = wv->entry[wvi].wi;
+      dv = bow_wi2dvf_dv (barrel->wi2dvf, wi);
+      if (dv)
+	{
+	  wv->entry[wvi].weight = 
+	    (log (wv->entry[wvi].count + 1) * dv->idf);
 	}
       else
 	{

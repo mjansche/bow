@@ -19,7 +19,7 @@ END-INFO-DIR-ENTRY
 @ifinfo
 This file documents the features and implementation of Libbow.
 
-Copyright (C) 1996, 1997 Free Software Foundation, Inc.
+Copyright (C) 1996, 1997, 1998 Free Software Foundation, Inc.
 
 Permission is granted to make and distribute verbatim copies of
 this manual provided the copyright notice and this permission notice
@@ -94,6 +94,19 @@ version @value{BOWVERSION}.
 @include libbow-desc.texi
 
 Pronounciation guide: "libbow" rhymes with "lib-low", not "lib-cow".
+
+
+Notes from Devika:
+
+How to delimit documents.
+How to tag things---how to augment the lexers.
+Lead in gently, steps.  Big picture.... more and more interesting things
+Variety of examples.
+Guide to sea of command-line references.  Structure.
+When to consider using which switch.
+Sensible defaults.
+
+
 
 
 @node Traversing Diretories to find Text Files, Getting Words from Text Files, Overview, Top

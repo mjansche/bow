@@ -1,7 +1,7 @@
 #   @configure_input@
 #
 #   Makefile for the "Bag Of Words Library", libbow.
-#   Copyright (C) 1996, 1997 Andrew McCallum
+#   Copyright (C) 1996, 1997, 1998 Andrew McCallum
 #
 #   Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 #   Date: September 1996
@@ -65,9 +65,10 @@ include $(srcdir)/Version
 
 LIBBOW_H_FILES = \
 bow/em.h \
-bow/libbow.h \
+bow/hdb.h \
 bow/kl.h \
 bow/knn.h \
+bow/libbow.h \
 bow/naivebayes.h \
 bow/prind.h \
 bow/tfidf.h
@@ -83,6 +84,8 @@ email.c \
 error.c \
 evi.c \
 foilgain.c \
+goodturing.c \
+hdb.c \
 heap.c \
 info_gain.c \
 int4docn.c \
@@ -94,11 +97,14 @@ lex-email.c \
 lex-gram.c \
 lex-html.c \
 lex-indirect.c \
+lex-suffixing.c \
 lex-simple.c \
 methods.c \
+next.c \
 normalize.c \
 opts.c \
 primes.c \
+random.c \
 sarray.c \
 scale.c \
 scan.c \
@@ -107,6 +113,7 @@ stem.c \
 stoplist.c \
 stopwords.c \
 vpc.c \
+wa.c \
 wicoo.c \
 wi2dvf.c \
 wv.c
@@ -115,8 +122,7 @@ $(LIBBOW_C_FILES): $(LIBBOW_H_FILES)
 
 LIBBOW_O_FILES = $(LIBBOW_C_FILES:.c=.o)
 
-METHOD_C_FILES = \
-em.c \
+STANDARD_METHOD_C_FILES = \
 deflexer.c \
 kl.c \
 knn.c \
@@ -124,14 +130,20 @@ naivebayes.c \
 prind.c \
 tfidf.c 
 
+METHOD_C_FILES = $(STANDARD_METHOD_C_FILES)
 METHOD_O_FILES = $(METHOD_C_FILES:.c=.o)
 
 
 # Other name ideas: longbow, archer, shoelace,...
 DEMO_C_FILES = \
 rainbow.c \
-arrow.c \
-crossbow.c
+arrow.c
+
+CROSSBOW_C_FILES = \
+hac.c \
+treenode.c
+
+CROSSBOW_O_FILES = $(CROSSBOW_C_FILES:.c=.o)
 
 OTHER_C_FILES = \
 kl-div.c
@@ -142,6 +154,7 @@ DEMO_EXECUTABLES = $(DEMO_C_FILES:.c=)
 PERL_FILES = \
 rainbow-ac.pl \
 rainbow-pr.pl \
+rainbow-rank.pl \
 rainbow-stats.pl
 
 PERL_RUNNABLE_FILES = $(PERL_FILES:.pl=)
@@ -162,7 +175,7 @@ version.texi
 DIST_FILES = \
 $(LIBBOW_C_FILES) \
 $(LIBBOW_H_FILES) \
-$(METHOD_C_FILES) \
+$(STANDARD_METHOD_C_FILES) \
 $(DEMO_C_FILES) \
 $(PERL_FILES) \
 $(DOC_TEXI_FILES) \
@@ -184,8 +197,8 @@ mkinstalldirs
 # Pattern rule
 ALL_CPPFLAGS = $(CPPFLAGS) $(INCLUDEFLAGS) -I$(srcdir) -I$(srcdir)/argp $(DEFS)
 ALL_CFLAGS = $(CFLAGS)
-%.o: %.c
-	$(CC) -c $(ALL_CPPFLAGS) $(ALL_CFLAGS) -o $@ $<
+
+-include Makefile.preamble
 
 # Rules
 
@@ -195,6 +208,9 @@ all: libbow.a $(DEMO_EXECUTABLES) $(PERL_RUNNABLE_FILES) kl-div
 
 # Compiling code
 
+%.o: %.c
+	$(CC) -c $(ALL_CPPFLAGS) $(ALL_CFLAGS) -o $@ $<
+
 libbow.a: $(LIBBOW_O_FILES) $(METHOD_O_FILES)
 	$(AR) rc $@ $^
 	$(RANLIB) $@
@@ -202,10 +218,13 @@ libbow.a: $(LIBBOW_O_FILES) $(METHOD_O_FILES)
 argp/libargp.a:
 	cd argp ; $(MAKE) libargp.a
 
-ALL_LIBS = $(LIBS) -L. -lbow -L./argp -largp -lm
+ALL_LIBS = $(LIBS) -L. -lbow -L./argp -largp -lm -ldb
 
 $(DEMO_EXECUTABLES): %: libbow.a argp/libargp.a %.o $(METHOD_O_FILES)
 	$(CC) $(CFLAGS) $@.o -o $@ $(METHOD_O_FILES) $(LDFLAGS) $(ALL_LIBS)
+
+crossbow: libbow.a argp/libargp.a crossbow.o $(CROSSBOW_O_FILES)
+	$(CC) $(CFLAGS) $@.o -o $@ $(CROSSBOW_O_FILES) $(LDFLAGS) $(ALL_LIBS)
 
 kl-div: libbow.a kl-div.o
 	$(CC) $(CFLAGS) kl-div.o -o $@ $(LDFLAGS) $(ALL_LIBS)
@@ -334,7 +353,7 @@ diff: $(DIST_FILES)
 	rm -rf /tmp/bow-$(OLD)
 
 snapshot: $(DIST_FILES)
-	echo bow-`date +%y%m%d` > .fname
+	echo bow-`date +%Y%m%d` > .fname
 	cvs rtag -F snapshot-`cat .fname` bow
 	rm -rf `cat .fname`
 	mkdir `cat .fname`

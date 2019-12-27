@@ -1,5 +1,5 @@
 /* libbow.h - public declarations for the Bag-Of-Words Library, libbow.
-   Copyright (C) 1997 Andrew McCallum
+   Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -41,6 +41,9 @@
 #include <limits.h>		/* for PATH_MAX and SHRT_MAX and friends */
 #include <float.h>		/* for FLT_MAX and friends */
 #include <unistd.h>		/* for SEEK_SET and friends on SunOS */
+#if BOW_MCHECK
+#include <mcheck.h>
+#endif /* BOW_MCHECK */
 
 #if defined (Windows_NT) && OS == Windows_NT
 #define htonl(a) (a)
@@ -49,7 +52,7 @@
 #define ntohs(a) (a)
 #endif
 
-#if 0
+#if 1
 #undef assert
 #define assert(expr)   \
 ((void) ((expr) || (bow_error ("Assertion failed %s:%d:" __STRING(expr) __FILE__, __LINE__), NULL)))
@@ -88,7 +91,7 @@ typedef enum { bow_no, bow_yes } bow_boolean;
 
 /* Lexing words from a file. */
 
-#define BOW_MAX_WORD_LENGTH 1024
+#define BOW_MAX_WORD_LENGTH 4096
 
 /* A structure for maintaining the context of a lexer.  (If you need
    to create a lexer that uses more context than this, define a new
@@ -104,7 +107,10 @@ typedef struct _bow_lex {
 typedef struct _bow_lexer {
   int sizeof_lex;		/* The size of this structure */
   /* Pointers to functions for opening, closing and getting words. */
-  bow_lex* (*open_text_fp) (struct _bow_lexer *self, FILE *fp);
+  bow_lex* (*open_text_fp) (struct _bow_lexer *self, FILE *fp, 
+			    const char *filename);
+  /* Function which turns a character string into a bow_lex */
+  bow_lex* (*open_str) (struct _bow_lexer *self, char *buf);
   int (*get_word) (struct _bow_lexer *self, bow_lex *lex, 
 		   char *buf, int buflen);
   void (*close) (struct _bow_lexer *self, bow_lex *lex);
@@ -151,7 +157,14 @@ int bow_lexer_simple_postprocess_word (bow_lexer_simple *self, bow_lex *lex,
 /* Create and return a BOW_LEX, filling the document buffer from
    characters in FP, starting after the START_PATTERN, and ending with
    the END_PATTERN. */
-bow_lex *bow_lexer_simple_open_text_fp (bow_lexer *self, FILE *fp);
+bow_lex *bow_lexer_simple_open_text_fp (bow_lexer *self, FILE *fp,
+					const char *filename);
+
+/* Create and return a BOW_LEX, filling the document buffer from
+   characters in BUF, starting after the START_PATTERN, and ending with
+   the END_PATTERN.  NOTE: BUF is not modified, and it does not need to 
+   be saved for future use. */
+bow_lex *bow_lexer_simple_open_str (bow_lexer *self, char *buf);
 
 /* Close the LEX buffer, freeing the memory held by it. */
 void bow_lexer_simple_close (bow_lexer *self, bow_lex *lex);
@@ -187,6 +200,8 @@ extern const bow_lexer_simple *bow_alpha_lexer;
    --lex-pipe-command is used to do all the tokenizing.  */
 extern const bow_lexer_simple *bow_white_lexer;
 
+extern const bow_lexer_simple *bow_suffixing_lexer;
+
 /* Some declarations for a generic indirect lexer.  See lex-indirect.c */
 
 typedef struct _bow_lexer_indirect {
@@ -195,7 +210,11 @@ typedef struct _bow_lexer_indirect {
 } bow_lexer_indirect;
 
 /* Open the underlying lexer. */
-bow_lex *bow_lexer_indirect_open_text_fp (bow_lexer *self, FILE *fp);
+bow_lex *bow_lexer_indirect_open_text_fp (bow_lexer *self, FILE *fp,
+					  const char *filename);
+
+/* Open the underlying lexer from a string. */
+bow_lex *bow_lexer_indirect_open_str (bow_lexer *self, char *buf);
 
 /* Close the underlying lexer. */
 void bow_lexer_indirect_close (bow_lexer *self, bow_lex *lex);
@@ -245,6 +264,7 @@ extern bow_lexer *bow_default_lexer;
    argp cmdline argument processing. */
 extern bow_lexer_simple *bow_default_lexer_simple;
 extern bow_lexer_simple *bow_default_lexer_white;
+extern bow_lexer_simple *bow_default_lexer_suffixing;
 extern bow_lexer_indirect *bow_default_lexer_indirect;
 extern bow_lexer_gram *bow_default_lexer_gram;
 extern bow_lexer_indirect *bow_default_lexer_html;
@@ -270,6 +290,9 @@ int bow_stoplist_present (const char *word);
    Return the number of words added.  If the file could not be opened,
    return -1. */
 int bow_stoplist_add_from_file (const char *filename);
+
+/* Empty the default stoplist, and add space-delimited words from FILENAME. */
+void bow_stoplist_replace_with_file (const char *filename);
 
 /* Add WORD to the stop list. */
 void bow_stoplist_add_word (const char *word);
@@ -299,6 +322,9 @@ void bow_array_init (bow_array *array, int capacity,
 /* Append an entry to the array.  Return its index. */
 int bow_array_append (bow_array *array, void *entry);
 
+/* Return what will be the index of the next entry to be appended */
+int bow_array_next_index (bow_array *array);
+
 /* Return a pointer to the array entry at index INDEX. */
 void *bow_array_entry_at_index (bow_array *array, int index);
 
@@ -317,6 +343,18 @@ bow_array_new_from_data_fp (int (*read_func)(void*,FILE*),
 
 /* Free the memory held by the array ARRAY. */
 void bow_array_free (bow_array *array);
+
+
+
+/* Sparse arrays of C struct's that can grow. */
+
+typedef struct _bow_sparray {
+  void **entry_root;
+  int entry_size;		/* number of bytes in each entry */
+  void (*free_func)(void*);	/* call this with each entry when freeing */
+} bow_sparray;
+
+
 
 
 /* Managing int->string and string->int mappings. */
@@ -425,6 +463,7 @@ typedef struct _bow_bitvec {
   int num_dimensions;		/* the number of dimensions by which indexed */
   int *dimension_sizes;		/* the sizes of each index dimension */
   int vector_size;		/* size of VECTOR in bytes */
+  int bits_set;                 /* number of bits set to 1 */
   unsigned char *vector;	/* the memory for the bit vector */
 } bow_bitvec;
 
@@ -465,6 +504,10 @@ const char *bow_int2word (int wi);
    word-int mapping; if it's not yet in the mapping, add it. */
 int bow_word2int (const char *word);
 
+/* Given a WORD, return its "word index", WI, according to the global
+   word-int mapping; if it's not yet in the mapping, return -1. */
+int bow_word2int_no_add (const char *word);
+
 /* Like bow_word2int(), except it also increments the occurrence count 
    associated with WORD. */
 int bow_word2int_add_occurrence (const char *word);
@@ -480,6 +523,12 @@ extern int bow_word2int_do_not_add;
    EXCEPTION_NAME. */
 int bow_words_add_occurrences_from_text_dir (const char *dirname,
 					     const char *exception_name);
+
+/* Add to the word occurrence counts reading all entries in HDB
+   database DIRNAME and parsing all the text files; skip any files
+   matching EXCEPTION_NAME. */
+int bow_words_add_occurrences_from_hdb (const char *dirname,
+					const char *exception_name);
 
 /* Return the number of times bow_word2int_add_occurrence() was
    called with the word whose index is WI. */
@@ -514,6 +563,38 @@ void bow_words_read_from_file (const char *filename);
 void bow_words_reread_from_file (const char *filename, int force_update);
 
 
+/* Lists of words sorted by some score, for example, infogain */
+
+/* An entry for a word and its score */
+typedef struct _bow_ws {
+  int wi;
+  float weight;
+} bow_ws;
+
+/* An array of words and their scores. */
+typedef struct _bow_wa {
+  int size;
+  int length;
+  bow_ws *entry;
+} bow_wa;
+
+/* Create a new, empty array of word/score entries, with CAPACITY entries. */
+bow_wa *bow_wa_new (int capacity);
+
+/* Add a new word and score to the array */
+int bow_wa_append (bow_wa *wa, int wi, float score);
+
+/* Sort the word array. */
+void bow_wa_sort (bow_wa *wa);
+void bow_wa_sort_reverse (bow_wa *wa);
+
+/* Print the first N entries of the word array WA to stream FP. */
+void bow_wa_fprintf (bow_wa *wa, FILE *fp, int n);
+
+/* Free the word array */
+void bow_wa_free (bow_wa *wa);
+
+
 /* Word vectors.  A "word vector" is sorted array of words, with count
    information attached to each word.  Typically, there would be one
    "word vector" associated with a document, or with a concept. */
@@ -533,7 +614,7 @@ typedef struct _bow_wv {
 } bow_wv;
 
 /* Create and return a new "word vector" from a file. */
-bow_wv *bow_wv_new_from_text_fp (FILE *fp);
+bow_wv *bow_wv_new_from_text_fp (FILE *fp, const char *filename);
 
 /* Create and return a new "word vector" from a string. */
 bow_wv *bow_wv_new_from_text_string (char *the_string);
@@ -548,6 +629,9 @@ bow_wv *bow_wv_add (bow_wv **wv_array, int wv_array_length);
 
 /* Create and return a new "word vector" with uninitialized contents. */
 bow_wv *bow_wv_new (int capacity);
+
+/* Return the number of word occurrences in the WV */
+int bow_wv_word_count (bow_wv *wv);
 
 /* Return a pointer to the "word entry" with index WI in "word vector WV */
 bow_we *bow_wv_entry_for_wi (bow_wv *wv, int wi);
@@ -605,7 +689,16 @@ typedef struct _bow_di2wv {
 
 /* We want a nice way of saying this is a training or test document, or do
    we ignore it for now. */
-typedef enum {model, test, ignore, ignored_model} bow_doc_type;
+typedef enum {
+  bow_doc_untagged,	/* Not yet assigned a tag */
+  bow_doc_train,	/* Use this to calculate P(w|C) */
+  bow_doc_test,		/* Classify these for test results */
+  bow_doc_unlabeled,    /* the "unlabeled" docs in EM and active learning */
+  bow_doc_ignore,	/* docs left unused */
+  bow_doc_ignored_model, /* In EM these are for score->prob mapping */
+  bow_doc_unused_model,	/* In EM, labeled training docs excluded from model */
+  bow_doc_unused_ignore	/* In EM, unlabeled docs excluded from model */
+} bow_doc_type;
 
 /* A "document" entry useful for standard classification tasks. */
 typedef struct _bow_cdoc {
@@ -639,6 +732,9 @@ typedef struct _bow_doc_list {
 /* Return a non-zero value if the file FP contains mostly text. */
 int bow_fp_is_text (FILE *fp);
 
+/* Return a non-zero value if the char array BUF contains mostly text. */
+int bow_str_is_text (char *buf);
+
 /* Calls the function CALLBACK for each of the filenames encountered
    when recursively descending the directory named DIRNAME.  CALLBACK
    should be a pointer to function that takes a filename char-pointer,
@@ -651,6 +747,15 @@ int bow_fp_is_text (FILE *fp);
    callback function.  EXCLUDE_PATTERNS is currently ignored. */
 int
 bow_map_filenames_from_dir (int (*callback)(const char *filename, 
+					    void *context),
+			    void *context,
+			    const char *dirname,
+			    const char *exclude_patterns);
+
+/* Calls the function CALLBACK for each of the files found in the
+   database DIRNAME_ARG.  See bow_map_filenames_from_dir for more info */
+int
+bow_map_filenames_from_hdb (int (*callback)(const char *filename, char *data,
 					    void *context),
 			    void *context,
 			    const char *dirname,
@@ -799,7 +904,13 @@ bow_de *bow_wi2dvf_entry_at_wi_di (bow_wi2dvf *wi2dvf, int wi, int di);
 
 /* Read all the words from file pointer FP, and add them to the map
    WI2DVF, such that they are associated with document index DI. */
-int bow_wi2dvf_add_di_text_fp (bow_wi2dvf **wi2dvf, int di, FILE *fp);
+int bow_wi2dvf_add_di_text_fp (bow_wi2dvf **wi2dvf, int di, FILE *fp,
+			       const char *filename);
+
+/* Read all the words from file pointer FP, and add them to the map
+   WI2DVF, such that they are associated with document index DI. */
+int bow_wi2dvf_add_di_text_str (bow_wi2dvf **wi2dvf, int di, char *data,
+				const char *filename);
 
 /* Add a "word vector" WV, associated with "document index" DI, to 
    the map WI2DVF. */ 
@@ -821,6 +932,10 @@ void bow_wi2dvf_hide_wi (bow_wi2dvf *wi2dvf, int wi);
 /* Hide all words occuring in only COUNT or fewer number of documents.
    Return the number of words hidden. */
 int bow_wi2dvf_hide_words_by_doc_count (bow_wi2dvf *wi2dvf, int count);
+
+/* Hide all words occuring in only COUNT or fewer times.
+   Return the number of words hidden. */
+int bow_wi2dvf_hide_words_by_occur_count (bow_wi2dvf *wi2dvf, int count);
 
 /* Make visible all DVF's that were hidden with BOW_WI2DVF_HIDE_WI(). */
 void bow_wi2dvf_unhide_all_wi (bow_wi2dvf *wi2dvf);
@@ -854,6 +969,13 @@ extern int bow_prind_scale_by_infogain;
 /* If this is zero, do not normalize the PrInd classification scores. */
 extern int bow_prind_normalize_scores;
 
+typedef enum {
+  bow_smoothing_goodturing,
+  bow_smoothing_laplace,
+  bow_smoothing_mestimate,
+  bow_smoothing_wittenbell
+} bow_smoothing;
+
 /* A wrapper around a wi2dvf/cdocs combination. */
 typedef struct _bow_barrel {
   struct _bow_method *method;	/* TFIDF, NaiveBayes, PrInd, or others. */
@@ -866,7 +988,7 @@ typedef struct _bow_barrel {
 /* An array of these is filled in by the method's scoring function. */
 typedef struct _bow_score {
   int di;			/* The "document index" for this document */
-  float weight;			/* Its score */
+  double weight;		/* Its score */
   const char *name;
 } bow_score;
 
@@ -917,8 +1039,7 @@ if (((*(BARREL)->method->wv_normalize_weights)))	\
   ((*(BARREL)->method->wv_normalize_weights)(WV))
 
 #define bow_free_barrel(BARREL)			\
-if (((*(BARREL)->method->free_barrel)))		\
-  ((*(BARREL)->method->free_barrel)(BARREL))
+((*(BARREL)->method->free_barrel)(BARREL))
 
 #define bow_barrel_num_classes(BARREL)		\
 (((BARREL)->classnames)				\
@@ -937,10 +1058,15 @@ if (((*(BARREL)->method->free_barrel)))		\
 #include <bow/kl.h>
 #include <bow/em.h>
 #include <bow/knn.h>
+struct argp_child;		/* forward declare this type */
 
-/* Associate method M with the string NAME, so the method structure can
-   be retrieved later with BOW_METHOD_AT_NAME(). */
-int bow_method_register_with_name (bow_method *m, const char *name);
+/* Associate method M with the string NAME, so the method structure
+   can be retrieved later with BOW_METHOD_AT_NAME().  Set the group
+   number of the CHILD so the command-line options for this option
+   will appear separately.  If there is no argp_child for this 
+   method, pass NULL for CHILD. */
+int bow_method_register_with_name (bow_method *m, const char *name,
+				   struct argp_child *child);
 
 /* Return a pointer to a method structure that was previous registered 
    with string NAME using BOW_METHOD_REGISTER_WITH_NAME(). */
@@ -964,13 +1090,21 @@ bow_barrel *bow_barrel_new (int word_capacity,
 bow_barrel *bow_barrel_new_from_printed_barrel_file (const char *filename,
 						     const char *format);
 
-/* Create a BARREL by indexing all the documents found when
-   recursively decending directory DIRNAME, but skip files matching
-   EXCEPTION_NAME. */
+/* Add statistics to the barrel BARREL by indexing all the documents
+   found when recursively decending directory DIRNAME.  Return the number
+   of additional documents indexed. */
 int bow_barrel_add_from_text_dir (bow_barrel *barrel,
 				  const char *dirname, 
 				  const char *except_name, 
 				  const char *classnames);
+
+/* Add statistics to the barrel BARREL by indexing all the documents
+   in HDB database DIRNAME.  Return the number of additional
+   documents indexed. */
+int bow_barrel_add_from_hdb (bow_barrel *barrel,
+			     const char *dirname, 
+			     const char *except_name, 
+			     const char *classnames);
 
 /* Add statistics about the document described by CDOC and WV to the
    BARREL. */
@@ -1006,10 +1140,6 @@ void bow_barrel_set_vpc_priors_by_counting (bow_barrel *vpc_barrel,
 					    bow_barrel *doc_barrel);
 
 
-/* Assign the values of the "word vector entry's" WEIGHT field
-   equal to the COUNT times the word's IDF, taken from the BARREL. */
-void bow_wv_set_weights_to_count_times_idf (bow_wv *wv, bow_barrel *barrel);
-
 /* Multiply each weight by the Quinlan `Foilgain' of that word. */
 void bow_barrel_scale_weights_by_foilgain (bow_barrel *barrel,
 					   bow_barrel *doc_barrel);
@@ -1022,6 +1152,11 @@ void bow_barrel_scale_weights_by_infogain (bow_barrel *barrel,
    in the int/str mapping MAP. */
 void bow_barrel_prune_words_not_in_map (bow_barrel *barrel,
 					bow_int4str *map);
+
+/* Modify the BARREL by removing those entries for words that are in
+   the int/str mapping MAP. */
+void bow_barrel_prune_words_in_map (bow_barrel *barrel,
+				    bow_int4str *map);
 
 /* Modify the BARREL by removing those entries for words that are not
    among the NUM_WORDS_TO_KEEP top words, by information gain.  This
@@ -1040,12 +1175,31 @@ bow_barrel *bow_barrel_new_from_data_fp (FILE *fp);
 /* Print barrel to FP in human-readable and awk-accessible format. */
 void bow_barrel_printf (bow_barrel *barrel, FILE *fp, const char *format);
 
+/* Print as above, but print only those documents for which the
+   function PRINT_IF_TRUE returns non-zero. */
+void bow_barrel_printf_selected (bow_barrel *barrel, FILE *fp, 
+				 const char *format,
+				 int (*print_if_true)(bow_cdoc*));
+
 /* Print on stdout the number of times WORD occurs in the various
    docs/classes of BARREL. */
 void bow_barrel_print_word_count (bow_barrel *barrel, const char *word);
 
+/* For copying a class barrel.  Doesn't deal with class_probs at all. */
+bow_barrel *bow_barrel_copy (bow_barrel *barrel);
+
 /* Free the memory held by BARREL. */
 void bow_barrel_free (bow_barrel *barrel);
+
+
+/* Assign the values of the "word vector entry's" WEIGHT field
+   equal to the COUNT times the word's IDF, taken from the BARREL. */
+void bow_wv_set_weights_to_count_times_idf (bow_wv *wv, bow_barrel *barrel);
+
+/* Assign the values of the "word vector entry's" WEIGHT field
+   equal to the log(COUNT) times the word's IDF, taken from the BARREL. */
+void bow_wv_set_weights_to_log_count_times_idf(bow_wv *wv, bow_barrel *barrel);
+
 
 
 /* Parsing headers from email messages. */
@@ -1159,6 +1313,9 @@ volatile void _bow_error (const char *format, ...);
    from here if gcc is optimizing, otherwise, they will be taken from
    identical copies defined in io.c */
 
+void (*bow_malloc_hook) (void *ptr);
+void (*bow_free_hook) (void *ptr);
+
 #if ! defined (_BOW_MALLOC_INLINE_EXTERN)
 #define _BOW_MALLOC_INLINE_EXTERN inline extern
 #endif
@@ -1167,9 +1324,22 @@ _BOW_MALLOC_INLINE_EXTERN void *
 bow_malloc (size_t s)
 {
   void *ret;
+#if BOW_MCHECK
+  static int mcheck_called = 0;
+
+  if (!mcheck_called)
+    {
+      int r;
+      r = mcheck (NULL);
+      assert (r == 0);
+      mcheck_called = 1;
+    }
+#endif /* BOW_MCHECK */
   ret = malloc (s);
   if (!ret)
     bow_error ("Memory exhausted.");
+  if (bow_malloc_hook)
+    (*bow_malloc_hook) (ret);
   return ret;
 }
 
@@ -1180,12 +1350,16 @@ bow_realloc (void *ptr, size_t s)
   ret = realloc (ptr, s);
   if (!ret)
     bow_error ("Memory exhausted.");
+  if (bow_malloc_hook)
+    (*bow_malloc_hook) (ret);
   return ret;
 }
 
 _BOW_MALLOC_INLINE_EXTERN void
 bow_free (void *ptr)
 {
+  if (bow_malloc_hook)
+    bow_malloc_hook (ptr);
   free (ptr);
 }
 
@@ -1339,6 +1513,27 @@ bow_fread_float (float *np, FILE *fp)
   return num_written * sizeof (float);
 }
 
+/* Write a (double) value to the stream FP. */
+_BOW_IO_INLINE_EXTERN int
+bow_fwrite_double (double n, FILE *fp)
+{
+  /* xxx This is not machine-independent! */
+  int num_written;
+  num_written = fwrite (&n, sizeof (double), 1, fp);
+  assert (num_written == 1);
+  return num_written * sizeof (double);
+}
+
+/* Read a (double) value from the stream FP. */
+_BOW_IO_INLINE_EXTERN int
+bow_fread_double (double *np, FILE *fp)
+{
+  /* xxx This is not machine-independent! */
+  int num_written;
+  num_written = fread (np, sizeof (double), 1, fp);
+  assert (num_written == 1);
+  return num_written * sizeof (double);
+}
 
 
 /* Manipulating a heap of documents */
@@ -1347,13 +1542,16 @@ bow_fread_float (float *np, FILE *fp)
 typedef struct _bow_dv_heap_element {
   bow_dv *dv;                   /* The document vector */
   int wi;                       /* The id of this word */
-  int index;                    /* Where we are in the vector at the mo. */
+  int index;                    /* Where we are in the vector currently. */
   int current_di;               /* Might as well keep the key here. */
 } bow_dv_heap_element;
 
 /* The heap itself */
 typedef struct _bow_dv_heap {
   int length;                   /* How many items in the heap */
+  bow_wv *heap_wv;
+  int heap_wv_di;
+  int last_di;
   bow_dv_heap_element entry[0];	/* The heap */
 } bow_dv_heap;
 
@@ -1401,19 +1599,9 @@ void bow_barrel_normalize_weights_by_summing (bow_barrel *barrel);
 
 
 /* Creating and working with test sets. */
-/* This takes a bow_array of bow_cdoc's and first sets them all to be in the
-   model. It then randomly choses 'no_test' bow_cdoc's to be in the test set
-   and sets their type to be test. */
-void bow_test_split (bow_barrel *barrel, int num_test);
 
-/* This takes a bow_array of bow_cdoc's and sets num_test of them to
-   be model docs */
-void bow_test_split2 (bow_barrel *barrel, int num_test);
-
-/* Set all the cdoc's named in TEST_FILES_FILENAME to type test,
-   and all the others to model.  BARREL should be a doc barrel, not
-   a class barrel. */
-void bow_test_set_files (bow_barrel *barrel, const char *test_files_filename);
+/* Use the command line arguments to create the appropriate train/test split */
+void set_doc_types (bow_barrel *barrel);
 
 /* This function sets up the data structure so we can step through the word
    vectors for each test document easily. */
@@ -1424,30 +1612,47 @@ typedef struct _bow_test_wv {
   bow_wv wv;                       /* It's associated wv */
 } bow_test_wv;
 
-/* This function takes the heap returned by bow_initialise_test_set and
-   creates a word vector corresponding to the next document in the test set.
-   The index of the test document is returned. If the test set is empty, 0
-   is returned and *wv == NULL. This can't really deal with
-   vectors which are all zero, since they are not represented explicitly
-   in our data structure. Not sure what we should/can do. */
-int bow_test_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
+/* Use a heap to efficiently iterate through all the documents that
+   satisfy the condition USE_IF_TRUE().  Each call to this function
+   provides the next word vector in *WV, returning the `document index' DI of 
+   the document contained in *WV.  This function returns -1 when there
+   are no more documents left. */
+int bow_heap_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv,
+		      int (*use_if_true)(bow_cdoc*));
 
-/* Like BOW_TEST_NEXT_WV, but for type!=test instead of type==test */
-int bow_nontest_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
+/* Return non-zero iff CDOC has type MODEL. */
+int bow_cdoc_is_model (bow_cdoc *cdoc);
 
-/* Like bow_test_next_wv, but for type==model instead of type==test */
-int bow_model_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
+/* Return non-zero iff CDOC has type TEST. */
+int bow_cdoc_is_test (bow_cdoc *cdoc);
 
-/* Like bow_test_next_wv, but for type==ignore instead of type==test */
-int bow_ignore_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
+/* Return one */
+int bow_cdoc_yes (bow_cdoc *cdoc);
 
-/* Like bow_test_next_wv, but for type==ignored_model instead of type==test */
-int bow_ignored_model_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
+/* Return nonzero iff CDOC has type != TEST */
+int bow_cdoc_is_nontest (bow_cdoc *cdoc);
 
+/* Return nonzero iff CDOC has type == IGNORE */
+int bow_cdoc_is_ignore (bow_cdoc *cdoc);
+
+/* Return nonzero iff CDOC has type == IGNORED_MODEL */
+int bow_cdoc_is_ignored_model (bow_cdoc *cdoc);
+
+/* Return nonzero iff CDOC has type == bow_doc_unlabeled */
+int bow_cdoc_is_unlabeled (bow_cdoc *cdoc);
+
+int bow_test_next_wv(bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
+
+int bow_nontest_next_wv(bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
+
+int bow_model_next_wv(bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
 
 
 
 /* Functions for information gain and Foilgain */
+
+/* Return the entropy given counts for each type of element. */
+double bow_entropy (float *counts, int num_counts);
 
 /* Return a malloc()'ed array containing an infomation-gain score for
    each word index; it is the caller's responsibility to free this
@@ -1500,13 +1705,45 @@ bow_headers2newsgroups(bow_sarray *headers);
 
 
 
+/* Pseudo-random number generators */
+
+/* This function seeds the random number generator if needed.  Call
+   before and random number generator usage, instead of srand */
+void bow_random_set_seed();
+
+/* Return an double between low and high, inclusive */
+double bow_random_double (double low, double high);
+
+/* Return an double between 0 and 1, exclusive */
+double bow_random_01 ();
+
+
+
+/* Viewable EM functions */
+
+/* Change the weights by sampling from the multinomial distribution
+   specified by the training data.  Start from the current values of
+   the DV WEIGHTS.  Typically this would be called after iteration 1
+   of EM, before the unlabeled documents were included in the
+   WEIGHTS. */
+void bow_em_perturb_weights (bow_barrel *doc_barrel, bow_barrel *vpc_barrel);
+
+
+
 /* argp command-line processing for libbow */
+
+/* Add the options in CHILD to the list of command-line options. */
+void bow_argp_add_child (struct argp_child *child);
 
 extern struct argp_child bow_argp_children[];
 
 /* Global variables whose value is set by bow_argp functions, but
    which must be examined by some other function (called later) in
    order to have any effect. */
+
+/* Flag to indicate whether ARG... files should be interpreted as HDB
+   databases */
+extern int bow_hdb;
 
 /* N for removing all but the top N words by selecting words with
    highest information gain */
@@ -1537,5 +1774,45 @@ extern const char *bow_lex_pipe_command;
 /* If non-zero, check for eencoding blocks before istext() says that
    the file is text. */
 extern int bow_istext_avoid_uuencode;
+
+/* Number of decimal places to print when printing classification scores */
+extern int bow_score_print_precision;
+
+/* Which smoothing method to use to avoid zero word probabilities */
+extern bow_smoothing bow_smoothing_method;
+
+/* smooth words that occur up to k times in a class for Good-Turing. */
+extern int bow_smoothing_goodturing_k;
+
+/* Remove words that occur in this many or fewer documents. */
+extern int bow_prune_words_by_doc_count_n;
+
+/* Random seed to use for srand, if not equal to -1 */
+extern int bow_split_seed;
+
+/* What "event-model" we will use for the probabilistic models. */
+typedef enum {
+  bow_event_word = 0,		/* the multinomial model */
+  bow_event_document,		/* the multi-variate Bernoulli */
+  bow_event_document_then_word	/* doc-length-normalized multinomial */
+} bow_event_models;
+
+/* What "event-model" we will use for the probabilistic models. 
+   Defaults to bow_event_word. */
+extern bow_event_models bow_event_model;
+
+/* What "event-model" we will use for calculating information gain of 
+   words with classes.  Defaults to bow_event_document. */
+bow_event_models bow_infogain_event_model;
+
+/* When using the bow_event_document_then_word event model, we
+   normalize the length of all the documents.  This determines the
+   normalized length. */
+extern int bow_event_document_then_word_document_length;
+
+/* When using --testing-files to set the test/train split, this calls
+   the function split.c:bow_test_set_files().  In this function
+   compare filenames by their basename only, no their directories. */
+extern int bow_test_set_files_use_basename;
 
 #endif /* __libbow_h_INCLUDE */

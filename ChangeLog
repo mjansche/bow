@@ -1,3 +1,2175 @@
+1998-09-13  Andrew McCallum  <mccallum@jprc.com>
+
+	* Makefile.in (LIBBOW_H_FILES): Added bow/hdb.h.
+
+1998-09-12  Andrew McCallum  <mccallum@jprc.com>
+
+	* opts.c (bow_options): Changed the name of command-line option
+	"split-seed" to "random-seed".
+
+1998-09-08  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* wi2dvf.c (bow_wi2dvf_add_di_text_str): add lexer->close call to
+	patch memory leak
+
+1998-09-07  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* docnames.c, barrel.c, int4word.c: fix memory leak associated with
+	HDB.
+
+	* Change instances of "char" in function names to "str" for
+	better description of functionality.
+
+1998-09-04  Andrew McCallum  <mccallum@jprc.com>
+
+	* opts.c (bow_options): Make the "lex-for-usenet" option hidden,
+	since it is currently broken.
+
+1998-09-03  Andrew McCallum  <mccallum@jprc.com>
+
+	* Makefile.in (snapshot): Make ourselves more Y2K compliant :-) by
+	including the first two digits of the year in the snapshot file
+	name.
+
+1998-08-24  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* bow/hdb.h: new file
+
+	* bow/libbow.h: Added lots of function declarations
+
+	* wi2dvf.c (bow_wi2dvf_add_di_text_char): new function
+
+	* scan.c (bow_scan_char_for_string): new function
+
+	* rainbow.c (rainbow_test_files): Split test_file into test_file,
+	test_hdb_file and process_wv; call HDB functions when BOW_HDB is
+	set.
+	(rainbow_index): Call HDB functions when BOW_HDB is set.
+
+	* opts.c (parse_bow_opt): Added --hdb option with key HDB_KEY
+
+	* lex-suffixing.c (bow_lexer_suffixing_open_char): new function
+	(_bow_suffixing_lexer): new field: bow_lexer_suffixing_open_char
+
+	* lex-simple.c (bow_lexer_simple_open_char): new function
+	(_bow_white_lexer, bow_alpha_only_lexer, bow_alpha_lexer):
+	new field: bow_lexer_simple_open_char
+
+	* lex-indirect.c (bow_lexer_indirect_open_char): new function
+
+	* lex-html.c (_bow_html_lexer): new field:
+	bow_lexer_simple_open_char
+
+	* lex-gram.c (bow_lexer_gram_open_char): new function
+	(_bow_gram_lexer): new field: bow_lexer_gram_open_char
+
+	* lex-email.c (_bow_email_lexer): new field:
+	bow_lexer_simple_open_char
+
+	* istext.c (bow_char_is_text): new function
+
+	* int4word.c (bow_words_add_occurrences_from_hdb): new function
+
+	* hdb.c: new file
+	(hdb_open): new function
+	(hdb_close): new function
+	(hdb_put): new function
+	(hdb_get): new function
+	(hdb_each): new function
+
+	* docnames.c (bow_map_filenames_from_hdb): new function
+
+	* barrel.c (bow_barrel_add_from_hdb): new function
+
+	* arrow.c (arrow_index): Call HDB functions if BOW_HDB is set
+
+	* Makefile.in: Added stuff necessary to compile with HDB code
+	(Hash DataBase - simple file system-like database)
+
+1998-08-19  Andrew McCallum  <mccallum@jprc.com>
+
+	* bow/libbow.h: Fix comment descriptions of event models.
+
+	* opts.c (bow_event_document_then_word_document_length): New
+	global variable.
+	(bow_options): New command-line option
+	"event-document-then-word-document-length".
+	(parse_bow_opt): Handle it.
+	* bow/libbow.h: Declare new global variable.
+
+	* naivebayes.c (bow_naivebayes_score): Use
+	BOW_EVENT_DOCUMENT_THEN_WORD_DOCUMENT_LENGTH.  When multiplying by
+	the number of occurrences in the QUERY_WV, use .weight, not
+	.count.
+
+	* vpc.c (bow_barrel_new_vpc): Use
+	BOW_EVENT_DOCUMENT_THEN_WORD_DOCUMENT_LENGTH.
+
+1998-08-19  Kamal Nigam  <knigam@zeno.jprc.com>
+
+	* bow/libbow.h (bow_set_file_types_preprocess): Removed.
+	(bow_set_all_files_untagged): Removed.
+	(bow_set_file_types_randomly_by_count_per_class): Removed.
+	(bow_set_file_types_randomly_by_count): Removed.
+	(bow_set_file_types_randomly_fraction): Removed.
+	(bow_set_files_to_type): Removed.
+	(bow_set_file_types_postprocess): Removed.
+	(set_doc_types): New prototype.
+	(bow_ignore_next_wv): Removed.
+	(bow_ignored_model_next_wv): Removed.
+	(bow_cdoc_is_unlabeled): New prototype.
+
+	* split.c (test_files_count): Removed.
+	(train_files_count): Removed.
+	(untagged_files_count): Removed.
+	(bow_files_source_type): New type.
+	(bow_split_fancy_count): New type.
+	(bow_{test,train,unlabeled,ignore}_{files_source,fraction,number,filename,fancy_counts):
+	New variables.
+	(bow_test_set_files_use_basename): New variable from opts.c
+	(bow_split_options): Code for handling split options.
+	(bow_split_parse_opt): Likewise.
+	(bow_split_argp): Likewise.
+	(bow_split_argp_child): Likewise.
+	(bow_set_all_files_untagged): Don't use removed global variables.
+	(bow_set_file_types_randomly_by_count_per_class): Likewise.
+	(bow_set_file_types_randomly_by_fraction): Likewise.
+	(bow_set_files_to_type): Likewise.
+	(bow_set_file_types_preprocess): Removed.
+	(bow_set_file_types_randomly_by_count): Calculate per class nums by
+	converting to floats to avoid integer roundoff error.
+	(bow_set_file_types_postprocess): Removed.
+	(bow_set_file_types_of_remaining): New function.
+	(set_doc_types): New function.
+	(_register_split_args): New function.
+
+	* rainbow.c (rainbow_options): Removed options
+	prind-non-uniform-priors prind-no-foilgain-weight-scaling
+	prind-no-score-normalization and moved to prind.c.  Removed
+	test-percentage set-test-files testing-files
+	set-files-use-basename testing-files-use-basename set-train-files
+	and moved functionality to split.c.
+	(struct rainbow_arg_state): Likewise.
+	(rainbow_parse_opt): Likewise.
+	(rainbow_lisp_setup): Likewise.
+	(main): Likewise.
+	(rainbow_test): Removed test/train split code into split.c.
+
+	* prind.c (prind_options): New for options.  Taken from rainbow.c
+	(prind_parse_opt): Likewise.
+	(prind_argp): Likewise.
+	(prind_argp_child): Likewise.
+	(_register_method_prind): Added option registration.
+
+	* opts.c (bow_test_set_files_use_basename): Removed to split.c
+
+	* next.c (bow_cdoc_is_model): Updated to new document types.
+	(bow_cdoc_is_test): Likewise.
+	(bow_cdoc_is_nontest): Likewise.
+	(bow_cdoc_is_ignore): Likewise.
+	(bow_cdoc_is_ignored_model): Likewise.
+	(bow_cdoc_is_unlabeled): New function.
+	(bow_ignore_next_wv): Removed.
+	(bow_ignored_model_next_wv): Removed.
+
+	* naivebayes.c (naivebayes_options): Changed argument priority.
+
+	* mix.c (mix_options): Changed priority number of the options.
+	(mix_new_vpc): Updated to new document types.
+
+	* knn.c (knn_options): Changed priority number of the options.
+
+	* em.c (use_unknown_percent): Removed.
+	(bow_em_binary_model_counts): Removed.
+	(unknown_percent): Removed.
+	(not_unknown_num_by_class): Removed.
+	(bow_em_unlabeled_num): Removed.
+	(em_no_splitting): Removed.
+	(bow_em_fancy_counts): Removed.
+	(em_no_reset_doc_types): Removed.
+	(em_options): Removed options em-unlabeled-percent
+	em-labeled-num-by-class em-unlabeled-num em-no-splitting
+	em-no-reset-doc-types.
+	(em_parse_opt): Likewise.
+	(bow_em_new_vpc_with_weights): Remove all code to do train/unlabeled
+	splits.  This is now handled by libbow.  Changed call to
+	bow_ignore_next_wv to be a call to bow_heap_next_wv.
+
+	* active.c (active_initial_known): Removed.
+	(active_num_unlabeled): Removed.
+	(active_options): Removed options --active-initial-known and
+	--active-num-unlabeled.  Now handled by libbow.
+	(active_parse_opt): Likewise.
+	(active_select_qbc): Update document types so unlabeled docs are now
+	of type bow_doc_unlabeled.  Change other document types to the new
+	ones.
+	(active_select_weighted_kl): Likewise.
+	(active_select_dkl): Likewise.
+	(active_select_vote_entropy): Likewise.
+	(active_select_uncertain): Liekwise.
+	(active_select_relevant): Likewise.
+	(active_select_length): Likewise.
+	(active_select_random): Likewise.
+	(active_select_stream_ve): Likewise.
+	(active_select_stream_kl): Likewise.
+	(active_learn): Likewise.  Also removed all code to handle
+	test/train/ignore split here.  Now done in libbow.  Don't change
+	doc types at end of active_learn.
+
+1998-08-18  Andrew McCallum  <mccallum@jprc.com>
+
+	* treenode.c (treenode_keywords_print): Instead of contintionally
+	printing keywords, and sometimes printing "alias" (depending on kl
+	value), always print the keywords, AND print the kl divergence
+	value, so that a later post-processing program can decide for
+	itself which keywords and aliases it wants to use.
+
+1998-08-17  Andrew McCallum  <mccallum@jprc.com>
+
+	* bow/libbow.h: Declare new split.c functions.
+	(bow_doc_type): Add bow_doc_untagged.
+
+	* rainbow.c (rainbow_options): New command-line options
+	"set-test-files", "set-train-files", "set-files-use-basename".
+	Not all are yet handled.
+	(rainbow_test): Use new file type split.c functions.  
+	(rainbow_test_files): Remove commented out code for building a new
+	model.
+
+	* split.c (bow_set_all_files_untagged): New function.
+	(bow_set_file_types_preprocess): New function.
+	(bow_set_file_types_randomly_by_count_per_class): New function.
+	(bow_set_file_types_randomly_by_count): New function.  Takes
+	over from bow_test_split().
+	(bow_set_file_types_randomly_by_fraction): New function.
+	(bow_set_files_to_type): New function.  Takes over from
+	bow_test_set_files().
+	(bow_test_split, bow_test_split2, bow_test_split3): Functions
+	removed.
+	(bow_test_new_heap, bow_heap_next_wv_guts, bow_heap_next_wv,
+	bow_cdoc_is_*): Functions moved to next.c.
+
+	* next.c: New file.
+	* Makefile.in (LIBBOW_C_FILES): Added next.c.
+
+	* random.c (bow_random_set_seed): Moved to this file from split.c.
+
+1998-08-17  Kamal Nigam  <knigam@zeno.jprc.com>
+
+	* bow/libbow.h (bow_doc_type): Changed values and added an
+	unlabeled doc type.
+
+	* bow/em.h (bow_em_perturb_weights): New prototype.
+
+	* em.c: Major overhaul to em.c.  Cleaned up code, removed obsolete
+	functionality, and added some annealing functionality.
+	
+	(bow_em_stat_method): Removed all but two methods. 
+	(ignored_model_are_false_unknown): removed.
+	(use_leave_one_out): Removed.
+	(use_train_for_stats): Removed.
+	(use_priors_for_initial_class_probs): Removed.
+	(bow_em_unlabeled_start_method): New type for how to start the
+	starting point for EM using the unlabeled documents.
+	(bow_em_multi_hump_init_method): new type for how to distribute the
+	labeled documents among the multiple negative humps.
+	(ignored_model_percent): Removed.
+	(bow_em_pr_window_size): Removed.
+	(bow_em_take_best_barrel): Removed.
+	(bow_em_print_stat_summary): Removed.
+	(em_score_normalize_log): Removed.
+	(em_unlabeled_classname): Removed.
+	(use_even_for_initial_class_probs): Removed.
+	(em_anneal): New option variable.
+	(em_temperature): new option variable.
+	(em_temp_reduction): new option variable.
+	(em_print_correct): New option variable.
+	(em_unlabeled_start): New option variable.
+	(em_multi_hump_init): new option variable.
+	(em_options): Removed options em-unlabeled-class and
+	em-even-unlabeled-priors em-score-normalize-log.  Added options
+	em-anneal em-temperature em-temp-reduce em-print-progress
+	em-unlabeled-start and em-multi-hump-init.
+	(em_parse_opt): Likewise.  Also removed extra stat method types.
+	(bow_em_new_vpc_with_weights): Removed code for all options removed
+	from em_options.  Only handle stat methods for nb_score and
+	simple.  A general clean-up and re-organization to put related
+	pieces near each other, and de-spaghetti-ization.  Added code to
+	do some deterministic annealing by a specified temperature
+	reduction schedule.  Added code for option to print accuracy after
+	each round of em (option em-print-progress).  Cleaned up code for
+	specifying how to treat unlabeled docs when specifying starting
+	point by adding option em-unlabeled-start.  Added option to
+	initialize the multiple negative humps by either randomly putting
+	a document in a hump, or spreading a document randomly across
+	humps (option em-multi-hump-init).  Changed document types to be
+	in accordance with new doc types (model -> bow_doc_train, ignore
+	-> bow_doc_unlabeled, etc.).  Prune the vocab before doing
+	multi-hump initialization based only on the two-class split.
+	(bow_em_test_accuracy): New function.
+	(bow_em_set_priors_using_class_probs): Changes for new doc types.
+	(bow_em_score): Changes for new doc types.  Additions for
+	deterministic annealing code to handle the temperature correctly.
+	Remove code for em-score-normalize-log.
+
+Tue Aug  4 14:54:55 1998  Andrew's Laptop Account  <mccallum@jprc.com>
+
+	* mn.c (hac_em_one_mn_iteration): Re-written.
+
+1998-08-04  Andrew McCallum  <mccallum@jprc.com>
+
+	* mn.c: New file.
+
+Tue Aug  4 14:35:32 1998  Andrew's Laptop Account  <mccallum@jprc.com>
+
+	* hac.c (hac_split_kl_threshold): Change default value from 2000
+ 	to 0.4.
+	(hac_hypothesize_grandchildren): Use treenode_children_kl_div()
+	instead of treenode_children_weighted_kl_div().
+	(MN): New macro, set to 0.  Include "mn.c" if true.
+	(hac_generates_class): New global variable.
+	(hac_em_one_iteration): Simply return hac_em_one_mn_interation if MN.
+	(hac_cluster): If CROSSBOW_CLASSES_COUNT, print the class distribution.
+
+	* crossbow.c (crossbow_index): Always set CROSSBOW_CLASSES_COUNT,
+ 	indepedent of BUILD_HIER_FROM_DIR.  Also set classes distribution
+ 	to uniform in the root, so that all children will get space
+ 	allocated for this distribution.
+
+1998-07-30  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* lex-suffixing.c (suffixing_snarf_suffix): added hack so that
+	arrow will (hopefully) work on Cora 23k+ document data set
+
+1998-07-28  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* arrow.c (main): Don't load everything into memory at start.
+
+1998-07-22  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* docnames.c (bow_map_filenames_from_dir): Try opening as file if
+	directory doesn't work.
+
+	* docnames.c (bow_map_filenames_from_dir): Give warning and return
+	if no directory found.
+
+1998-07-17  Andrew McCallum  <mccallum@jprc.com>
+
+	* hac.c (hac_cluster): Print the iteration number.
+	(hac_full_em): Don't assert HAC_LOO.  Print the word distribution
+	immediately after depositing the data.  Add (commented out) code
+	for initializing the lambdas to a skewed distribution.  Print the
+	iteration number.
+
+	* treenode.c (treenode_pr_wi_loo_local): Handle the case in which
+	there is no data left after the LOO document is removed.
+	(treenode_keywords_print): Use treenode_pair_kl_div() instead of
+	treenode_pair_weighted_kl_div().
+
+	* bow/treenode.h: Declare Kamal's new function.
+
+1998-07-15  Kamal Nigam  <knigam@zeno.jprc.com>
+
+	* hac.c (hac_shrinkage): New variable for shrinkage option.
+	(hac_loo): New variable for loo option.
+	(cluster_hac_options): Changes for loo and shrinkage options.
+	(cluster_hac_parse_opt): Likewise.
+	(hac_hypothesize_grandchildren): Move code to create children to new
+	function.
+	(hac_create_children_for_node): New function.
+	(hac_perplexity): Changed shrinkage and loo compiler options to
+	runtime optionns.
+	(hac_em_one_iteration): Likewise.    Added loo-no shrinkage
+	option.
+	(hac_cluster): Also created children of root identically to how other
+	children are created.
+	(hac_full_em): check that loo and shrinkage are in use.
+
+	* treenode.c (treenode_log_local_prob_of_wv_loo): New function.
+
+1998-07-15  Andrew McCallum  <mccallum@jprc.com>
+
+	* crossbow.c (crossbow_filename2di): New global variable.
+	(crossbow_classes_count): New global variable.
+	(crossbow_archive): Write CROSSBOW_FILENAME2DI.
+	(crossbow_unarchive): Read it, and initialize CROSSBOW_CLASSES_COUNT.
+	(crossbow_index): Initialize CROSSBOW_FILENAME2DI.  Set
+	CROSSBOW_CLASSES_COUNT and create space in the root for CLASSES
+	distribution.
+	(crossbow_classify_test_docs): In addition to calculating fraction
+	correct, also calculate average inverse rank, and average score
+	difference between top ranked class and correct class.
+	* bow/crossbow.h: Declare new global variables.
+
+	* hac.c (hac_cluster): Don't print newlines before TEMPERATURE.
+	(hac_full_em): Use alpha=1 when setting leaf prior, instead of 0.
+	Don't print leaf priors since they don't change.  Print top words
+	if HAC_VERTICAL_WORD_MOVEMENT.
+
+	* treenode.c (treenode_new): Set CLASSES_CAPACITY from PARENT if
+	there is a parent, then also initialize CLASSES to uniform.
+	(treenode_write): Write the CLASSES information to disk.  NOTE: This
+	changes the file format for the model.
+	(treenode_new_from_fp): Read in the CLASSES information.
+	(treenode_set_classes_uniform): New function.
+	(treenode_set_classes_from_new_classes): New function.
+	* bow/treenode.h: Declare new functions.
+
+1998-07-14  Andrew McCallum  <mccallum@jprc.com>
+
+	* crossbow.c (main): Tell the lexer to toss words longer than 20.
+
+	* hac.c (hac_hypothesize_grandchildren): Instead of void, return
+	non-zero int if a split was made.
+	(hac_consider_splitting): Likewise.
+	(hac_cluster): Write classification and keywords to separate files for
+	different iterations.
+
+	* treenode.c (treenode_set_words_from_new_words): Renormalize
+	WORDS distribution after accelerated EM.
+	(treenode_set_new_words_from_perturbed_words): Add NOISE_WEIGHT
+	argument.
+	(treenode_set_new_words_from_perturbed_words_all): Likewise.
+	(treenode_set_lambdas_from_new_lambdas): Always avoid accelerated EM,
+	even if USE_ACCELERATED_EM is non-zero.
+	(treenode_keywords_print): New function.
+	(treenode_keywords_print_all): New function.
+	(treenode_pair_kl_div): New function.
+	(treenode_pair_weighted_kl_div): New function.
+	* bow/treenode.h: Declare new functions.
+
+1998-07-13  Andrew McCallum  <mccallum@jprc.com>
+
+	* crossbow.c (crossbow_classify_test_docs): Add SHRINKAGE argument
+	and use it instead of macro.
+	(crossbow_classify): Use TEST_FRACTION when splitting.
+	(crossbow_options): New option "test-percentage".
+	(crossbow_parse_opt): Handle it.
+	(main): Initialize it to .3.
+
+	* hac.c (hac_em_one_iteration): If ANCESTOR_MEMBERSHIP is zero,
+	continue.  Set the leaf prior before setting word distribution,
+	not after.
+	(hac_place_labeled_data): New function.
+	(hac_full_em): Use it.  Move hac_em_one_iteration() to after the
+	diagnostic printing, not before.
+
+	* treenode.c (treenode_set_lambdas_uniform_all): New function.
+	(treenode_set_words_from_new_words): Don't assert that
+	TOTAL_WORD_COUNT is greater than zero.  If it is zero, set the
+	distribution to uniform, with ALPHA equal to 1/N.
+	(treenode_set_leaf_prior_from_new_prior_all): 
+	(treenode_set_lambdas_from_new_lambdas): Likewise.
+	(treenode_log_local_prob_of_wv): Use log()-prob, not prob!
+	(treenode_word_probs_print_all): Only print the prior for leaf nodes. 
+	(treenode_children_kl_div): Don't assert that KLDIV is less than 10.
+	* bow/treenode.h: Declare new functions.
+
+1998-07-09  Andrew McCallum  <mccallum@jprc.com>
+
+	Let crossbow do classification.
+
+	* crossbow.c (SHRINKAGE): New macro.
+	(crossbow_arg_state): New element BUILD_HIER_FROM_DIR.
+	(crossbow_docs_split): New function.
+	(crossbow_doc_is_model): New function.
+	(crossbow_doc_is_test): New function.
+	(crossbow_doc_is_ignore): New function.
+	(crossbow_new_root_from_dir): New function.
+	(crossbow_index): Initialize DOC.TAG.  Obey BUILD_HIER_FROM_DIR.
+	(crossbow_classify_test_docs): New function.
+	(crossbow_classify): Filled out.
+	(crossbow_options): New command-line options "build-hier-from-dir" and
+	"classify".
+	(main): Set default BUILD_HIER_FROM_DIR to 0.
+	* bow/crossbow.h: Declare new functions.
+	(crossbow_doc): New element CI.
+
+	* hac.c (hac_deterministic_horizontal): New variable.
+	(hac_vertical_word_movement): New variable.
+	(cluster_hac_options): New command-line option
+	"hac-no-vertical-word-movement".
+	(cluster_hac_parse_opt): Handle it.
+	(hac_perplexity): New function.
+	(hac_em_one_iteration): Obey HAC_DETERMINISTIC_HORIZONTAL and
+	HAC_VERTICAL_WORD_MOVEMENT.
+	(hac_cluster): Don't initialize children of root if there already are
+	some.  Add LOO counts in the initial random E-step.
+	(hac_full_em): New function.
+
+	* treenode.c (treenode_new): Add NAME argument.  All callers
+	changed.  Initialize CLASSES to NULL.
+	(treenode_new_from_fp): Initialize CLASSES to NULL.
+	(treenode_children_weighted_kl_div): New function.
+	* bow/treenode.h: Declare new functions.
+	(treenode): Add new elements CLASSES_CAPACITY, CLASSES, NEW_CLASSES.
+
+	* bow/libbow.h (bow_array_next_index): Declare function.
+
+1998-07-09  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* rainbow-stats.pl (read_trial): try to sort class names
+
+1998-07-06  Andrew McCallum  <mccallum@jprc.com>
+
+	* hac.c (LOO): New macro.
+	(cluster_hac_options): New command-line option "hac-maximum-depth".
+	(cluster_hac_parse_opt): Handle it.
+	(hac_hypothesize_grandchildren): Obey it.
+	(hac_em_one_iteration): Implement LOO.
+
+	* treenode.c (treenode_new): Initialize LOO treenode variables.
+	(treenode_new_from_fp): Likewise.
+	(treenode_add_new_loo_for_di_wvi): New function.
+	(treenode_free_loo): New function.
+	(treenode_set_loo_from_new_loo): New function.
+	(treenode_set_words_from_new_words): Set NEW_WORDS_NORMALIZER.
+	(treenode_pr_wi_loo_local): New function.
+	(treenode_pr_wi_loo): New function.
+	(treenode_word_likelihood_ratios): Use shrinkage estimates for word
+	probabilities intead of the local estimates.
+	* bow/treenode.h: Declare new functions.
+	(treenode): Add elements DI_LOO, DI_WVI_LOO, NEW_DI_LOO and
+	NEW_DI_WVI_LOO.
+
+	* configure.in (CFLAGS): Change default to include -Wimplicit
+	instead of -Wno-implicit.
+	* bow/crossbow.h (crossbow_convert_log_probs_to_probs): Declare
+	function.
+
+1998-07-03  Andrew McCallum  <mccallum@jprc.com>
+
+	* crossbow.c (crossbow_arg_state): New member CLUSTER_OUTPUT_DIR.
+	(crossbow_leaf_document_probs_print): Calculate cross entropy instead
+	of probability.
+	(crossbow_archive): Add DIRNAME argument.
+	(crossbow_unarchive): Likewise.
+	(crossbow_classify_all_docs): New function.
+	(crossbow_options): New command-line option "cluster-output-dir".
+	(main): Handle it.
+
+	* hac.c: Add command-line options for many parameters.  Call
+	crossbow_classify_all_docs().
+
+	* treenode.c (USE_ACCELERATED_EM): New macro.
+	(EM_ACCELERATION): New macro.
+	(treenode_set_words_from_new_words): Use EM_ACCELERATION.
+	(treenode_set_lambdas_from_new_lambdas): Likewise.
+	(treenode_iterate_all_under_node): New function.
+	(treenode_pr_wi): Make it work for interior nodes of the tree as well
+	as the leaves.
+	(treenode_prior): New function.
+	(treenode_node_count): New function.
+	(treenode_normalized_word_prob_all_print): New function.
+	* bow/treenode.h: Declare new functions.
+
+1998-06-27  Andrew McCallum  <mccallum@jprc.com>
+
+	* bow/libbow.h (bow_fwrite_double): New function.
+	(bow_fread_double): New function.
+
+	* bow/treenode.h: Declare new functions.
+	(treenode): Change all float's to double's.
+
+	* crossbow.c (crossbow_unarchive): Use renamed function
+	treenode_new_from_fp().
+
+	* hac.c (SHRINKAGE): New macro.
+	(hac_hypothesize_grandchildren): Change KLDIV threshold from 0.0001 to
+	0.2.  Instead of setting new LAMBDAS to uniform, re-divide the
+	distribution from the new leaf's parent.  Use shrinkage.
+	(hac_em_one_iteration):  Use shrinkage. 
+	(hac_consider_splitting): New function.
+	(cluster_hac): Use it.  Initialize by dividing each document
+	probabilistically among children, instead of by hard assignment.
+	Print just the word prob distributions, not the likelihood ratios.
+
+	* treenode.c (treenode_new): Initialize LAMBDAS and NEW_LAMBDAS to
+	put all the weight on the new treenode.
+	(treenode_write): Write the PRIOR and NEW_PRIOR.  Everything that was
+	a float is now a double.
+	(treenode_new_from_fp): Read them.  Likewise.
+	(treenode_set_lambdas_uniform): New function.
+	(treenode_set_lambdas_from_new_lambdas): New function.
+	(treenode_log_local_prob_of_wv): New function.
+	(treenode_complete_log_prob_of_wv): New function.
+	(treenode_pr_wi): New function.
+	(treenode_log_prob_of_wv): Changed to use shrunken pr_wi estimates.
+	(treenode_word_leaf_likelihood_ratios): Deal with zero word probs.
+	(treenode_children_kl_div): Likewise.
+
+1998-06-24  Andrew McCallum  <mccallum@jprc.com>
+
+	* hac.c (hac_branching_factor): Renamed from NUM_CLUSTERS.
+	(hac_hypothesize_grandchildren): Renamed from
+	hac_hypothesize_grandchidren, and implemented.
+	(hac_em_one_iteration): Fix bug in perplexity calculation.
+	(cluster_hac): Intead of clustering flatly, grow a tree.  Print more
+	diagnostics.
+	* bow/treenode.h: Declare more functions.
+
+	* treenode.c (treenode_new): Fix parenthezation of strlen for
+	NAME.  Set WORDS_CAPACITY from parent.
+	(treenode_word_likelihood_ratios): Calculate weighted log likelihood
+	ratio instead of straight log likelihood.
+	(treenode_word_leaf_likelihood_ratios): New function.
+	(treenode_word_leaf_odds_ratios): New function.
+	(treenode_word_leaf_mean_ratios): New function.
+	(treenode_word_leaf_likelihood_ratios_print): New function.
+	(treenode_word_leaf_odds_ratios_print): New function.
+	(treenode_children_kl_div): New function.
+	(treenode_is_leaf_parent): New function.
+
+	* random.c (bow_random_double): Add LOW value after the
+	multiplication!
+
+	* em.c (random_double): Add LOW value after the multiplication!
+
+1998-06-23  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* barrel.c (bow_barrel_add_from_text_dir): when printing
+	bow_num_words, allow 8 spaces
+
+1998-06-22  Andrew McCallum  <mccallum@jprc.com>
+
+	* Makefile.in (LIBBOW_C_FILES): Add random.c.
+	(CROSSBOW_C_FILES, CROSSBOW_O_FILES): New variables.
+	(crossbow): New target.
+
+	* bow/crossbow.h: Remove treenode functions.  Declare new
+	functions. 
+
+	* bow/libbow.h (bow_sparray): Declaration for a sparse array, but
+	it's not implemented yet.
+	(bow_wv_word_count): Declare new function.
+	(bow_random_double, bow_random_01): Declare new functions.
+
+	* crossbow.c: Move all treenode functions to treenode.c.
+	(crossbow_convert_log_probs_to_probs): New function.
+	(crossbow_leaf_document_probs_print): New function.
+	(crossbow_index): Create the root with space for 10 children.
+	(crossbow_cluster): Call cluster_hac().
+
+	* random.c: Fix typos.
+
+1998-06-19  Andrew McCallum  <mccallum@jprc.com>
+
+	* random.c: New file.
+
+	* wv.c (bow_wv_word_count): New function.
+	* array.c (bow_array_next_index): New function.
+
+1998-06-18  Kamal Nigam  <knigam@kamal.jprc.com>
+
+	* cluster-flat.c (cluster_flat): Initial check-in.
+
+1998-06-18  Andrew McCallum  <mccallum@jprc.com>
+
+	* crossbow.c (treenode_word_likelihood_ratio): New function.
+	(treenode_word_likelihood_ratio_print_top): New function.
+
+	* bow/crossbow.h: Declare many functions.
+
+	* crossbow.c (treenode_new): Initialize the WORDS and NEW_WORDS to
+	zero.
+	(crossbow_wv_at_di): New function.
+	(crossbow_load_doc_wvs): New function.
+	(crossbow_unarchive): Call it.  Read wv's from file named "wvs".
+	(crossbow_index): Get the WV_SEEK_POS from the correct FP!  Write wv's
+	to file named "wvs".
+	(crossbow_options): New option "cluster".
+	(crossbow_parse_opt): Handle it.
+	(main): Call crossbow_unarchive if WHAT_DOING isn't crossbow_index.
+
+	* crossbow.c: Move definitions to crossbow.h.  Create read and
+	write an array of crossbow_doc structures.
+	(crossbow_index) Fix bug that was causing crash.
+	* crossbow.h: New file.
+
+1998-06-17  Andrew McCallum  <mccallum@jprc.com>
+
+	* crossbow.c: Completely re-written in preparation for
+	implementing Hofmann's clustering.
+
+	* array.c (bow_array_init): Use bow_malloc instead of malloc.
+
+1998-06-09  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* tfidf.c: change 'extern int' to 'int' so that
+	bow_tfidf_num_hit_documents is defined
+
+1998-06-09  Andrew McCallum  <mccallum@jprc.com>
+
+	* tfidf.c (bow_tfidf_set_weights): When DOING_LOG_COUNTS, use the
+	count+1, not just count.  This avoids unwanted zeros when
+	count==1!
+	* wv.c (bow_wv_set_weights_to_log_count_times_idf): Likewise.
+
+	* tfidf.c (bow_tfidf_num_hit_documents): New global variable.
+	(bow_tfidf_score): Set it.
+	* bow/tfidf.h: Declare new global variable.
+	* arrow.c (arrow_query): Print BOW_TFIDF_NUM_HIT_DOCUMENTS.
+
+1998-06-08  Andrew McCallum  <mccallum@jprc.com>
+
+	* arrow.c (arrow_query): Cast argument to bow_free to avoid
+	warning.
+
+	* tfidf.c (DOING_LOG_COUNTS): New macro.
+	(bow_tfidf_set_weights): Use it to (conditionally) set weights to the
+	log(count)*idf, instead of count*idf.  This is an attempt to
+	improve IR for Cora by more strongly insisting on having all query
+	terms be present.
+	(bow_tfidf_score): Likewise.  Calculate the total number of documents
+	that had query terms present, and print this number to standard
+	out as a directive to the Cora CGI script as ",HITCOUNT %d".
+
+	* wv.c (bow_wv_set_weights_to_log_count_times_idf): New function.
+	* libbow.h: Declare new function.
+
+	* arrow.c (arrow_query): Use NUM_SUFFIXES an another place it
+	should be, instead of the old constant 5.  Print the score on each
+	line, in addition to the filename and hit words.
+
+1998-06-05  Andrew McCallum  <mccallum@jprc.com>
+
+	* tfidf.c (bow_tfidf_score): Fix bug in query word recording, and
+	uncomment code.
+
+	* tfidf.c (bow_tfidf_score): Only return documents that contain
+	one or more query terms.  Add code for returning the query words
+	that were found in each document, but comment it out since it
+	isn't working yet.
+
+	* arrow.c (NUM_SUFFIXES): New macro.
+	(arrow_query): Use it.  Print not just the FILENAME, but also the
+	HITS[I].NAME, which, in the case of TFIDF, should contain the
+	query words that were found in this document.
+
+1998-06-04  Andrew McCallum  <mccallum@jprc.com>
+
+	* barrel.c (bow_barrel_new_from_printed_barrel_file): Read word
+	count as a float, not an integer.  Initialize the barrel's wi2dvf
+	WEIGHT as well as COUNT with the word count.
+
+1998-06-03  Andrew McCallum  <mccallum@jprc.com>
+
+	* lex-suffixing.c (suffixing_snarf_suffix): Change suffix boundary
+	from '-' to "xxx".  Lowercase the suffix.
+	* arrow.c (arrow_query): Likewise.
+
+1998-06-01  Andrew McCallum  <mccallum@jprc.com>
+
+	* STANDARDS: New file.
+
+	* rainbow-h.c (hier_barrel): New element LOO_DOC_WI2DVF.
+	(hier_barrel_new): Initialize it to NULL.
+	(hier_barrel_init_all_new_class_wi2dvf): If it is NULL, initialize it
+	to an empty wi2dvf.
+	(hier_barrel_set_class_model_from_new_class_wi2dvf): Instead of
+	making a new empty NEW_CLASS_WI2DVF for the next round, just set
+	it to NULL; hier_barrel_init_all_new_class_wi2dvf() will create a
+	new one for us, now that it is being called inside the
+	while()-loop in the function hier_barrel_calc_lambdas_all_nodes().
+	(hier_barrel_calc_lambda_one_iteration): Calculate the DI in the root
+	of each document from heap.  Then use this to add
+	E-step-probability-mass to the SOURCE_HBARREL->LOO_DOC_WI2DVF.
+	(hier_barrel_calc_lambdas_all_nodes): Call
+	hier_barrel_init_all_new_class_wi2dvf() inside the while loop, so
+	that the LOO_DOC_WI2DVF gets properly re-initialized.
+	(hier_barrel_word_probabilities_for_hbarrel): Comment out unused
+	variable.
+	(rainbowh_unarchive): Initialize the FILENAME -> DI mapping in the
+	root's DOC_BARREL.  This is used in
+	hier_barrel_calc_lambda_one_iteration() to calculate ROOT_DI.
+
+1998-06-02  Kamal Nigam  <knigam@kamal.jprc.com>
+
+	* active.c: active_select_stream_kl: New function.
+	(active_selection_type): added skl as a method.
+	(active_parse_opt): Likewise.
+	(active_learn): Cleaner futzing and restoring of EM options when 
+	calculating test stats.  Correctly rebuild barrel for testing
+	stats.
+
+	* em.c (bow_em_new_vpc_with_weights): Don't try to set priors if
+	doing uniform class priors; this avoids potential badness.  If
+	zero labeled docs, only create a random starting point if we're
+	not doing 'em-no-splitting'; active learning needs specific
+	starting points.  Create full word-class matrix for all words in
+	vocabulary; this avoids problems when perturbing the barrel for
+	zero-occurring words.
+
+	* barrel.c (bow_barrel_copy): initialize classnames correctly
+
+1998-06-01  Andrew McCallum  <mccallum@jprc.com>
+
+	These changes from Sean Slattery <Sean.Slattery@cs.cmu.edu>
+	* bow/libbow.h (bow_bitvec): Added element BITS_SET.
+	* bitvec.c (bow_bitvec_set): Keep BITS_SET up to date.
+
+1998-06-01  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c: First attempts at Full EM.  It doesn't do
+	leave-one-document out properly because it doesn't keep track of
+	how a document's data was distributed among the ancestors.
+	
+	(rainbowh_options): Added "emfull" as a shrinkage option.
+	(rainbowh_parse_opt): Handle it.
+	(struct rainbowh_arg_state): New element FULL_EM.
+	(hier_barrel_prune_words_not_in_map_and_set_vpc): Remind myself to set
+	the CDOC->NORMALIZER here.
+	(hier_barrel_set_local_class_model): Likewise.
+	(hier_barrel_init_all_new_class_wi2dvf): Create NEW_CLASS_WI2DVF with
+	space enough for bow_num_words() + 2, not jus tbow_num_words().
+	(hier_barrel_set_class_model_from_new_class_wi2dvf): Return
+	immediately if HBARREL->CLASS_BARREL is NULL, and only do the
+	replacement if HBARREL->NEW_CLASS_WI2DVF is non-NULL.
+	(hier_barrel_prob_wi_in_ci_wittenbell): Function gutted.
+	(old_hier_barrel_prob_wi_in_ci_shrink): Function removed.
+	(hier_barrel_prob_wi_in_ci_local): Comment out assertion about WEIGHT
+	equalling COUNT.  As a temporary measure, check for negative
+	counts and make them zero.
+	(hier_barrel_prob_wi_in_ci_local): As a temporary measure, check for
+	negative counts and make them zero.
+	(hier_barrel_prob_wi_local): Comment out assertion about WEIGHT
+	equalling COUNT.  As a temporary measure, check for negative
+	counts and make them zero.
+	(hier_barrel_calc_lambda_one_iteration): Attend to
+	RAINBOWH_ARG_STATE.FULL_EM.
+	(hier_barrel_all_reset_cdoc_word_count_from_wi2dvf_weights): New
+	function. 
+	(hier_barrel_calc_lambdas_all_nodes): Print overall perplexity and do
+	new necessary resets.
+	(hier_barrel_word_probabilities_for_class): Don't bother trying entire
+	CLASS_BARREL->WI2DVF->SIZE, because many will have null DV's.  Get
+	local probabilities instead of shrunken ones.
+	(hier_barrel_word_probabilities_for_hbarrel): New function.
+	(hier_barrel_print_word_probabilities_for_hbarrel): Use new function.
+	(hier_barrel_print_all_highest_prob_words): New function.
+	(_hier_barrel_local_score): When printing scores, print count instead
+	of weight.
+	(hier_barrel_set_lambdas): Do full EM if requested by attending to
+	RAINBOWH_ARG_STATE.FULL_EM.
+	(main): Initialize RAINBOWH_ARG_STATE.FULL_EM.
+
+	* Makefile.local (rainbow-h): Include argp/libargp.a in the
+	dependencies.
+
+	* naivebayes.c
+	(bow_naivebayes_set_cdoc_word_count_from_wi2dvf_weights): New
+	function.
+	* bow/naivebayes.h
+	(bow_naivebayes_set_cdoc_word_count_from_wi2dvf_weights): Declare
+	function.
+
+	* wa.c (bow_wa_append): Fix boundary condition for array growth.
+
+1998-06-01  Jason Rennie  <jrennie@kamal.jprc.com>
+
+	* arrow.c (arrow_query): return 0 if query words all have 0 IDF
+
+1998-05-31  Jason Rennie  <jrennie@kamal.jprc.com>
+
+	* libbow.h (BOW_MAX_WORD_LENGTH): increased to 4096
+
+1998-05-29  Jason Rennie  <jrennie@kamal.jprc.com>
+
+	* arrow.c (arrow_query): added a feedline to a verbosify statement
+
+1998-05-29  Jason Rennie <jrennie@data.jprc.com>
+
+	* arrow.c (arrow_serve): kill child after serving is done.
+	(main): prevent zombie children in System V environment.
+
+1998-05-22  Andrew McCallum  <mccallum@jprc.com>
+
+	* arrow.c (arrow_index): Make default method tfidf instead of
+	prind.
+	(arrow_query): Add suffixes "-Title", "-Author", "-Institution",
+	"-Abstract" to the query.
+
+	* lex-suffixing.c: New file.
+	* Makefile.in (LIBBOW_C_FILES): Added lex-suffixing.c.
+	* bow/libbow.h (bow_suffixing_lexer, bow_default_lexer_suffixing):
+	Declare variables.
+	* bow/tfidf.h (bow_method_tfidf): Declare method.
+	* deflexer.c (_bow_default_lexer_init): Add suffixing lexer.
+	* opts.c (bow_options): New command-line option "lex-suffixing".
+	(parse_bow_opt): Handle it.
+
+	* error.c (_bow_error): fflush() before aborting.
+
+	* rainbow-rank.pl: Calculate average inverse rank, instead of
+	average rank.
+
+1998-05-06  Andrew McCallum  <mccallum@jprc.com>
+
+	* split.c (bow_basename): Don't include the `/' at the beginning
+	of the NUM_COMPONENTS components.  This way Reuters experiments,
+	with a --testing-files file containing only the document numbers
+	will still work; before this function was returning strings like
+	"/15232" for the filenames in the CDOCS.
+
+	* vpc.c (bow_barrel_set_vpc_priors_by_counting): Avoid crashing
+	when PRIOR_SUM is zero.
+
+	* em.c (random01): Make sure the this doesn't return a number
+	equal to 0 or 1, just as "Recipes in C" says it should for doing
+	the Gamma distribution properly.  We were getting negative values
+	somewhere later in the code and suspect this is the culprit.
+	(bow_em_perturb_weights): Don't check the cdoc->type of the class
+	CDOCS; they aren't set.  Assert that CDOC->WORD_COUNT is
+	non-negative.
+
+1998-05-05  Andrew McCallum  <mccallum@jprc.com>
+
+	* Makefile.in (PERL_FILES): Added rainbow-rank.pl.  Written by
+	Andrew Y. Ng <ayn@ai.mit.edu>.
+
+1998-05-04  Andrew McCallum  <mccallum@jprc.com>
+
+	* em.c (bow_em_perturb_weights): Properly perturb zero-valued
+	WEIGHTS when doing dirichlet-based perturbation.
+
+1998-04-30  Andrew McCallum  <mccallum@jprc.com>
+
+	* kl.c (bow_kl_score): Don't insist on a non-empty QUERY_WV.  If
+	the query is empty, just use the class priors.  Accomplish this by
+	setting QUERY_WORD_COUNT equal to 1.
+
+	* naivebayes.c (bow_naivebayes_set_weights): Avoid errors when the
+	barrel is completely empty.
+
+1998-04-28  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (hier_barrel_prune_words_not_in_map_and_set_vpc):
+	Return immediately if HBARREL is NULL.
+	(hier_barrel_print_infogain_hier): Likewise.
+	(hier_barrel_set_vpc_and_populate_lower_branches): After freeing the
+	DOC_BARREL's, immediately re-create them, instead of relying on
+	later code to create them on demand.
+	(hier_barrel_is_leaf_parent): New function.
+	(_hier_barrel_set_node_scores): Use it to determine when to avoid
+	scoring an interior node.  The previous test only worked with
+	uniform-depth trees, and would cause some classes never to win.
+	(main): Likewise.
+
+	* split.c (bow_basename): Fix handling of NUM_COMPONENTS.
+
+	* active.c (active_learn): Fix typo:
+	em_perturb_starting_point_by_variance ->
+	bow_em_perturb_starting_point.
+
+1998-04-25  Andrew McCallum  <mccallum@jprc.com>
+
+	* em.c (bow_em_perturb_starting_point): Renamed from
+	em_perturb_starting_point_by_variance.  Changed from int (treated
+	as binary) to an bow_em_perturb_method (an enum), for none,
+	gaussian and dirichlet.
+	(em_options): Expand documentation for "em-perturb-starting-point".
+	(em_parse_opt): Handle it.
+	(random01): New function.
+	(bow_gamma_distribution): New function.
+	(bow_em_perturb_weights): Use it to implement dirichlet perturbation.
+	* bow/em.h (bow_em_perturb_method): New typedef.
+	(bow_em_perturb_starting_point): Renamed from
+	em_perturb_starting_piont_by_variance.
+	* active.c: Rename em_perturb_starting_point_by_variance to
+	bow_em_perturb_starting_point.  Note that this variable is now an
+	enum.
+
+1998-04-24  Andrew McCallum  <mccallum@jprc.com>
+
+	* arrow.c (arrow_arg_state): New element SERVE_WITH_FORKING.
+	(arrow_query): New argument NUM_HITS_TO_SHOW.
+	(arrow_socket_init): Add verbosity.
+	(arrow_serve): Initial code thinking about a forking server.
+	(main): In query_serving, touch all dv's if we are a forking server.
+
+1998-04-24  Kamal Nigam  <knigam@hurricane.jprc.com>
+
+	* bow/libbow.h: New prototypes for bow_barrel_copy and split.c
+	changes.
+
+	* active.c (active_selection_type): added stream vote entropy.
+	(active_stream_epsilon): New option for stream vote entropy.
+	(active_perturb_after_em): New option.
+	(active_select_stream_ve): New function.
+	(active_learn):  Only calculate density if needed for dkl.  Code for
+	new option active_perturb_after_em.
+
+	* barrel.c (bow_barrel_copy): New function.
+
+	* split.c (bow_cdoc_is_nontest): New function.
+	(bow_cdoc_is_ignore): New Function.
+	(bow_cdoc_is_ignored_model): New function.
+	(bow_test_next_wv): Converted to use bow_heap_next_wv so returns all
+	docs.
+	(bow_nontest_next_wv): Likewise.
+	(bow_model_next_wv): Likewise.
+	(bow_ignore_next_wv): Likewise.
+	(bow_ignored_model_next_wv): Likewise.
+
+1998-04-24  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (hier_barrel_test): Make the format of the infogain
+	filename conform to the new standard in the hier/Makefile.
+
+	* rainbow-h.c (rainbowh_options): Add new command line argument
+	"testing-files-use-basename" and have it take an optional numeric
+	argument to indicate how many path components to take from the end
+	of the path name.
+	(rainbowh_parse_opt): Handle it.
+	* rainbow.c (rainbow_options): Make "testing-files-use-basename"
+	take an optional numeric argument to indicate how many path
+	components to take from the end of the path name.
+	(rainbow_parse_opt): Handle it.
+	* split.c (bow_basename): Added new argument NUM_COMPONENTS, so we
+	can grab a certain number of the directory names too.
+	(bow_test_set_files): Use new argument.
+
+1998-04-24  Jason Rennie  <jr6b@andrew.cmu.edu>
+
+       * arrow.c (arrow_process_commands): New function.
+       (arrow_serve): Added capability to fork off child servers
+       (arrow_parse_opt): added option "--query-forking-server"
+
+1998-04-23  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (hier_barrel_calc_lambda_one_iteration):
+	Temporarily turn off use of NEW_CLAS_WI2DVF.
+	(hier_barrel_print_barrel): Use correct function name to print
+	selected. 
+
+1998-04-22  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (hier_barrel_print_barrel): Avoid crashes, and print
+	documents only from their leaves.
+
+	* barrel.c (bow_barrel_printf_selective): Renamed from
+	bow_barrel_printf, and added third argument.
+	(bow_barrel_printf): Now a wrapper around bow_barrel_printf_selected.
+	* bow/libbow.h: Declare new function.
+
+	* rainbow-h.c: Removed calls to
+	hier_barrel_check_weight_equals_count.
+
+	* rainbow-h.c (hier_barrel_for_filename): Make sure
+	LONGEST_MATCH_CI is initialized.
+	(hier_barrel_wa_flat_infogain): Initialize MARGINAL_TOTAL to zero.
+
+	* Makefile.local (rainbow-h): Depend on rainbow-h.o instead of
+	rainbow-h.c, so rainbow-h.o gets built.
+
+	* bow/libbow.h: Include <mcheck.h> if BOW_MCHECK is defined.
+	(bow_malloc_hook, bow_free_hook): Global variables declared.
+	(bow_malloc): Call the hook.  Do special things if MCHECK is defined.
+	(bow_realloc): Call the hook.
+	(bow_free): Likewise.
+	(bow_test_split3, bow_ignore_split, bow_argp_add_child): Functions
+	declared.
+	* bmalloc.c (bow_malloc_check_all): New function.
+	(_bow_malloc_hook): New function.
+	(_bow_free_hook): New function.
+	(bow_malloc_hook, bow_free_hook): Global variables defined.
+
+	* arrow.c: Declare external wicoo functions.
+	* bow/naivebayes.h: Declare some functions in naivebayes.c.
+	* naivebayes.c: Declare external simple_good_turing function.
+	* istext.c (NUM_TEST_CHARS): Change from "static const int" to a
+	macro.
+
+	* rainbow-h.c (hier_barrel): New element NEW_CLASS_WI2DVF.
+	(hier_barrel_check_weight_equals_count): New function.
+	(hier_barrel_init_all_new_class_wi2dvf): New function.
+	(hier_barrel_set_class_model_from_new_class_wi2dvf): New function.
+	(hier_barrel_set_all_class_model_from_new_class_wi2dvf): New function.
+	(hier_barrel_add_stats): Add the doc_barrel COUNT to the class_barrel
+	WEIGHT, instead of adding zero for the weight.
+	(hier_barrel_ancestor): In third argument return the CI, which in the
+	returned hbarrel points towards the HBARREL argument.
+	(hier_barrel_is_ancestor): New function.
+	(hier_barrel_prob_wi_in_ci_local): Use WEIGHT instead of COUNT to
+	calculate probabilities.
+	(hier_barrel_calc_lambda_one_iteration): Check that the weight equals
+	the count, temporarity as debugging.  Prepare to do *full* EM, by
+	accumulating probability mass of beta's in NEW_CLASS_WI2DVF.
+	(hier_barrel_calc_lambdas_all_nodes): New function.
+	(hier_barrel_print_word_probabilities_for_class): Now uses bow_wa, and
+	takes new argument specifying now many to print.
+	(hier_barrel_print_all_highest_prob_words): New function.
+	(hier_barrel_word_probabilities_for_class): New function.
+	(hier_barrel_print_infogain_flat): Free the WA at end!
+	(main): Pass new argument to
+	hier_barrel_print_word_probabilities_for_class.
+
+1998-04-21  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (hash_elt_t): typedef removed.
+	(hier_barrel): Remove all elements having to do with Andrew Ng's old
+	hash.
+	(hier_barrel_new_from_file): Remove second, conditional fclose(fp).
+	That is, don't close the fp twice!  On RedHat5.0 this crashes,
+	although it didn't on RedHat4.x.
+	(HIER_TEST): Preprocessor conditional removed.
+
+	* rainbow-h.c (hier_dir_is_leaf): Remove "const" from type of
+	argument to dir_leaf_select.  Avoids warning with new RedHat5.0.
+
+	* rainbow-h.c (rainbowh_options): New command line option
+	"use-vocab-size-hier", and old command line option,
+	"use-vocab_size" is now an alias for it.  Functionality of this
+	option unchanged.  New command line options "use-vocab-size-flat",
+	"print-word-infogain-flat", "print-word-infogain-hier".
+	(struct rainbowh_arg_state): New elements VOCAB_SIZE_METHOD and
+	FORCE_TRIVIAL_HIER.
+	(rainbowh_parse_opt): Handle new options.  Add new shrinkage method
+	"emtriv", setting FORCE_TRIVIAL_HIER.
+	(hier_barrel_calc_lambda_one_iteration): Don't print warning about
+	zero lambda if FORCE_TRIVIAL_HIER.
+	(hier_barrel_initialize_lambdas): If FORCE_TRIVIAL_HIER, set middle
+	lambdas to zero, and local and root lambdas to .5.
+	(hier_barrel_print_infogain_hier): Renamed from
+	hier_barrel_print_infogain.
+	(hier_barrel_wa_flat_infogain): New function.
+	(hier_barrel_print_infogain_flat): New function.
+	(hier_barrel_test): Change sprintf of filename in which to store the
+	reduce vocabulary.  Now has pattern "infogain%d-%s-%05d", where
+	string is the vocab size method.  Obey VOCAB_SIZE_METHOD.
+	(main): Change defaults from populate_by_scoring=1 and
+	hier_structure=neice to populate_by_scoring=0 and
+	hier_structure=leaf.  Print the total number of words using
+	bow_verbosify instead of fprintf.  Implement
+	RAINBOWH_PRINTING_INFOGAIN_FLAT.
+
+Tue Apr 21 11:17:46 1998  Andrew's Laptop Account  <mccallum@jprc.com>
+
+	* bow/libbow.h (bow_entropy): Declare function.
+	(bow_event_models): Document with comments.
+	(bow_infogain_event_model): Declare global variable.
+
+	* info_gain.c (bow_entropy): Change type of first argument from
+ 	count[] to count*.
+	(bow_infogain_per_wi_new): Instead of using an infogain event
+ 	model that matches the word probability event model, use whichever
+ 	event model is specified by new global variable
+ 	BOW_INFOGAIN_EVENT_MODEL.  Default is "document event model".
+  	Thus the default is the old behavior before the binomial paper was
+ 	written.  Before this change, naive Bayes by default used a "word
+ 	event model".
+
+	* naivebayes.c (bow_naivebayes_set_weights): Fix the setting of
+ 	IDF to Pr(w).  Consolodate some code that no longer needs to be
+ 	separate because we no longer set the DV weights in this function.
+
+	* opts.c (bow_infogain_event_model): New global variable.
+	(bow_options): New option "infogain-event-model".
+	(parse_bow_opt): Handle it.
+
+	* wa.c (bow_wa_sort): Fix bug by which the wrong pointer was
+ 	passed to qsort.
+	(bow_wa_sort_reverse): Likewise.
+	(bow_wa_fprintf): If N is less than 0, print all entries.
+
+Wed Apr 15 11:06:25 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (hier_barrel_correct_cdoc_prior_recurse): Fix typo.
+	(rainbowh_query): Add new filename argument to call to
+	bow_wv_new_from_text_fp().
+
+	* mix.c (mix_num_centroids_per_class): Change default from 4 to 2.
+	(mix_num_iterations): New static variable.
+	(mix_options): New command-line option "mixture-num-em-iterations".
+	(mix_parse_opt): Handle it.
+	(mix_perplexity): New function, (empty).
+	(mix_new_vpc): Fix bugs.
+
+	* rainbow-h.c (hier_barrel_correct_cdoc_prior_recurse): Change the
+ 	method of correction.  Instead of multiplying by a ratio of the
+ 	number of children, multiply by all the priors up the tree to the
+ 	root.
+	(hier_barrel_total_of_cdoc_word_counts): New function (not used).
+
+	* Makefile.in (STANDARD_METHOD_C_FILES): Renamed from
+ 	METHOD_C_FILES.
+	(METHOD_C_FILES): Set from $(STANDARD_METHOD_C_FILES).
+	(DIST_FILES): Use STANDARD_METHOD_C_FILES instead of
+	METHOD_C_FILES.  Thus we exclude methods added in Makefile.preamble.
+
+	* rainbow-stats.pl: Changes by Jason Rennie to make it more memory
+ 	efficient.
+
+	This version in the snaphot for today's date.
+
+	* rainbow.c (rainbow_query): Add new filename argument to
+ 	bow_wv_new_from_text_fp.
+	(rainbow_lisp_query): Likewise.
+	(rainbow_test_files): Likewise.
+	* arrow.c (arrow_query): Likewise.
+	(main): Likewise.
+	* crossbow.c (main): Likewise.
+
+	* active.c (active_selection_type): New method "dkl".
+	(active_alpha): New static variable.
+	(active_beta): New static variable.
+	(active_options): New command-line option "active-beta".
+	(active_parse_opt): Handle it.
+	(active_parse_opt): Look for "dkl" method.
+	(active_select_dkl): New function.
+	(active_doc_barrel_set_entropy): Use active_alpha.
+	(active_wv_density): Likewise.  Make it KL divergence instead of cross
+	entropy.
+	(active_learn): Turn on and off cross entropy not just for wkl, but
+	also for dkl.
+
+Mon Apr 13 14:08:56 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* Makefile.in: Include file Makefile.preamble, if it is there.
+	(%.o:%.c): Move rule down into the Rules section.
+
+	* active.c (active_select_weighted_kl): Use new density
+ 	calculation to weight the scores by which we select documents for
+ 	labeling.
+	(active_doc_barrel_set_entropy): New function.
+	(active_doc_barrel_set_pr_w): New function.
+	(active_wv_density): New function.
+	(active_doc_barrel_set_density): New function.
+	(active_learn): Call active_doc_barrel_set_density().
+
+	* Makefile.preamble: New file.  Moved METHOD_C_FILES appending
+	line here.
+	* Makefile.local (METHOD_C_FILES): Remove.
+	* Makefile.in (METHOD_C_FILES): Remove active.c, em.c and mix.c
+ 	from here.
+	* Makefile.local: Add a line that appends active.c, em.c, and
+ 	mix.c to METHOD_C_FILES.
+
+	* naivebayes.c (bow_naivebayes_new_odds_ratio_for_ci): Create the
+ 	RET with a little more space to avoid memory overrun and crash.
+  	Set the ratio using a weighted likelihood ratio instead of
+ 	unweighted.
+	(bow_naivebayes_print_odds_ratio_for_all_classes): Print the number of
+	words in each class to stderr.
+
+	* rainbow-stats.pl: Include the pruned suffix in the printed
+ 	message to STDERR when it is used.
+
+	* rainbow.c (rainbow_test): Use BOW_BARREL_CLASSNAME_AT_INDEX on
+ 	the RAINBOW_DOC_BARREL, instead of using FILENAME_TO_CLASSNAME on
+ 	the CDOC->FILENAME.  This works better when there is not a
+ 	one-to-one correspondence between classes and documents.
+	(rainbow_test_files): Count the number of classes with
+	BOW_BARREL_NUM_CLASSES on the RAINBOW_DOC_BARREL, not the class
+ 	barrel.  Again this is necessary for methods in which there are
+ 	multiple mixtures per class, as in the "mixture method.  Set the
+ 	CURRENT_CLASS using BOW_BARREL_CLASSNAME_AT_INDEX instead of
+ 	FILENAME_TO_CLASSNAME.
+
+	Now --lex-pipe-command's get the fully-qualified path name of the
+	file being lexed in their environment variable RAINBOW_LEX_FILENAME.
+
+	* lex-simple.c (bow_lexer_simple_open_text_fp): New argument
+ 	FILENAME.  Set the environment variable RAINBOW_LEX_FILENAME
+ 	before forking a lex pipe command, so the command can have access
+ 	to this filename.
+	* bow/libbow.h (bow_lexer): Make OPEN_TEXT_FP function take a new
+ 	argument, the filename.  Add FILENAME as an argument to several
+ 	functions.
+	* int4str.c (bow_int4str_new_from_text_file): Pass FILENAME to lex
+ 	creation function.
+	* int4word.c (bow_words_add_occurrences_from_text_dir): Likewise.
+	* lex-gram.c (bow_lexer_gram_open_text_fp): New argument FILENAME;
+ 	pass it on.
+	* lex-indirect.c (bow_lexer_indirect_open_text_fp): Likewise.
+	* wi2dvf.c (bow_wi2dvf_add_di_text_fp): New argument FILENAME.
+  	Pass to lex creation function.
+	* wv.c (bow_wv_new_from_text_fp): Likewise.
+	* robin.c (robin_index): Pass FILENAME to lex creation function.
+	* barrel.c (bow_barrel_add_from_text_dir): Pass FILENAME to
+ 	bow_wi2dvf_add_di_text_fp().
+
+Mon Mar 30 18:48:19 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* wa.c (bow_wa_new): Malloc ENTRY.
+	(bow_wa_free): Free it.
+	(bow_wa_append): Expand ENTRY as necessary.
+	* bow/libbow.h (bow_wa): Make ENTRY a separate malloc'ed pointer.
+
+Tue Mar 24 11:19:46 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	Implement variable-depth hierarchies.
+	
+	* rainbow-h.c (hier_barrel): Remove element CHILDREN_RANKINGS.
+  	Add elements DEPTH and LAMBDAS.
+	(hier_barrel_new): Initialize LAMBDAS to NULL.
+	(hier_barrel_set_depth_and_allocate_lambdas): New function.
+	(hier_barrel_free): Free LAMBDAS.
+	(EXTRA_CHECKS): Change from 0 to 1.
+	(hier_barrel_ancestor): New function.
+	(hier_barrel_prob_wi_in_ci_local): If CI == CI_IN_PARENT_ROOT, then
+	take probability from root, even if HBARREL is NULL.  This
+ 	provides a way to use this function to query the root, which was
+ 	impossible before.
+	(hier_barrel_prob_wi_in_ci_shrink): Replace individual calls to
+	ancestor word distributions with a loop.
+	(hier_barrel_calc_lambda_one_iteration): Likewise.  Return perplexity
+	instead of log-probability of the data.
+	(hier_barrel_prob_wi_shrink): Since the body only ever work on the
+	root, only shrink local and uniform, instead of uniform three
+ 	times.
+	(hier_barrel_initialize_lambdas): Set initial values with loop.
+	(hier_barrel_calc_lambda): Keep doing EM iterations until perplexity
+	change is less than 0.1, instead of going until all lambdas remain
+ 	constant.
+	(hier_barrel_calc_lambdas): Don't print "Calculting lambda", just
+	print the hbarrel name.
+	(rainbowh_unarchive): Do some post-processing after unarchiving.  Set
+	the depth and allocate lambdas.
+	(main): Verbosify the total number of words instead of fprintf'ing it.
+
+Mon Mar 23 19:59:33 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* naivebayes.c (bow_naivebayes_new_odds_ratio_for_ci): New
+ 	function.
+	(bow_naivebayes_print_odds_ratio_for_all_classes): New function.
+	(bow_naivebayes_set_weights): Don't assert that we are using one of a
+	limited number of methods.
+	(bow_naivebayes_score): Initialize BSCORES[CI].NAME to NULL.
+	* bow/naivebayes.h: Declare functions.
+
+	* bow/libbow.h (bow_ws): New structure.
+	(bow_wa): New structure.
+	Declare new bow_wa_* functions.
+
+	* Makefile.in (LIBBOW_C_FILES): Added mix.c and wa.c
+	* wa.c: New file.
+	* mix.c: New file.
+
+1998-03-23  Kamal Nigam  <knigam@yawp.jprc.com>
+
+	* em.c (em_no_reset_doc_types): New variable for resetting option.
+
+	* split.c (bow_test_split_for_em_binary): Function removed.
+	(bow_test_split3): New function.
+	(bow_test_split_for_em_multihump): Function removed.
+
+	* em.c (bow_em_binary_model_counts): Code for fancy counts.
+	(bow_em_fancy_counts): Likewise.
+	(em_options): Likewise, and for new option --em-no-reset-doc-types.
+	(em_parse_opt): Likewise, and for specifying number of multiple
+	negative humps.
+	(bow_em_new_vpc_with_weights): Changed array lengths to static for
+	debugging sanity.  Added code for fancy counts, multiple neg
+	humps, and not resetting doc types.  Fixed initial assert to be
+	more allowable.
+	(bow_em_score): Conditional rescaling so binary scoring works
+	correctly.
+
+Mon Mar 23 09:57:11 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (rainbow_test): Assert that only one trial was
+ 	requested, because there is no point in testing the training
+ 	documents twice, and also, otherwise the EM method will mess up.
+
+	* rainbow.c (rainbow_options): New command-line option
+ 	"test-on-training".
+	(rainbow_parse_opt): Handle it.
+	(rainbow_test): Implement it.
+	(struct rainbow_arg_state): New element TEST_ON_TRAINING.
+	(main): Initialize it.
+
+	In naivebayes, use the WEIGHT field of DV's instead of the COUNT
+	field. 
+
+	* naivebayes.c (bow_naivebayes_pr_wi_ci): Calculate this from the
+ 	DV's WEIGHT not from its COUNT.
+	(bow_naivebayes_set_weights): Use WEIGHT instead of COUNT.
+	(bow_naivebayes_score): Likewise.
+	* vpc.c (bow_barrel_new_vpc): Add code to update the
+ 	CDOC->WORD_COUNT in the DOC_BARREL in order to match the
+ 	(potentially) pruned vocabulary.  When building the wi2dvf, add
+ 	WEIGHT correctly for the different event models.
+	* wi2dvf.c (bow_wi2dvf_add_di_text_fp): When incorporating the
+ 	word that has just been tokenized, add one to both the COUNT and
+ 	the WEIGHT, not just the COUNT.  Note that this will change the
+ 	way the barrel->wi2dvf is built from data, and barrels tokenized
+ 	before this change will now be different from barrels tokenized
+ 	afterwards.  This change is inkeeping with naivebayes' use of the
+ 	WEIGHT field instead of the COUNT field, although vpc.c has a fix
+ 	to make the old-style wi2dvf's work.
+	* split.c (bow_tmp_word_struct): Add element WEIGHT.
+	(bow_test_next_wv): Put WEIGHT into the WV to be returned.
+
+Thu Mar 19 10:45:25 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* info_gain.c (bow_infogain_per_wi_new_document_event): Renamed
+ 	from bow_infogain_per_wi_new.
+	(bow_infogain_per_wi_new_word_event): New function.
+	(bow_infogain_per_wi_new): New function.
+
+Sat Mar  7 11:16:56 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* dv.c (_bow_dv_index_for_di): In embedded function
+ 	grow_if_necessary(), grow if LENGTH is >= SIZE, not just ==.
+  	Also, add 1 to SIZE before multiplying for growth, so that if SIZE
+ 	is 1, it will grow.  (Reported by Sean Slattery.)  These changes
+	fix bugs that prevented adding to a barrel read from disk.
+
+Fri Mar  6 11:07:32 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* naivebayes.c (bow_naivebayes_pr_wi_ci): If using the document
+ 	event model, force special kind of smoothing.
+	(bow_naivebayes_score): Change loop over words to be more readable.
+	Fix bug in condition for when to use the word count in the query.
+  	Properly handle zero-length documents.
+
+Thu Mar  5 12:30:36 1998  Kamal Nigam  <knigam@hurricane.jprc.com>
+
+	* int4str.c (bow_int4str_new_from_string_file): switched
+ 	reading_numbers back to regular.
+
+Thu Mar  5 11:31:55 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	Implement the "document" event model, i.e. the multi-variate
+	Bernoulli. 
+
+	* naivebayes.c (bow_naivebayes_set_weights): If we are using the
+ 	document event model, don't check that the sum of P(w|c) over all
+ 	words in a single class equals one, because it isn't true.
+	(bow_naivebayes_score): Change the inner loop over words.  If we're
+	using the document event model, loop over all words in the
+ 	vocabulary instead of just the words in the query.  When
+ 	incorporating the probability of a word that does not occur in the
+ 	query document, make it 1-p.  Don't use the count of the word when
+ 	using the document event model.
+	* vpc.c (bow_barrel_new_vpc): Assert that the word count is
+ 	non-zero before adding a count of 1 when using the document event
+ 	model.
+
+Thu Mar  5 11:18:16 1998  Kamal Nigam  <knigam@hurricane.jprc.com>
+
+	* .cvsignore: added kl-div
+
+	* active.c (active_selection_type): added vote entropy.
+	(active_parse_opt): Likewise.
+	(active_no_final_em): New option for not finishing with an EM round.
+	(active_options): Likewise.
+	(active_parse_opt): Likewise.
+	
+	(active_document_entropy): New function.
+	(active_select_weighted_kl): Correct weighting metric
+	(active_select_vote_entropy): New function.
+	(active_learn): prune vocab and set word counts at each round.  add
+	code for active_no_final_em option.  turn off cross entropy for
+ 	final model building.
+
+	* barrel.c (bow_barrel_printf): fixed array bounds bug.
+
+	* em.c (bow_em_new_vpc_with_weights): set word counts after pruing
+ 	the vocab.  Remove buggy conditions when calculating normalizer.
+
+Mon Mar  2 14:51:32 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	This version used for the ICML'98 hierarchical classification paper.
+
+	* rainbow-h.c (hier_barrel_prob_wi_in_ci_local): Don't assert that
+ 	LOCAL_COUNT > 0, just return the uniform distribution if it is.
+	(hier_barrel_calc_lambda_one_iteration): Don't assert that LAMBDA must
+	be greater than 0, (because sometimes EM makes it go to zero);
+ 	just print a warning if it is.
+	(_hier_barrel_set_node_scores): Goto DO_CHILDREN only if we are
+	pruning, not always whenever SCORE is -FLT_MAX.  Remove
+ 	bow_error() call for HIER_STRUCTURE!=HIER_LEAF.
+	(hier_barrel_score): Initialize the root HBARREL->SCORE to 1.
+	(main): Print the number of words in each top-level branch, and the
+	total number of words.
+
+Fri Feb 20 13:04:45 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* active.c (active_document_entropy): New function.
+	(active_select_weighted_kl): Use it to weight document selection
+	weights by e^(-KLdiv).
+
+Thu Feb 19 11:46:14 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (rainbowh_options): new command-line option
+ 	"scoring-pruning".
+	(struct rainbowh_arg_state): New element SCORING_PRUNING_NUM_CHILDREN.
+	(rainbowh_parse_opt): Handle it.
+	(hier_barrel_prob_wi_in_ci): Raise error if we try to use wittenbell
+	smoothing.
+	(_hier_barrel_set_node_scores): Pay attention to
+	SCORING_PRUNING_NUM_CHILDREN.
+	(main): Initialize SCORING_PRUNING_NUM_CHILDREN.
+
+Fri Feb 20 12:45:30 1998  Kamal Nigam  <knigam@server7.jprc.com>
+
+	* bow/em.h (em_cross_entropy): made extern
+
+	* em.c (em_cross_entropy): made non-static
+
+	* active.c (active_selection_type): added new type length.
+	(active_parse_opt): added new length selection method.
+	(active_select_qbc): reverted some changes lost from bad conflict
+	resolution.
+	(active_select_weighted_kl): fixed bugs to make run.
+	(active_select_length): New function.
+	(active_learn): create a dummy vpc barrel before trying to set word
+	counts.  turn off crossentropy for generating test stats.
+
+Wed Feb 18 20:36:38 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* em.c (em_cross_entropy): Renamed from em_crossentropy.
+	(bow_em_score): Make it do cross entropy if above var is non-zero.
+
+Wed Feb 18 20:08:03 1998  Kamal Nigam  <knigam@server7.jprc.com>
+
+	* active.c (active_parse_opt): new option for new selection method
+ 	wkl
+
+	* em.c (em_parse_opt): new option for crossentropy scoring
+	(em_crossentropy): Likewise.
+
+Wed Feb 18 20:24:57 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* naivebayes.c (naivebayes_cross_entropy): New static variable,
+ 	turned off by default.
+	(bow_naivebayes_score): Obey it.
+
+	* active.c (active_select_weighted_kl): New function.
+
+Wed Feb 18 20:08:03 1998  Kamal Nigam  <knigam@server7.jprc.com>
+
+	* bow/libbow.h (bow_smoothing): added goodturing.
+	(bow_cdoc_yes): prototype for new function.
+	(bow_smoothing_goodturing_k): new global for options.
+
+	* bow/em.h (bow_em_pr_struct): New from em.c
+
+	* em.c (bow_em_pr_struct): moved to header file.
+
+	* naivebayes.c (bow_naivebayes_initialize_goodturing): new
+ 	function.
+	(bow_naivebayes_goodturing_discounts): new variable.
+	(bow_naivebayes_goodturing_barrel): new variable.
+	(bow_naivebayes_pr_wi_ci): added option for goodturing smoothing
+	(bow_naivebayes_set_weights): Likewise.
+
+	* split.c (bow_cdoc_yes): new function.
+
+	* opts.c (bow_options): added option smoothing-goodturing-k and
+ 	added to smoothing-method option.
+	(parse_bow_opt): Likewise.
+
+	* Makefile.in (LIBBOW_C_FILES): add goodturing.c
+	* active.c (active_select_relevant): fixed so it picks most
+ 	relevant docs instead of least relevant.
+	(active_remap_scores): New function.
+	(active_parse_opt): New options for remapping scores to probabilities.
+	(active_pr_print_stat_summary): Likewise.
+	(active_pr_window_size): Likewise.
+	(active_remap_scores_pr): Likewise.
+	(active_learn): add word count calculation.  Call remap for new option.
+
+Wed Feb 18 14:04:00 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (hier_barrel_test): Handle case where
+ 	RAINBOWH_ARG_STATE.VOCAB_SIZE is zero.  Now we can do tests with
+ 	the full, unpruned vocabulary.
+
+Tue Feb 17 17:05:54 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* info_gain.c (bow_infogain_per_wi_new): Use correct type in RET
+ 	allocation.
+
+Mon Feb 16 17:11:21 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (rainbow_options): New command-line option
+ 	"testing-files-use-basename".
+	(rainbow_parse_opt): Handle it.
+	(rainbow_test): Remove old document iteration code.
+	* split.c (bow_test_set_files): Obey
+ 	BOW_TEST_SET_FILES_USE_BASENAME.
+	(BASENAME_ONLY): Macro removed.
+	* opts.c (bow_test_set_files_use_basename): New global variable.
+	* bow/libbow.h: Declare new global variable.
+
+Sat Feb 14 09:54:33 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	This version used for most ICML results.
+	* rainbow-h.c (hier_barrel): New element CLASS_WORD_COUNT.
+	(str_match_len): Move it out of hier_barrel_filename_to_classname.
+	(hier_barrel_for_filename): New function.
+	(hier_barrel_set_class_word_count): New function.
+	(hier_barrel_wi_count): New function.
+	(EXTRA_CHECKS): New macro.
+	(hier_barrel_prob_wi_in_ci_local): New argument LOO_G1CHILD_CI.  This
+	allows you to leave out a grandchild from the stats.
+	(hier_barrel_prob_wi_in_ci_shrink): Likewise.
+	(hier_barrel_prob_wi_local): New argument LOO_CHILD_CI.  This allows
+	you to leave out a child from the stats.
+	(hier_barrel_prob_wi_shrink): Likewise.
+	(LOO_CI_IN_PARENT): New macro.
+	(LOO_PARENT_CI_IN_G1PARENT): New macro.
+	(hier_barrel_calc_lambda_one_iteration): Use New arguments to prob
+	functions.
+
+Thu Feb 12 16:12:24 1998  Kamal Nigam  <knigam@server7.jprc.com>
+
+	* bow/em.h (em_perturb_starting_point_by_variance): Made
+ 	externally viewable.
+	(bow_em_num_em_runs): Likewise.
+
+	* rainbow.c (rainbow_test): Added warning message if going into
+ 	buggy code.
+
+	* em.c (em_perturb_starting_point_by_variance): Made non-static so
+ 	active.c can change its value.
+	(bow_em_num_em_runs): Likewise.
+	(bow_method_em): Added element for bow_barrel_free.
+
+	* active.c (active_final_em): new global for new option.
+	(active_print_committee_matrices): Likewise.
+	(active_qbc_low_kl): Likewise.
+	(active_options): added three new options.
+	(active_parse_opt): Likewise.
+	(active_select_qbc): Fixed for roundoff error.  Added code for new
+	option.
+	(active_learn): Print the names of initial docs.
+	Code for new options.  Change all non-test docs back to model at
+ 	end.
+	(active_test): Change to use new heap routine that gets all docs.
+
+Wed Feb 11 10:05:34 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* bow/libbow.h (bow_free_barrel): Remove check for NULL function,
+ 	so that the absence of this function will be noticed.  Previously
+ 	we had not noticed that em's barrel free function was NULL, and
+ 	where getting major memory leaks.
+
+Tue Feb 10 18:26:53 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (main): Fix typos.
+
+	Make --prune-vocab-by-occur-count and --prune-vocab-by-doc-count
+	work in conjunction with --print-barrel.
+	* rainbow.c (main): Obey options -O and -D before doing things
+ 	that don't update the vocab on their own.
+	* wi2dvf.c (bow_wi2dvf_hide_words_by_occur_count): New function.
+	* int4word.c (bow_words_occurrences_for_wi): Just return 0 when WI
+ 	is too large, instead of raising an assertion.
+
+Mon Feb  9 18:00:40 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* vpc.c (bow_barrel_new_vpc): Assert that the cdoc's from the
+ 	DOC_BARREL are at least as large as necessary.  This can fail when
+ 	reading from a disk archive that was created before CLASS_PROBS
+ 	was added to BOW_CDOC.
+
+	* rainbow.c: Initialize DOC_CDOC, when using bow_test_next_wv()!
+
+	* normalize.c (bow_wv_normalize_weights_by_vector_length): Handle
+ 	an empty WV.
+	(bow_wv_normalize_weights_by_summing): Likewise.
+
+	* naivebayes.c (naivebayes_normalize_log): New static variable.
+	(naivebayes_rescale_scores): New static variable.
+	(naivebayes_final_rescale_scores): New static variable.
+	(naivebayes_options): New command-line option
+	"naivebayes-normalize-log". 
+	(naivebayes_parse_opt): Handle it.
+	(bow_naivebayes_pr_wi_ci): Fix Witten-Bell.  It should now be working
+	properly.
+	(NO_SCALING): Macro removed, replaced by NAIVEBAYES_RESCALE_SCORES.
+	(bow_naivebayes_score): Calculate the entropy of words in the
+	document, H_W_D, although it is currently unused.  Do scaling or
+ 	not depending on new static variable.  Handle
+ 	NAIVEBAYES_NORMALIZE_LOG: when scoring, instead of using exp(),
+ 	return -1/(log(P(C|d)^3)) rescaled so highest is -2, normalized to
+ 	sum to one instead of P(C|d).  This results in values that are not
+ 	so close to zero and one.
+
+	* em.c (em_options): New command-line option
+ 	"em-score-normalize-log".
+	(em_parse_opt): Handle it.
+	(bow_em_score): Obey it.  When scoring, return -1/(log(P(C|d)^3)
+	(where the scores have been rescaled so that the highest value is -2),
+	normalized to sum to one instead of P(C|d).  This results in
+ 	values that are not so close to zero and one
+
+Mon Feb  9 17:52:18 1998  Kamal Nigam  <knigam@server7.jprc.com>
+
+	* em.c (em_score_normalize_log): new option.
+	(bow_em_perturb_weights): fixed bug for calculating perturbation.
+	(bow_em_score): code for new normalization option
+
+Sat Feb  7 12:41:39 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* active.c (active_select_qbc): Set WEIGHT to average
+ 	KL-divergence-to-the-mean, not average entropy.
+
+1998-02-07  Kamal Nigam  <knigam@tsunami.jprc.com>
+
+	* active.c (active_options): added active-committee-size
+	(active_select_qbc): checked for p(w_c) = 0
+
+	* em.c (bow_em_perturb_weights): fix looping and calculation bugs
+	(bow_em_new_vpc_with_weights): skip E-step on last iteration
+
+	* active.c (active_selection_type): changes for committee learning
+	(active_learn): made changes to support committee learning
+
+Fri Feb  6 10:36:19 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (hier_barrel_correct_cdoc_prior): Check prior
+ 	consistency more carefully.
+	(HBARREL_LAMBDA_PARENT): New macro.
+	(hier_barrel_calc_lambda_one_iteration): Increment with COUNT, not ++!
+	When printing P(w|c) for Agriculture/Org, print the count.  Use
+ 	new macro; particularly when calculating LOG_PROB_OF_DATA where
+ 	the old version did not use the correct value for lambda parent.
+  	Use COUNT in calculation of LOG_PROB_OF_DATA.
+	(hier_barrel_calc_lambda): Print ">" when LOG_PROB_OF_DATA goes down
+	in order to help debugging.
+	(hier_barrel_calc_lambdas): Get NUM_WORDS in the class, then print it,
+	so we can see it with the EM iteration numbers.
+
+	* vpc.c (bow_barrel_set_vpc_priors_by_counting): Print warning if
+ 	class has zero prior.
+
+	* em.c (em_options): New command-line option
+ 	"em-perturb-starting-point".
+	(em_parse_opt): Handle it.
+	(random_double): New static function.
+	(bow_em_gaussian): New function.
+	(bow_em_perturb_weights): New function.
+	(bow_em_new_vpc_with_weights): Use it.
+
+	* active.c (active_select_qbc): Added assertion.
+
+1998-02-06  Kamal Nigam  <knigam@tsunami.jprc.com>
+
+	* active.c: changes for compilation bugs
+
+	* bow/libbow.h (bow_test_set_files): added prototype
+
+	* split.c (bow_random_set_seed): new function.
+	(bow_test_split): Uses bow_random_set_seed.
+	(bow_test_split2): Likewise.
+	(bow_test_split_for_em_binary): Likewise.
+	(bow_test_split_for_em_multihump): Likewise.
+	(bow_ignore_split): Likewise.
+
+Fri Feb  6 10:36:19 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* active.c (active_commitee_size): New static variable.
+	(active_options): New command-line option "committee-size".
+	(active_parse_opt): Handle it.
+	(active_select_qbc): New function.
+	(active_select_uncertain): Add new COMMITTEE_SIZE argument.
+	(active_select_relevant): Likewise.
+	(active_select_random): Likewise.
+
+1998-02-06  Kamal Nigam  <knigam@tsunami.jprc.com>
+
+	* em.c (em_parse_opt): added check for --em-num-iterations
+
+	* bow/libbow.h (bow_test_split2): new prototype for removed option
+	em_seed
+	
+	(bow_split_seed): new option.
+
+	* split.c (already_seeded): new variable to ensure only one
+	seeding
+	(bow_test_split): code for already_seeded and new option --split-seed
+	(bow_ignore_split): Likewise.
+	(bow_test_split2): Likewise.
+	(bow_test_split_for_em_binary): Likewise.
+	(bow_test_split_for_em_multihump): Likewise.
+
+	* rainbow.c (rainbow_test): moved print statement for run header
+	for active learning
+
+	* opts.c (bow_split_seed): new variable for new option
+	(bow_options):  code for new option --split-seed
+	(parse_bow_opt): likewise
+
+	* em.c (em_parse_opt): added new option --em-no-splitting and
+	removed option --em-split-seed
+	(bow_em_new_vpc_with_weights): added code for active learning to be
+	compatible.  removed em-split-seed option (superseeded by a bow
+	option) and added --em-no-splitting option
+	
+	* Makefile.in (METHOD_C_FILES): added active.c
+
+	* active.c: new file.
+
+Wed Feb  4 21:18:54 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (rainbowh_options): New command-line option
+ 	"print-lambdas-to-file".
+	(rainbowh_parse_opt): Handle it.
+	(struct rainbowh_arg_state): New member LAMBDA_FP.
+	(hier_barrel_calc_lambda_one_iteration): Change all floats to doubles.
+	When running through word data in E-step, explicitely skip words
+ 	that are not in the vocabulary, even though it shouldn't be
+ 	necessary, since bow_model_next_wv() should not include them
+ 	anyway.  Add some assertions and debugging verbosity.  Handle new
+ 	command-line option.
+	(hier_barrel_calc_lambda): Base stopping condition on the sum of
+	diff's across all lambda's, not just the child lambda.
+	(hier_barrel_calc_lambdas): Handle LAMBDA_FP.
+	(main): Likewise.
+
+	* naivebayes.c (naivebayes_parse_opt): Make command-line option
+ 	"naivebayes-m-est-m" work.
+	(bow_naivebayes_pr_wi_ci): Likewise.  Try to fix Witten-Bell, but
+	still not working.  Use doubles instead of floats.
+	(bow_naivebayes_set_weights): Use bow_naivebayes_pr_wi_ci().
+
+Mon Feb  2 18:49:02 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* bow/libbow.h: Declare new functions and global variables.
+	(bow_event_models): New type.
+	(bow_dv_heap): New members HEAP_WV, HEAP_WV_DI and LAST_DI, for use
+	with new function bow_heap_next_wv().
+
+	* heap.c (bow_make_dv_heap_from_wi2dvf): Initialize new members of
+ 	bow_dv_heap structure.
+
+	* naivebayes.c (NO_SCALING): New macro to turn off rescaling of
+ 	scores.  Currently set so that Scaling is used.
+	(bow_naivebayes_score): Handle "document event model" BOW_EVENT_MODEL.
+
+	* opts.c (bow_event_model): New global variable.
+	(bow_options): New command-line option "event-model".
+	(parse_bow_opt): Handle it.
+
+	* rainbow-h.c (rainbowh_options): New option "print-doc-names".
+	(hier_barrel_correct_cdoc_prior_recurse): New function.
+	(hier_barrel_total_of_cdoc_priors): New function.
+	(hier_barrel_correct_cdoc_prior): New function.
+	(hier_barrel_prune_words_not_in_map_and_set_vpc): Call new function
+	hier_barrel_correct_cdoc_prior() at end.
+	(hier_barrel_set_local_class_model): Raise an error if
+	BOW_PRUNE_VOCAB_BY_INFOGAIN_N.
+	(hier_barrel_set_vpc_and_populate_lower_branches): Use new function
+	bow_heap_next_wv().
+	(hier_barrel_set_vpc_and_populate_lower_branches): Call new function
+	hier_barrel_correct_cdoc_prior() at end.
+	(IMPOSSIBLE_SCORE_FOR_ZERO_CLASS_PRIOR): New macro.
+	(_hier_barrel_local_score): Use it.  Empty documents now allowed!
+	Move the initialization of NUM_WORDS_IN_QUERY_WV down after
+ 	setting of priors, because sometimes the document is empty anyway.
+	(_hier_barrel_set_node_scores): Declare PARENT_SCORE double instead of
+	float.
+	(hier_barrel_test): Use hacked-up for-loop to make sure we don't skip
+	empty documents.  Print scores with precision based on
+ 	BOW_SCORE_PRINT_PRECISION.
+	(main): Handle new command line option.
+
+	* rainbow.c (rainbow_parse_opt) [USE_VOCAB_IN_FILE_KEY,
+ 	HIDE_VOCAB_IN_FILE_KEY]: Use bow_int4str_new_from_text_file(), not
+ 	bow_int4str_new_from_text_string().  This makes the rainbow-h
+ 	infogain files useable for in this context.
+	(rainbow_test): When determining when to alloca() HITS, use a
+	condition on HITS, not TN, because TN is set past 0 when
+ 	--testing-files is used!  Use new function bow_heap_next_wv() for
+ 	looping through all test documents.  Only free EMPTY_WV if it is
+ 	non-NULL.
+
+	* split.c (BASENAME_ONLY): Changed from 1 to 0.  Now when using
+ 	--testing-files, we compare the entire filename path, not just the
+ 	basename.  Warning: The AAAI'98 Reuters experiments relied on the
+ 	old setting.
+	(bow_heap_next_wv_guts): New function.
+	(bow_heap_next_wv): New function.
+	(bow_cdoc_is_model): New function.
+	(bow_cdoc_is_test): New function.
+
+	* vpc.c (bow_barrel_new_vpc): Count the number of documents
+ 	properly by running through list of documents, not be looking at
+ 	DV's!  Handle the event=document bow_event_model.  Verbosify the
+ 	number of documents in each class.
+	(bow_barrel_set_vpc_priors_by_counting): Change PRIOR_SUM from float
+	to double.
+
+	* TODO: Append email from Doug.
+
+	* evi.c (_register_method_evi): Add new argument to
+ 	bow_register_with_name().
+
+Fri Jan 30 10:49:28 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* methods.c (bow_method_register_with_name): New argument CHILD
+ 	allows the automatic setting of the GROUP index in the options, so
+ 	that the help message for options will get grouped together at the
+ 	bottom of the help message.
+
+	* knn.c (_register_method_knn): Add new argument to
+	bow_method_register_with_name(). 
+	* kl.c (_register_method_kl): Likewise.
+	* em.c (_register_method_em): Likewise.
+	* tfidf.c (_register_method_tfidf_): Likewise.
+	* prind.c (_register_method_prind): Likewise.
+	* naivebayes.c (_register_method_naivebayes): Likewise.
+	* bow/libbow.h: Add new argument to
+ 	bow_method_register_with_name().
+
+	* configure.in: Check for alloca.h, needed on DEC alpha machines.
+	Suggested by Jason Rennie.
+
+Wed Jan 28 17:45:34 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* wi2dvf.c (bow_wi2dvf_hide_words_by_doc_count): Return
+ 	immediately if COUNT is 0.
+
+	* rainbow.c (rainbow_options): New command-line option
+ 	"hide-vocab-indices-in-file".
+	(rainbow_parse_opt): Handle it.
+	(struct rainbow_arg_state): New member HIDE_VOCAB_INDICES_FILENAME.
+	(rainbow_test): Implement new option.  Print scores even for empty
+	documents.  They were skipped before.
+	(main): Implement new option.
+
+	* opts.c (bow_prune_words_by_doc_count_n): New global variable.
+	(bow_options): New command-line option "prune-vocab-by-doc-count".
+	(parse_bow_opt): Handle it.
+	* bow/libbow.h: Declare new command-line option global variable.
+
+	* int4word.c (bow_words_keep_top_by_infogain): Use qsort() instead
+ 	of previous N^2 implementation.
+
+	* int4str.c (bow_int4str_new_from_string_file): If the first word
+ 	is all numbers, read interpret the strings as word indices instead
+ 	of strings.
+
+	* barrel.c (bow_barrel_printf): Implement new format indicator,
+ 	'I'.  Print in format used by Mehran Sahami's feat-sel program.
+
+Wed Jan 21 17:39:12 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	This version used for AAAI-98 submission.  CVS tagged with
+	`aaai98-submission'.
+
+	* rainbow.c (main): Move rainbow_word_count_printing below "Do
+ 	things that require the vocabulary or class/word weights to have
+ 	been updated" so that the class barrel will be re-made and
+ 	up-to-date.  Temporarily, call
+ 	bow_naivebayes_print_odds_ratio_for_class() for implementing the
+ 	--weight-vector option.
+
+	* naivebayes.c (bow_naivebayes_print_odds_ratio_for_class): New
+ 	function.
+	(bow_naivebayes_set_weights): Set IDF to P(w).
+
+Wed Jan 21 17:39:53 1998  Kamal Nigam  <knigam@hurricane.jprc.com>
+
+	* rainbow.c (rainbow_test): changes to support --em-multi-hump-neg
+	* em.c (bow_em_new_vpc_with_weights): added support for new options
+        --em-multi-hump-neg and --em-even-unlabeled-priors
+        (bow_em_score): Likewise.
+
+	* split.c (bow_test_split_for_em_multihump): New function.
+
+Thu Jan 22 16:08:13 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (hier_barrel_prune_words_not_in_map_and_set_vpc): No
+ 	longer unhiding the vocabulary at the end of the function.  Yipes.
+  	Is this OK?
+	(hier_barrel_set_local_class_model): Likewise.
+	(_hier_barrel_local_score): No longer zero NUM_WORDS_IN_QUERY_WV at
+	declaration time; do it just before the loop that counts them.  In
+ 	the loop, before incrementing for a particular word, check agains
+ 	the RAINBOWH_ARG_STATE.VOCAB_MAP, not the
+ 	HBARREL->CLASS_BARREL->WI2DVF!
+	(hier_barrel_test): Expand comment about the loop over test documents
+	skipping document that don't have any words in the vocabulary.
+
+	* wicoo.c (bow_barrel_shrink_wv): New function.  Currently empty.
+
+Sat Jan 17 12:27:41 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* em.c (bow_em_new_vpc_with_weights): Only free BEST_WI2DVF under
+ 	correct conditions.  This fixes bug whereby rainbow produces no
+ 	output.
+
+Fri Jan 16 09:51:46 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (rainbow_options): New command-line option
+ 	"hide-vocab-in-file".
+	(rainbow_parse_opt): Handle it.
+	(struct rainbow_arg_state): New element hide_vocab_map.
+	(rainbow_query): Handle --hide-vocab-in-file, and, importantly, put
+	bow_keep_top_words_by_infogain above the bow_barrel_prune_vocab_
+ 	functions so that they will actually have an effect!  Remember,
+ 	bow_keep_top_words_by_infogain begins by unhiding all words!
+	(rainbow_lisp_setup): Initialize rainbow_arg_state.hide_vocab_map.
+	(rainbow_test): Put the bow_barrel_prune_vocab_ function calls inside
+	the trial for()-loop, after the bow_keep_top_words_by_infogain,
+ 	for the same reason as above!
+	(main): Handle --hide-vocab-in-file, and, importantly, put
+	bow_keep_top_words_by_infogain above the bow_barrel_prune_vocab_
+ 	functions so that they will actually have an effect!
+
+	* naivebayes.c (bow_naivebayes_pr_wi_ci): In wittenbell, use
+ 	LOO-adjusted class word count instead of CDOC->NUM_WORDS.
+
+	* barrel.c (bow_barrel_prune_words_in_map): New function.
+	* bow/libbow.h: Declare new function.
+
+	* split.c (bow_basename): Fix so it will strip the leading `/'.
+
+	* opts.c (bow_smoothing_method): New global variable.
+	(bow_options): New command line option "smoothing-method";
+	currently takes "laplace", "mestimate" and "wittenbell".
+	"mestimate" is not yet implemented.
+	(parse_bow_opt): Handle it.
+	* bow/libbow.h (bow_smoothing): New enum typedef.
+	(bow_smoothing_method): Declare new global variable set by opts.c.
+	* naivebayes.c (bow_naivebayes_pr_wi_ci): Use different smoothing
+ 	methods depending on BOW_SMOOTHING_METHOD; laplace and wittenbell
+ 	implemented.
+	* kl.c (bow_kl_score): Previously used wittenbell smoothing all
+ 	the time.  Now use wittenbell only if indicated on command-line
+ 	with --smoothing-method, otherwise use laplace.
+
+Thu Jan 15 11:47:00 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* vpc.c (bow_barrel_new_vpc): Remove assertion that all classes
+ 	have some words in their training data after vocabulary pruning.
+	(bow_barrel_set_vpc_priors_by_counting): When calculating class
+	priors, don't count documents that are not in the MODEL set!
+
+	* rainbow.c (rainbow_test): Fix typo.
+
+	* naivebayes.c (bow_naivebayes_score): If a class has a zero class
+ 	prior, set the score to a special flagged value, and then when
+ 	returning scores in the array, make those scores be -DBL_MAX.
+	Now, for the first time, naivebayes can handle classes that have no
+	training documents in them.
+
+Thu Jan 15 14:15:22 1998  Kamal Nigam  <knigam@hurricane.jprc.com>
+
+	* em.c (bow_em_new_vpc_with_weights): Fixed two memory leaks.
+
+Thu Jan 15 11:47:00 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* bow/libbow.h (bow_score_print_precision): New variable extern
+ 	declaration.
+
+	* kl.c (bow_kl_score): Assert QUERY_WORD_COUNT to make sure we're
+ 	not trying to classify an empty document.
+
+	* em.c (bow_em_compare_to_nb): Use BOW_SCORE_PRINT_PRECISION when
+ 	printing scores.
+
+	* bow/libbow.h (bow_stoplist_replace_with_file): New function
+ 	declaration.
+
+Thu Jan 15 11:39:44 1998  Kamal Nigam  <knigam@hurricane.jprc.com>
+
+	* opts.c (bow_score_print_precision): New option, defaults to 10.
+	(parse_bow_opt): Support for new option.
+
+	* rainbow.c (rainbow_query): Print precision obeys new option.
+	(rainbow_test): Likewise.
+	(rainbow_test_files): Likewise.
+
+	* naivebayes.c (naivebayes_binary_scoring): New option.
+	(naivebayes_parse_opt): Support for new option.
+	(bow_naivebayes_score): Support for new option.  If binary scoring,
+	don't move scores out of log space or normalize them.  This
+ 	alleviates the 0-1 problem, at the cost of losing probabilities.
+
+	* bow/libbow.h (bow_score): Changed weight from float to double.
+	(bow_test_split2): Added prototype.
+
+	* split.c (bow_ignore_split): New function.
+	(bow_test_split2): Allows there to be too few documents to grab, and
+	just grabs all of them if that's its only choice.  Takes an
+ 	optional random seed for seeding the random number generator.
+	(bow_test_split_for_em_binary): New function.
+
+	* em.c (use_priors_for_initial_class_probs): flipped value from 0
+ 	to 1
+	(unlabeled_normalizer): moved from predefined value to an option
+	(bow_em_num_em_runs): Likewise
+	(bow_em_print_word_vector): Likewise
+	(bow_em_making_barrel): if doing binary scoring, still use
+	probabilities for rounds of EM
+	(EM_LABELED_NUM_BY_CLASS): changed name from EM_UNLABELED_NUM_BY_CLASS
+	(em_binary_pos_classname): added option for binary case
+	(em_binary_neg_classname): added option for binary case
+	(bow_em_unlabeled_num): added option for specifying number of
+	unlabeled docs
+	(bow_em_print_probs): added option to print word probabilities for
+	kl-div across runs
+	(bow_em_binary_case): added option for binary classification
+	(bow_em_split_seed): added random seed option to facilitate paired
+	trials
+	(em_parse_opt): added support for new options
+	(bow_em_new_vpc_with_weights): Added support for binary
+	classification, although it's commented out now.  Makes only
+ 	initial labeled docs be all positive ones and sets priors of
+ 	unlabeled docs to be all negative.  Added support for seeding the
+ 	random number generator for labeled docs so we can have paired
+ 	trials.  Added support for specifying the number of unlabeled
+ 	docs.  This requires a new doc type, so conditions on doc types
+ 	have changed slightly.  If pruning vocab by info gain, we need to
+ 	do this after the labeled docs are selected instead of before the
+ 	barrel is built, so this logic is added in here.  Allow number of
+ 	labeled docs to be zero.  In this case, we need to be careful
+ 	about calculating priors with no docs, and also need to initialize
+ 	the class vectors randomly.  Added condition around printing class
+ 	probabilities with new option.  Only score docs for score to prob
+ 	mapping if its needed by the method.  Make naive bayes scoring
+ 	respect the unlabeled_normalizer.
+	(bow_em_set_priors_using_class_probs): made condition changes for new
+	doc type.
+	(bow_em_score): Change the scoring if doing binary classification.
+	Don't convert back from log space and don't normalize.  We lose
+ 	probabilities, but it avoids the 0-1 problem, and we can still
+ 	rank the predictions.
+
+Tue Jan 13 14:41:55 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (rainbow_query): Print scores with precision %.20g
+ 	instead of default 6.
+	(rainbow_test): Likewise.
+	(main): When printing top words by infogain with -I, if
+	--testing-files was on the command line, then do this test/train
+ 	split before calculating the infogains.
+
+Thu Jan  8 12:56:22 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* opts.c (bow_options): New command-line option
+ 	"replace-stoplist-file".
+	(parse_bow_opt): Handle it.
+	* stoplist.c (bow_stoplist_replace_with_file): New function.
+
+Wed Jan  7 17:14:59 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* bow/libbow.h (bow_doc_type): Added types UNUSED_MODEL and
+ 	UNUSED_IGNORE.
+
+Tue Jan  6 16:39:30 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* em.c (bow_em_new_vpc_with_weights): When printing P(C|w)
+ 	distributions, initialize TOTAL_WORD_COUNT inside the loop over
+ 	words!
+
+	* int4word.c (bow_int2word): If INDEX is larger than the number of
+ 	words in the underlying word map, return NULL.
+
+	* em.c (bow_em_new_vpc_with_weights): After the M-step, before the
+ 	E-step, print out the P(C|w) distribution for all words to a file
+ 	named pcw01, where "01" is the EM-iteration number.
+
+	* int4word.c (bow_word2int_no_add): New function.
+	* bow/libbow.h: Declare new function.
+
 Sun Dec 21 20:36:08 1997  Andrew McCallum  <mccallum@jprc.com>
 
 	* rainbow.c (rainbow_options): Document --print-barrel's FORMAT

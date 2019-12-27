@@ -1,6 +1,6 @@
 /* Weight-setting and scoring implementation for Naive-Bayes classification */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -40,6 +40,8 @@ static char doc_weights[4] = "nnn";
 
 static struct argp_option knn_options[] =
 {
+  {0,0,0,0,
+   "K-nearest neighbor options, --method=knn:", 40},
   {"knn-k", KNN_K_KEY, "K", 0,
    "Number of neighbours to use for nearest neighbour. Defaults to "
    "30."},
@@ -124,7 +126,7 @@ bow_knn_set_weights (bow_barrel *barrel)
   for (di = 0; di < barrel->cdocs->length; di++)
     {
       cdoc = bow_cdocs_di2doc(barrel->cdocs, di);
-      if (cdoc->type == model) 
+      if (cdoc->type == bow_doc_train) 
 	{
 	  total_model_docs++;
 	  cdoc->word_count = 0;
@@ -145,7 +147,7 @@ bow_knn_set_weights (bow_barrel *barrel)
       for (dvi = 0; dvi < dv->length; dvi++)  
 	{ 
 	  cdoc = bow_cdocs_di2doc(barrel->cdocs, dv->entry[dvi].di);
-	  if (cdoc->type == model)
+	  if (cdoc->type == bow_doc_train)
 	    {
 	      num_docs++;
 
@@ -191,7 +193,7 @@ bow_knn_set_weights (bow_barrel *barrel)
 	  for (dvi = 0; dvi < dv->length; dvi++)   
 	    {  
 	      cdoc = bow_cdocs_di2doc(barrel->cdocs, dv->entry[dvi].di); 
-	      if (cdoc->type == model) 
+	      if (cdoc->type == bow_doc_train) 
 		{
 		  if (TF_A(doc_weights))
 		    {
@@ -317,7 +319,7 @@ bow_knn_get_k_best (bow_barrel *barrel, bow_wv *query_wv,
       doc = bow_cdocs_di2doc (barrel->cdocs, current_di); 
 
       /* If it's not a model document, then move on to next one */ 
-      if (doc->type != model) 
+      if (doc->type != bow_doc_train) 
         { 
           do  
             { 
@@ -519,6 +521,6 @@ bow_method bow_method_knn =
 void _register_method_knn () __attribute__ ((constructor));
 void _register_method_knn ()
 {
-  bow_method_register_with_name (&bow_method_knn, "knn");
+  bow_method_register_with_name (&bow_method_knn, "knn", &knn_argp_child);
   bow_argp_add_child (&knn_argp_child);
 }

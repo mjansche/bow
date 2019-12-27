@@ -1,6 +1,6 @@
 /* arrow - a document retreival front-end to libbow. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -34,6 +34,10 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+/* These are defined in bow/wicoo.c */
+extern bow_wi2dvf *bow_wicoo_from_barrel  (bow_barrel *barrel);
+extern void bow_wicoo_print_word_entropy (bow_wi2dvf *wicoo, int wi);
+
 static int arrow_sockfd;
 
 /* The version number of this program. */
@@ -55,6 +59,7 @@ static char arrow_argp_args_doc[] = "[ARG...]";
 enum {
   PRINT_IDF_KEY = 3000,
   QUERY_SERVER_KEY,
+  QUERY_FORK_SERVER_KEY,
   COO_KEY
 };
 
@@ -72,6 +77,9 @@ static struct argp_option arrow_options[] =
    "tokenize input from stdin [or FILE], then print document most like it"},
   {"query-server", QUERY_SERVER_KEY, "PORTNUM", 0,
    "Run arrow in socket server mode."},
+  {"query-forking-server", QUERY_FORK_SERVER_KEY, "PORTNUM", 0,
+   "Run arrow in socket server mode, forking a new process with every "
+   "connection.  Allows multiple simultaneous connections."},
   {"num-hits-to-show", 'n', "N", 0,
    "Show the N documents that are most similar to the query text "
    "(default N=1)"},
@@ -106,6 +114,7 @@ struct arrow_arg_state
   /* number of closest-matching docs to print */
   int num_hits_to_show;
   const char *server_port_num;
+  int serve_with_forking;
 } arrow_arg_state;
 
 static error_t
@@ -134,6 +143,12 @@ arrow_parse_opt (int key, char *arg, struct argp_state *state)
       arrow_arg_state.server_port_num = arg;
       bow_default_lexer->document_end_pattern = "\n.\r\n";
       break;
+    case QUERY_FORK_SERVER_KEY:
+      arrow_arg_state.serve_with_forking = 1;
+      arrow_arg_state.what_doing = arrow_query_serving;
+      arrow_arg_state.server_port_num = arg;
+      bow_default_lexer->document_end_pattern = "\n.\r\n";
+      break;
     case COO_KEY:
       arrow_arg_state.what_doing = arrow_printing_coo;
       break;
@@ -142,7 +157,7 @@ arrow_parse_opt (int key, char *arg, struct argp_state *state)
       /* Now we consume all the rest of the arguments.  STATE->next is the
 	 index in STATE->argv of the next argument to be parsed, which is the
 	 first STRING we're interested in, so we can just use
-	 `&state->argv[state->next]' as the value for RAINBOW_ARG_STATE->ARGS.
+	 `&state->argv[state->next]' as the value for ARROW_ARG_STATE->ARGS.
 	 IN ADDITION, by setting STATE->next to the end of the arguments, we
 	 can force argp to stop parsing here and return.  */
       arrow_arg_state.non_option_argi = state->next - 1;
@@ -245,7 +260,10 @@ arrow_index (int argc, char *argv[])
     {
       /* Parse all the documents to get word occurrence counts. */
       for (argi = arrow_arg_state.non_option_argi; argi < argc; argi++)
-	bow_words_add_occurrences_from_text_dir (argv[argi], "");
+	if (bow_hdb)
+	  bow_words_add_occurrences_from_hdb (argv[argi], "");
+	else
+	  bow_words_add_occurrences_from_text_dir (argv[argi], "");
       bow_words_remove_occurrences_less_than
 	(bow_prune_vocab_by_occur_count_n);
       /* Now insist that future calls to bow_word2int*() will not
@@ -255,11 +273,14 @@ arrow_index (int argc, char *argv[])
 
   arrow_barrel = bow_barrel_new (0, 0, sizeof (bow_cdoc), 0);
   for (argi = arrow_arg_state.non_option_argi; argi < argc; argi++)
-    bow_barrel_add_from_text_dir (arrow_barrel, argv[argi], 0, argv[argi]);
+    if (bow_hdb)
+      bow_barrel_add_from_hdb (arrow_barrel, argv[argi], 0, argv[argi]);
+    else
+      bow_barrel_add_from_text_dir (arrow_barrel, argv[argi], 0, argv[argi]);
   if (bow_argp_method)
     arrow_barrel->method = bow_argp_method;
   else
-    arrow_barrel->method = &bow_method_prind;
+    arrow_barrel->method = &bow_method_tfidf;
   bow_barrel_set_weights (arrow_barrel);
   bow_barrel_normalize_weights (arrow_barrel);
   return arrow_barrel->cdocs->length;
@@ -290,21 +311,23 @@ print_file (const char *filename)
    obtained from that file; otherwise it will be prompted for and read
    from stdin. */
 int
-arrow_query (FILE *in, FILE *out)
+arrow_query (FILE *in, FILE *out, int num_hits_to_show)
 {
   bow_score *hits;
   int actual_num_hits;
-  int i;
+  int i, j;
   bow_wv *query_wv;
+  bow_wv *new_query_wv;
 
-  hits = alloca (sizeof (bow_score) * arrow_arg_state.num_hits_to_show);
+  hits = alloca (sizeof (bow_score) * num_hits_to_show);
 
   /* Get the query text, and create a "word vector" from the query text. */
   if (arrow_arg_state.query_filename)
     {
       FILE *fp;
       fp = bow_fopen (arrow_arg_state.query_filename, "r");
-      query_wv = bow_wv_new_from_text_fp (fp);
+      /* Read in special paramter commands here. */
+      query_wv = bow_wv_new_from_text_fp (fp, arrow_arg_state.query_filename);
       fclose (fp);
     }
   else
@@ -312,29 +335,68 @@ arrow_query (FILE *in, FILE *out)
       if (out == stdout)
 	bow_verbosify (bow_quiet, 
 		       "Type your query text now.  End with a Control-D.\n");
-      query_wv = bow_wv_new_from_text_fp (in);
+      /* Read in special paramter commands here. */
+      query_wv = bow_wv_new_from_text_fp (in, NULL);
     }
 
+  bow_verbosify (bow_verbose, "Read query\n");
+  
   if (!query_wv)
     {
-      bow_verbosify (bow_progress, "Empty query");
+      bow_verbosify (bow_progress, "Empty query\n");
       return 0;
     }
+
+#if 1
+  /* Augment query with special suffixes */
+#define NUM_SUFFIXES 6
+  new_query_wv = bow_wv_new (query_wv->num_entries * NUM_SUFFIXES);
+  for (i = 0; i < query_wv->num_entries; i++)
+    {
+      char token[BOW_MAX_WORD_LENGTH];
+      char *suffix[] = {"", "xxxtitle", "xxxauthor", "xxxinstitution", "xxxabstract", "xxxreferences"};
+      int repetition[] = {1, 800, 800, 400, 400, 1};
+
+      for (j = 0; j < NUM_SUFFIXES; j++)
+	{
+	  sprintf (token, "%s%s", 
+		   bow_int2word (query_wv->entry[i].wi),
+		   suffix[j]);
+	  assert (strlen (token) < BOW_MAX_WORD_LENGTH);
+	  new_query_wv->entry[i*NUM_SUFFIXES+j].wi = 
+	    bow_word2int (token);
+	  new_query_wv->entry[i*NUM_SUFFIXES+j].count = 
+	    query_wv->entry[i].count * repetition[j];
+	}
+    }
+  bow_wv_free (query_wv);
+  query_wv = new_query_wv;
+#endif
+
   bow_wv_set_weights (query_wv, arrow_barrel);
   bow_wv_normalize_weights (query_wv, arrow_barrel);
 
+  /* If none of the words have a non-zero IDF, just return zero. */
+  if (query_wv->normalizer == 0)
+    return 0;
+
   /* Get the best matching documents. */
   actual_num_hits = bow_barrel_score (arrow_barrel, query_wv,
-				      hits, arrow_arg_state.num_hits_to_show,
+				      hits, num_hits_to_show,
 				      -1);
 
   /* Print them. */
+  fprintf (out, ",HITCOUNT %d\n", bow_tfidf_num_hit_documents);
   for (i = 0; i < actual_num_hits; i++)
     {
       bow_cdoc *cdoc = bow_array_entry_at_index (arrow_barrel->cdocs, 
 						 hits[i].di);
 #if 1
-      fprintf (out, "%s\n", cdoc->filename);
+      /* Print both the filename and the words that appeared in that file. */
+      fprintf (out, "%s  %f  %s\n", cdoc->filename, 
+	       hits[i].weight, hits[i].name);
+      if (hits[i].name)
+	bow_free ((void*)hits[i].name);
 #else
       printf ("\nHit number %d, with score %g\n", i, hits[i].weight);
       print_file (cdoc->filename);
@@ -399,6 +461,7 @@ arrow_compare (bow_wv *wv1, bow_wv *wv2)
   printf ("%g\n", score);
 }
 
+
 void
 arrow_socket_init (const char *socket_name, int use_unix_socket)
 {
@@ -433,7 +496,32 @@ arrow_socket_init (const char *socket_name, int use_unix_socket)
   bind_ret = bind (arrow_sockfd, sap, servlen);
   assert (bind_ret >= 0);
 
+  bow_verbosify (bow_progress, "Listening on port %d\n", atoi (socket_name));
   listen (arrow_sockfd, 5);
+}
+
+
+/* We assume that commands are no longer than 1024 characters in length */
+/* At the moment, we assume that the only possible command is ",HITS <num>" */
+void
+arrow_process_commands (FILE *fd, int *num_hits)
+{
+  int first;
+  char buf[1024];
+
+  /* checks the first character of the line */
+  while ((first = fgetc(fd)))
+    {
+      if (first != ',')
+      {
+        ungetc (first, fd);
+        return;
+      }
+
+      /* retrieves the rest of the line */
+      fgets ((char *) buf, 1024, fd);
+      sscanf (buf, "HITS %d", num_hits);
+    }
 }
 
 
@@ -443,22 +531,55 @@ arrow_serve ()
   int newsockfd, clilen;
   struct sockaddr cli_addr;
   FILE *in, *out;
-
+  int num_hits_to_show;
+  int pid;
+ 
   clilen = sizeof (cli_addr);
   newsockfd = accept (arrow_sockfd, &cli_addr, &clilen);
+  
+  if (newsockfd == -1)
+    bow_error ("Not able to accept connections!\n");
+
+  bow_verbosify (bow_progress, "Accepted connection\n");
+
+  if (arrow_arg_state.serve_with_forking)
+    {
+      if ((pid = fork()) != 0)
+      {
+        /* parent - return to server mode */
+        close (newsockfd);
+        return;
+      }
+    }
 
   assert(newsockfd >= 0);
 
   in = fdopen (newsockfd, "r");
   out = fdopen (newsockfd, "w");
 
+  /* Get the number of hits to show */
+  num_hits_to_show = arrow_arg_state.num_hits_to_show;
+
+  bow_verbosify (bow_progress, "Processing special commands...\n");
+
+  /* Strips any special commands from the beginning of the stream */
+  arrow_process_commands (in, &num_hits_to_show);
+
+  bow_verbosify (bow_progress, "Processing query...\n");
+
   while (!feof(in))
-    arrow_query (in, out);
+    arrow_query (in, out, num_hits_to_show);
 
   fclose(in);
   fclose(out);
 
   close(newsockfd);
+
+  bow_verbosify (bow_progress, "Closed connection:");
+ 
+  /* Kill the child - don't want it hanging around, sucking up memory :) */
+  if (arrow_arg_state.serve_with_forking)
+    exit(0);
 }
 
 void
@@ -500,10 +621,14 @@ arrow_coo ()
 int
 main (int argc, char *argv[])
 {
+  /* Prevents zombie children in System V environments */
+  signal (SIGCHLD, SIG_IGN);
+
   /* Default command-line argument values */
   arrow_arg_state.num_hits_to_show = 1;
   arrow_arg_state.what_doing = arrow_indexing;
   arrow_arg_state.query_filename = NULL;
+  arrow_arg_state.serve_with_forking = 0;
 
   /* Parse the command-line arguments. */
   argp_parse (&arrow_argp, argc, argv, 0, 0, &arrow_arg_state);
@@ -518,9 +643,16 @@ main (int argc, char *argv[])
   else
     {
       arrow_unarchive ();
+#if 0
+      /* xxx */
+      arrow_barrel->method = &bow_method_tfidf;
+      bow_barrel_set_weights (arrow_barrel);
+      bow_barrel_normalize_weights (arrow_barrel);
+#endif
+
       if (arrow_arg_state.what_doing == arrow_querying)
 	{
-	  arrow_query (stdin, stdout);
+	  arrow_query (stdin, stdout, arrow_arg_state.num_hits_to_show);
 	}
       else if (arrow_arg_state.what_doing == arrow_comparing)
 	{
@@ -534,10 +666,12 @@ main (int argc, char *argv[])
 
 	  /* Make word vectors from the files. */
 	  fp = bow_fopen (arrow_arg_state.query_filename, "r");
-	  query_wv = bow_wv_new_from_text_fp (fp);
+	  query_wv = bow_wv_new_from_text_fp (fp,
+					      arrow_arg_state.query_filename);
 	  fclose (fp);
 	  fp = bow_fopen (arrow_arg_state.compare_filename, "r");
-	  compare_wv = bow_wv_new_from_text_fp (fp);
+	  compare_wv = bow_wv_new_from_text_fp
+	    (fp, arrow_arg_state.compare_filename);
 	  fclose (fp);
 
 	  arrow_compare (query_wv, compare_wv);
@@ -558,6 +692,21 @@ main (int argc, char *argv[])
       else if (arrow_arg_state.what_doing == arrow_query_serving)
 	{
 	  arrow_socket_init (arrow_arg_state.server_port_num, 0);
+	  if (arrow_arg_state.serve_with_forking)
+	    {
+	      /*
+	      int wi;
+	      bow_dv *dv;
+	      */
+	      /* Touch all DV's so we read them into memory before forking */
+	      /* This is *very bad* unless you are dealing with a small
+	       * model or need maximum performance! */
+	      /*
+	      for (wi = 0; wi < arrow_barrel->wi2dvf->size; wi++)
+		dv = bow_wi2dvf_dv (arrow_barrel->wi2dvf, wi);
+	      */
+	    }
+
 	  while (1)
 	    arrow_serve ();
 	}

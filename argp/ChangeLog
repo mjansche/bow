@@ -1,3 +1,8 @@
+Fri Jan 30 11:39:54 1998  Andrew McCallum  <mccallum@jprc.com>
+
+	* argp.h (struct argp): Remove "__const" from OPTIONS, so that
+ 	bow_method_register_with_name() can change the GROUP number.
+
 Tue Apr 29 12:58:05 1997  Andrew McCallum  <mccallum@jprc.com>
 
 	* Makefile.in (DIST_FILES): Add $(ARGP_GETOPT_C_FILES) and

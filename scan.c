@@ -27,7 +27,7 @@
    The search is case-insensitive.  If 1 is returned, the file pointer
    will be at the character after the last character in STRING.  If
    ONELINE is non-zero, insist that the string appear before a newline
-   character.  If STRING is NULL or of zero length, scan until EOF. */
+   character.  If STRING is NULL, scan until EOF. */
 int
 bow_scan_fp_for_string (FILE *fp, const char *string, int oneline)
 {
@@ -80,6 +80,66 @@ bow_scan_fp_for_string (FILE *fp, const char *string, int oneline)
 
   /* Success!  We found the string. */
   return 1;
+}
+
+/* Read characters from the string BUF until the string STRING is
+   found or the terminating null character if reached.  Return the
+   character position in BUF immediately following the location where
+   STRING was found.  If STRING is not found, the position of the
+   terminating null character is returned.  The search is
+   case-insensitive.  If ONELINE is non-zero, insist that the string
+   appear before a newline character.  If STRING is NULL, scan until
+   the terminating null character is found. */
+int
+bow_scan_str_for_string (char *buf, const char *string, int oneline)
+{
+  int byte;			/* character read from the FP */
+  const char *string_ptr;	/* a placeholder into STRING */
+  int bufpos = 0;               /* placeholder into BUF */
+
+  /* If STRING is NULL, scan forward to the end of the file. */
+  if (!string)
+    return strlen (buf);
+
+  /* If STRING is the empty string, return without scanning forward at all */
+  if (!string[0])
+    return 0;
+
+  /* Read forward until we find the first character of STRING. */
+  /* Make an initial newline in STRING match the beginning of the file. */
+  if (!(bufpos == 0 && string[0] == '\n'))
+    {
+    again:
+      do
+	{
+	  byte = buf[bufpos++];
+	  if ((byte == '\0') || (string[0] != '\n' && oneline && byte == '\n'))
+	    return (bufpos-1);
+	}
+      while (tolower (byte) != tolower (string[0]));
+    }
+
+  /* Step through the characters in STRING, starting all over again
+     if we encounter a mismatch. */
+  string_ptr = string+1;
+  while (*string_ptr)
+    {
+      byte = buf[bufpos++];
+      if ((byte == '\0') || (oneline && byte == '\n'))
+	return (bufpos-1);
+      /* Ignore Carriage-Return characters, so we can match MIME headers
+	 like "\r\n\r\n" with a search STRING of "\n\n" */
+      if (byte == '\r')
+	continue;
+      if (tolower (byte) != tolower (*string_ptr))
+	/* A mismatch; start the search again. */
+	goto again;
+      /* Move on to next character in the pattern. */
+      string_ptr++;
+    }
+
+  /* Success!  We found the string. */
+  return bufpos;
 }
 
 /* Read characters from FP into BUF until the character STOPCHAR is

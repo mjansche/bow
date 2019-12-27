@@ -1,6 +1,6 @@
 /* Splitting the documents into training and test sets. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Sean Slattery <jslttery@cs.cmu.edu>
 
@@ -19,91 +19,303 @@
    License along with this library; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
 
+#include <argp.h>
 #include <bow/libbow.h>
 #include <math.h>
 #include <time.h>
 #include <sys/time.h>
 #include <unistd.h>
 
-#ifndef RAND_MAX
-#define RAND_MAX INT_MAX
-#endif 
+/* Different ways of specifying how to do the split */
+typedef enum {
+  bow_files_source_file = 10,     /* get docs for a type from a file */
+  bow_files_source_fraction,       /* do a random fraction split of docs */
+  bow_files_source_number,        /* do a random number split of docs */
+  bow_files_source_remaining,     /* use remaining docs for a file type */
+  bow_files_source_num_per_class, /* pick a random number from each class */
+  bow_files_source_fancy_counts   /* pick the random number specified for each class */
+} bow_files_source_type;
 
-/* This takes a bow_array of bow_cdoc's and first sets them all to be in the
-   model. It then randomly choses 'no_test' bow_cdoc's to be in the test set
-   and sets their type to be test. */
-void
-bow_test_split (bow_barrel *barrel, int num_test)
+/* A structure for maintining information about fancy counts */
+typedef struct _bow_split_fancy_count {
+  char *class_name;
+  int num_docs;
+} bow_split_fancy_count;
+
+
+/* How documents of each type are being selected */
+static bow_files_source_type bow_test_files_source = bow_files_source_number;
+static bow_files_source_type bow_train_files_source = bow_files_source_remaining;
+static bow_files_source_type bow_unlabeled_files_source = bow_files_source_number;
+static bow_files_source_type bow_ignore_files_source = bow_files_source_number;
+
+/* The fraction used for selecting each type */
+static float bow_test_fraction;
+static float bow_train_fraction;
+static float bow_unlabeled_fraction;
+static float bow_ignore_fraction;
+
+/* The number for selecting each type for both num_per_class and number */
+static int bow_test_number = 0;
+static int bow_train_number;
+static int bow_unlabeled_number = 0;
+static int bow_ignore_number = 0;
+
+/* The filename containing lists of documents for each type */
+static char *bow_test_filename;
+static char *bow_train_filename;
+static char *bow_unlabeled_filename;
+static char *bow_ignore_filename;
+
+/* The numbers to select from each class for fancy counts for each type*/
+static bow_split_fancy_count *bow_test_fancy_counts;
+static bow_split_fancy_count *bow_train_fancy_counts;
+static bow_split_fancy_count *bow_unlabeled_fancy_counts;
+static bow_split_fancy_count *bow_ignore_fancy_counts;
+
+/* When using files to set the test/train split, compare filenames by
+   using this many directory components as basename only, not their
+   complete filenames. */
+int bow_test_set_files_use_basename = 0;
+
+
+enum {
+  TEST_SOURCE = 5000,
+  TRAIN_SOURCE,
+  UNLABELED_SOURCE,
+  IGNORE_SOURCE,
+  SET_TEST_FILES_KEY,
+  SET_TEST_FILES_USE_BASENAME_KEY
+};
+
+static struct argp_option bow_split_options[] =
 {
-  bow_array *cdocs = barrel->cdocs;
-  int i, j, index;
-  bow_cdoc *doc = NULL;
-  int max_ci;
-  /* All the below include only the test/model docs, not the ignore docs.*/
-  int *num_docs_per_class;
-  int *num_test_docs_allowed_per_class;
-  int total_num_docs;
+  {0, 0, 0, 0,
+   "Splitting options:", 10},
+  {"test-set", TEST_SOURCE, "SOURCE", 0,
+   "How to select the testing documents.  A number between 0 and 1 inclusive "
+   "with a decimal point indicates a random fraction of all documents.  A number "
+   "with no decimal point indicates the number of documents to select randomly.  "
+   "`remaining' indicates to take all untagged documents.  Anything else is "
+   "interpreted as a filename listing documents to select.  Default is `0.3'."},
+  {"train-set", TRAIN_SOURCE, "SOURCE", 0,
+   "How to select the training documents.  Same format as --test-set.  Default is "
+   "`remaining'."},
+  {"unlabeled-set", UNLABELED_SOURCE, "SOURCE", 0,
+   "How to select the unlabeled documents.  Same format as --test-set.  Default is "
+   "`0'."},
+  {"ignore-set", IGNORE_SOURCE, "SOURCE", 0,
+   "How to select the ignored documents.  Same format as --test-set.  Default is "
+   "`0'."},
+  {"test-percentage", 'p', "P", OPTION_HIDDEN,
+   "Use P percent of the indexed documents as test data.  Default is 30."},
+  {"set-test-files", SET_TEST_FILES_KEY, "FILENAME", OPTION_HIDDEN,
+   "Instead of splitting the data among test/train randomly (using the "
+   "-p option), use the indexed files named in the contents of FILENAME "
+   "for testing, and all the others in the model for training.  FILENAME "
+   "should contain a list of file paths (with path identical to the path "
+   "used in indexing), each path separated by a newline."},
+  {"testing-files", SET_TEST_FILES_KEY, "FILENAME", 
+   OPTION_ALIAS | OPTION_HIDDEN},
+  {"set-files-use-basename", SET_TEST_FILES_USE_BASENAME_KEY, "N",
+   OPTION_ARG_OPTIONAL,
+   "When using files to specify doc types, compare only the last N "
+   "components the doc's pathname.  That is use the filename and "
+   "the last N-1 directory names.  If N is not specified, it default to 1."},
+  {"testing-files-use-basename", SET_TEST_FILES_USE_BASENAME_KEY, "N",
+   OPTION_ALIAS | OPTION_HIDDEN | OPTION_ARG_OPTIONAL},
+  {0,0}
+};
 
-  /* assert (num_test < cdocs->length * 0.9); */
+static error_t
+bow_split_parse_opt (int key, char *arg, struct argp_state *state)
+{
+  bow_files_source_type *files_source;
+  float *fraction;
+  int *number;
+  char **filename;
+  bow_split_fancy_count **fancy_counts;
+  int length;
 
-  /* Seed the random number generator */
-  {
-    struct timeval tv;
-    struct timezone tz;
-    long seed;
-
-    gettimeofday (&tv, &tz);
-    seed = tv.tv_usec;
-    srand(seed);
-  }
-
-  /* First reset every test cdoc to be in the model */
-  for (i = 0; i < cdocs->length ; i++)
+  switch (key)
     {
-      doc = bow_cdocs_di2doc (cdocs, i);
-      /* Be sure to preserve `ignore' labels on documents. */
-      if (doc->type == test)
-	doc->type = model;
+    case TEST_SOURCE:
+      files_source = &bow_test_files_source;
+      fraction = &bow_test_fraction;
+      number = &bow_test_number;
+      filename = &bow_test_filename;
+      fancy_counts = &bow_test_fancy_counts;
+      break;
+    case TRAIN_SOURCE:
+      files_source = &bow_train_files_source;
+      fraction = &bow_train_fraction;
+      number = &bow_train_number;
+      filename = &bow_train_filename;
+      fancy_counts = &bow_train_fancy_counts;
+      break;
+    case UNLABELED_SOURCE:
+      files_source = &bow_unlabeled_files_source;
+      fraction = &bow_unlabeled_fraction;
+      number = &bow_unlabeled_number;
+      filename = &bow_unlabeled_filename;
+      fancy_counts = &bow_unlabeled_fancy_counts;
+      break;
+    case IGNORE_SOURCE:
+      files_source = &bow_ignore_files_source;
+      fraction = &bow_ignore_fraction;
+      number = &bow_ignore_number;
+      filename = &bow_ignore_filename;
+      fancy_counts = &bow_ignore_fancy_counts;
+      break;
+    case 'p':
+      bow_test_files_source = bow_files_source_fraction;
+      bow_test_fraction = atof (arg) / 100.0;
+      return 0;
+      break;
+    case SET_TEST_FILES_KEY:
+      bow_test_files_source = bow_files_source_file;
+      bow_test_filename = arg;
+      return 0;
+      break;
+    case SET_TEST_FILES_USE_BASENAME_KEY:
+      if (arg)
+	bow_test_set_files_use_basename = atoi (arg);
+      else
+	bow_test_set_files_use_basename = 1;
+      return 0;
+      break;
+    default:
+      return ARGP_ERR_UNKNOWN;
     }
   
-  /* Find out the largest class index. */
-  max_ci = 0;
-  for (i = 0; i < cdocs->length ; i++)
-    {
-      doc = bow_cdocs_di2doc (cdocs, i);
-      if (doc->class > max_ci)
-	max_ci = doc->class;
-    }
-  /* Make it not actually the `max', but appropriate for an array length */
-  max_ci++;
+  assert (key == TEST_SOURCE || key == TRAIN_SOURCE ||
+	  key == UNLABELED_SOURCE || key == IGNORE_SOURCE);
 
-  /* Initialize class/doc counts to zero. */
-  num_docs_per_class = alloca (max_ci * sizeof (int));
-  num_test_docs_allowed_per_class = alloca (max_ci * sizeof (int));
-  for (i = 0; i < max_ci; i++)
-    {
-      num_docs_per_class[i] = 0;
-      num_test_docs_allowed_per_class[i] = 0;
-    }
-  total_num_docs = 0;
+  length = strlen(arg);
 
-  /* Count the number of documents in each class. */
-  for (i = 0; i < cdocs->length ; i++)
+  /* Now parse the split option */
+  if (!strcmp(arg, "remaining"))
+    *files_source = bow_files_source_remaining;
+  else if (length == strspn(arg, "0123456789"))
     {
-      doc = bow_cdocs_di2doc (cdocs, i);
-      if (doc->type == model)
+      *files_source = bow_files_source_number;
+      *number = atoi(arg);
+    }
+  else if (length == strspn(arg, ".0123456789") &&
+	   (strchr(arg, '.') == strrchr(arg, '.')))
+    {
+      *files_source = bow_files_source_fraction;
+      *fraction = atof(arg);
+      assert (*fraction >= 0 && *fraction <= 1);
+    }
+  else if (length > 2 && 
+	   index(arg, 'p') == arg + length - 2 &&
+	   index(arg, 'c') == arg + length - 1 &&
+	   strspn(arg, "0123456789pc"))
+    {
+      *files_source = bow_files_source_num_per_class;
+      *number = atoi(arg);
+    }
+  else if (length > 2 &&
+	   arg[0] == '[' && arg[length-1] == ']')
+    {
+      char *charp;
+      int num_entries;
+      int x;
+
+      *files_source = bow_files_source_fancy_counts;
+      
+      /* see how many classes we'll need to malloc for */
+      for (charp=arg, num_entries = 0; *charp != '\0'; charp++)
 	{
-	  (num_docs_per_class[doc->class])++;
-	  total_num_docs++;
+	  if (*charp == '=') 
+	    num_entries++;
 	}
+
+      /* malloc and initialize the space to store the counts */
+      assert (num_entries > 0);
+      *fancy_counts = malloc (sizeof (bow_split_fancy_count) * (num_entries + 1));
+      (*fancy_counts)[num_entries].class_name = NULL;
+
+      /* extract the class num arg pairs */
+      strtok(arg, "[");
+      for (charp = strtok(NULL, "="), x=0; x < num_entries;
+	   x++, charp = strtok(NULL, "=")) 
+	{
+	  (*fancy_counts)[x].class_name = charp;
+	  (*fancy_counts)[x].num_docs = atoi(strtok(NULL, ","));
+	}
+      assert(NULL == strtok(NULL, "="));
+    }
+  else
+    {
+      *files_source = bow_files_source_file;
+      *filename = arg;
+    }
+  
+  return 0;
+}
+
+static const struct argp bow_split_argp =
+{
+  bow_split_options,
+  bow_split_parse_opt
+};
+
+static struct argp_child bow_split_argp_child =
+{
+  &bow_split_argp,	/* This child's argp structure */
+  0,			/* flags for child */
+  0,			/* optional header in help message */
+  0			/* arbitrary group number for ordering */
+};
+
+
+
+/* Mark all cdoc's in BARREL to be of type BOW_DOC_UNTAGGED. */
+void
+bow_set_all_files_untagged (bow_barrel *barrel)
+{
+  int i;
+  bow_cdoc *doc;
+
+  for (i = 0; i < barrel->cdocs->length ; i++)
+    {
+      doc = bow_array_entry_at_index (barrel->cdocs, i);
+      doc->type = bow_doc_untagged;
+    }
+}
+
+/* Randomly select some untagged documents and label them with tag
+   indicated by TYPE.  The number of documents from each class are
+   determined by the array NUM_PER_CLASS. */
+void
+bow_set_file_types_randomly_by_count_per_class (bow_barrel *barrel, 
+						int *num_per_class, int tag)
+{
+  int ci, di;
+  bow_cdoc *cdoc = NULL;
+  /* All the below include only the test/model docs, not the ignore docs.*/
+  int num_classes = bow_barrel_num_classes (barrel);
+  int *local_num_per_class;
+  int total_num_to_tag;
+  int num_tagged;
+  int num_loops;
+
+  /* Seed the random number generator if it hasn't been already */
+  bow_random_set_seed ();
+
+  /* Create a local array of the number of taggings to perform in each class,
+     which we will change by decrimenting it as we tag. */
+  local_num_per_class = alloca (num_classes * sizeof (int));
+  total_num_to_tag = 0;
+  for (ci = 0; ci < num_classes; ci++)
+    {
+      local_num_per_class[ci] = num_per_class[ci];
+      total_num_to_tag += num_per_class[ci];
     }
 
-  /* Calculate the number of test docments allowed for each class. 
-     The +2 gives us some room for slop and round-off-error*/
-  for (i = 0; i < max_ci; i++)
-    num_test_docs_allowed_per_class[i] = 
-      (((float)num_docs_per_class[i] / total_num_docs) * num_test) + 2;
-
+#if 0
   /* Print the number of documents in each class. */
   fprintf (stderr, "Number of docs per class: ");
   for (i = 0; i < max_ci; i++)
@@ -111,154 +323,132 @@ bow_test_split (bow_barrel *barrel, int num_test)
 	     num_docs_per_class[i],
 	     num_test_docs_allowed_per_class[i]);
   fprintf (stderr, "\n");
+#endif
 
   /* Now loop until we have created a test set of size num_test */
-  for (i = 0, j = 0; i < num_test; j++)
+  for (num_tagged = 0, num_loops = 0; num_tagged < total_num_to_tag; 
+       num_loops++)
     {
-      index = rand() % cdocs->length;
+      di = random() % barrel->cdocs->length;
 
-      doc = bow_cdocs_di2doc (cdocs, index);
-      assert (doc);
-      if (doc->type == model
-	  && num_test_docs_allowed_per_class[doc->class] > 0)
+      cdoc = bow_array_entry_at_index (barrel->cdocs, di);
+      assert (cdoc);
+      if (cdoc->type == bow_doc_untagged
+	  && local_num_per_class[cdoc->class] > 0)
 	{
-	  doc->type = test;
-	  i++;
-	  num_test_docs_allowed_per_class[doc->class]--;
+	  cdoc->type = tag;
+	  num_tagged++;
+	  local_num_per_class[cdoc->class]--;
+	  assert (local_num_per_class[cdoc->class] >= 0);
 	}
-      if (j > cdocs->length * 1000)
+      if (num_loops > barrel->cdocs->length * 1000)
 	bow_error ("Random number generator could not find enough "
 		   "model document indices with balanced classes");
     }
-
-  /* All done */
 }
 
-/* This takes a bow_array of bow_cdoc's and first sets them all to be
-   in the test. It then randomly choses 'num_test' bow_cdoc's per
-   class to be in the model set and sets their type to be model. */
+
+/* Randomly select NUM untagged documents and label them with tag
+   indicated by TAG.  The number of documents from each class are
+   determined by attempting to match the proportion of classes among
+   the non-ignore documents. */
 void
-bow_test_split2 (bow_barrel *barrel, int num_test)
+bow_set_file_types_randomly_by_count (bow_barrel *barrel, int num, int tag)
 {
-  bow_array *cdocs = barrel->cdocs;
-  int i, j, index;
-  bow_cdoc *doc = NULL;
-  int max_ci;
-  /* All the below include only the test/model docs, not the ignore docs.*/
-  int *num_docs_per_class;
-  int *num_test_docs_allowed_per_class;
-  int total_num_docs;
+  int ci, di;
+  bow_cdoc *cdoc;
+  int num_classes = bow_barrel_num_classes (barrel);
+  int *num_per_class = alloca (num_classes * sizeof (int));
+  int *num_docs_per_class = alloca (num_classes * sizeof (int));
+  int total_num_docs = 0;
+  int total;
 
-  /* assert (num_test < cdocs->length * 0.9); */
-
-  /* Seed the random number generator */
-  {
-    struct timeval tv;
-    struct timezone tz;
-    long seed;
-
-    gettimeofday (&tv, &tz);
-    seed = tv.tv_usec;
-    srand(seed);
-  }
-
-  /* First reset every model cdoc to be in the test */
-  for (i = 0; i < cdocs->length ; i++)
+  /* Find out the number of documents in each class. */
+  for (ci = 0; ci < num_classes; ci++)
+    num_docs_per_class[ci] = 0;
+  for (di = 0; di < barrel->cdocs->length ; di++)
     {
-      doc = bow_cdocs_di2doc (cdocs, i);
-      /* Be sure to preserve `ignore' labels on documents. */
-      if (doc->type == model)
-	doc->type = test;
-    }
-  
-  /* Find out the largest class index. */
-  max_ci = 0;
-  for (i = 0; i < cdocs->length ; i++)
-    {
-      doc = bow_cdocs_di2doc (cdocs, i);
-      if (doc->class > max_ci)
-	max_ci = doc->class;
-    }
-  /* Make it not actually the `max', but appropriate for an array length */
-  max_ci++;
-
-  /* Initialize class/doc counts to zero. */
-  num_docs_per_class = alloca (max_ci * sizeof (int));
-  num_test_docs_allowed_per_class = alloca (max_ci * sizeof (int));
-  for (i = 0; i < max_ci; i++)
-    {
-      num_docs_per_class[i] = 0;
-      num_test_docs_allowed_per_class[i] = 0;
-    }
-  total_num_docs = 0;
-
-  /* Count the number of documents in each class. */
-  for (i = 0; i < cdocs->length ; i++)
-    {
-      doc = bow_cdocs_di2doc (cdocs, i);
-      if (doc->type == model)
-	{
-	  (num_docs_per_class[doc->class])++;
-	  total_num_docs++;
-	}
+      cdoc = bow_array_entry_at_index (barrel->cdocs, di);
+      if (cdoc->type == bow_doc_ignore)
+	continue;
+      assert (cdoc->class < num_classes);
+      num_docs_per_class[cdoc->class]++;
+      total_num_docs++;
     }
 
-  /* Calculate the number of model docments allowed for each class. 
-     The +2 gives us some room for slop and round-off-error*/
-  for (i = 0; i < max_ci; i++)
-    num_test_docs_allowed_per_class[i] = num_test;
-
-
-  /* Print the number of documents in each class. */
-  fprintf (stderr, "Number of docs per class: ");
-  for (i = 0; i < max_ci; i++)
-    fprintf (stderr, "%d:%d ",
-	     num_docs_per_class[i],
-	     num_test_docs_allowed_per_class[i]);
-  fprintf (stderr, "\n");
-
-  /* Now loop until we have created a test set of size num_test */
-  for (i = 0, j = 0; i < num_test * max_ci; j++)
+  /* Initialize the array NUM_PER_CLASS, indicating how many documents 
+     per class should be tagged. */
+  total = 0;
+  for (ci = 0; ci < num_classes; ci++)
     {
-      index = rand() % cdocs->length;
-
-      doc = bow_cdocs_di2doc (cdocs, index);
-      assert (doc);
-      if (doc->type == test
-	  && num_test_docs_allowed_per_class[doc->class] > 0
-	  && doc->word_count > 0)
-	{
-	  doc->type = model;
-	  i++;
-	  num_test_docs_allowed_per_class[doc->class]--;
-	}
-      if (j > cdocs->length * 1000)
-	bow_error ("Random number generator could not find enough "
-		   "model document indices with balanced classes");
+      num_per_class[ci] = ((float) num / (float) total_num_docs) * 
+	(float) num_docs_per_class[ci];
+      total += num_per_class[ci];
+    }
+  /* Add more to take care of round-off error. */
+  for (ci = 0; total < num; ci = (ci+1) % barrel->cdocs->length)
+    {
+      num_per_class[ci]++;
+      total++;
     }
 
-  /* All done */
+  /* Do it. */
+  bow_set_file_types_randomly_by_count_per_class (barrel, num_per_class, tag);
 }
 
-#define BASENAME_ONLY 1
+/* Randomly select a FRACTION of the untagged documents and label them
+   with tag indicated by TYPE.  The number of documents from each
+   class are determined by attempting to match the proportion of
+   classes among the untagged documents. */
+void
+bow_set_file_types_randomly_by_fraction (bow_barrel *barrel, 
+					 double fraction, int type)
+{
+  bow_set_file_types_randomly_by_count (barrel,
+					fraction * barrel->cdocs->length,
+					type);
+}
 
-#if BASENAME_ONLY
+
+
+/* Setting file tags with lists of filenames. */
+
+/* If opts.c:bow_test_set_files_use_basename is non-zero, ignore the
+   directory names in the filenames read from TEST_FILES_FILENAMES in
+   bow_test_set_file(). */
 static inline const char *
-bow_basename (const char *str)
+bow_basename (const char *str, int num_components)
 {
-  const char *b;
-  b = strrchr (str, '/');
-  if (!b)
-    b = str;
-  return b;
-}
-#endif /* BASENAME_ONLY */
+  int i;
 
-/* Set all the cdoc's named in TEST_FILES_FILENAME to type test, and
-   all the other (non-ignored) cdoc's to model.  BARREL should be a
-   doc barrel, not a class barrel. */
+  if (num_components == 0)
+    return str;
+
+  i = strlen (str) - 1;
+  assert (str[i] != '/');
+  while (i > 0)
+    {
+      if (str[i] == '/')
+	{
+	  num_components--;
+	  if (num_components == 0)
+	    break;
+	}
+      i--;
+    }
+  if (str[i] == '/')
+    i++;
+  return &(str[i]);
+}
+
+/* Set all the cdoc's named in TEST_FILES_FILENAME to type indicated
+   by TYPE.  Raises error if any of the files already have a
+   non-"untagged" type.  BARREL should be a doc barrel, not a class
+   barrel. */
 void
-bow_test_set_files (bow_barrel *barrel, const char *test_files_filename)
+bow_set_files_to_type (bow_barrel *barrel, 
+		       const char *test_files_filename,
+		       int type)
 {
   bow_int4str *map;
   bow_cdoc *cdoc;
@@ -268,525 +458,219 @@ bow_test_set_files (bow_barrel *barrel, const char *test_files_filename)
   const char *filename;
 
   map = bow_int4str_new_from_string_file (test_files_filename);
-#if BASENAME_ONLY
-  {
-    /* Convert the filename strings in map to only the basenames of
-       the files. */
-    int si, index;
-    bow_int4str *map2 = bow_int4str_new (0);
-    for (si = 0; si < map->str_array_length; si++)
-      {
-	index = bow_str2int_no_add (map2, bow_basename(bow_int2str (map, si)));
-	if (index != -1)
-	  bow_verbosify (bow_quiet, "WARNING: Repeated file basename `%s'\n", 
-			 bow_int2str (map, si));
-	bow_str2int (map2, bow_basename (bow_int2str (map, si)));
-      }
-    bow_int4str_free (map);
-    map = map2;
-  }  
-#endif /*BASENAME_ONLY */
+  if (bow_test_set_files_use_basename)
+    {
+      /* Convert the filename strings in map to only the basenames of
+	 the files. */
+      int si, index;
+      bow_int4str *map2 = bow_int4str_new (0);
+      for (si = 0; si < map->str_array_length; si++)
+	{
+	  index =
+	    bow_str2int_no_add
+	    (map2, bow_basename(bow_int2str (map, si), 
+				bow_test_set_files_use_basename));
+	  if (index != -1)
+	    bow_verbosify (bow_quiet, "WARNING: Repeated file basename `%s'\n", 
+			   bow_int2str (map, si));
+	  bow_str2int (map2, bow_basename (bow_int2str (map, si),
+					   bow_test_set_files_use_basename));
+	}
+      bow_int4str_free (map);
+      map = map2;
+    }  
   
   for (di = 0; di < barrel->cdocs->length; di++)
     {
       cdoc = bow_array_entry_at_index (barrel->cdocs, di);
-      if (cdoc->type == ignore)
-	continue;
-#if BASENAME_ONLY
-      filename = bow_basename (cdoc->filename);
-#else
-      filename = cdoc->filename;
-#endif /* BASENAME_ONLY */
-      if (bow_str2int_no_add (map, filename) == -1)
-	{
-	  /* This filename is not in the map; this cdoc is in the model. */
-	  cdoc->type = model;
-	  model_files_count++;
-	}
+      assert (cdoc->type == bow_doc_untagged);
+      if (bow_test_set_files_use_basename)
+	filename = bow_basename (cdoc->filename, 
+				 bow_test_set_files_use_basename);
       else
+	filename = cdoc->filename;
+      if (bow_str2int_no_add (map, filename) != -1)
 	{
-	  /* This filename is in the map; this cdoc is in the test set. */
-	  cdoc->type = test;
-	  test_files_count++;
+	  /* This filename is in the map; tag this cdoc. */
+	  cdoc->type = type;
 	}
     }
 
   bow_verbosify (bow_progress, 
-		 "Using %s, placed %d documents in the test set, "
+		 "Using %s, placed %d documents in the %s set, "
 		 "%d in model set.\n", 
-		 test_files_filename, test_files_count, model_files_count);
+		 test_files_filename, test_files_count, model_files_count,
+		 (type == bow_doc_test
+		  ? "test"
+		  : (type == bow_doc_train
+		     ? "train"
+		     : "(unknown)")));
   bow_int4str_free (map);
   return;
 }
 
-/* This function sets up the data structure so we can step through the word
-   vectors for each test document easily. */
-bow_dv_heap *
-bow_test_new_heap (bow_barrel *barrel)
+/* Postprocess the tags on documents by setting untagged documents to
+   train or test, depending on context. */
+void
+bow_set_file_types_of_remaining (bow_barrel *barrel, int type)
 {
-  return bow_make_dv_heap_from_wi2dvf (barrel->wi2dvf);
+  int di;
+  bow_cdoc *cdoc;
+
+  for (di = 0; di < barrel->cdocs->length; di++)
+    {
+      cdoc = bow_array_entry_at_index (barrel->cdocs, di);
+      if (cdoc->type == bow_doc_untagged)
+	  cdoc->type = type;
+    }
 }
 
-/* We only need this struct within the following function. */
-typedef struct _bow_tmp_word_struct {
-  int wi;
-  int count;
-} bow_tmp_word_struct;
+/* Use the command line arguments to create the appropriate train/test split */
+void
+set_doc_types (bow_barrel *barrel)
+{      
+  int num_docs;
+  int ti;
+  int num_types;
+  int num_remaining = 0;
+  /* note it is important that ignore comes first, so we can 
+     ignore them when doing even prior random splits later */
+  struct {
+    bow_files_source_type source;
+    float fraction;
+    int number;
+    char *filename;
+    bow_split_fancy_count *fancy_counts;
+    bow_files_source_type doc_type;
+  } types[] = {{bow_ignore_files_source, 
+		bow_ignore_fraction, 
+		bow_ignore_number, 
+		bow_ignore_filename, 
+		bow_ignore_fancy_counts,
+		bow_doc_ignore},
+	       {bow_test_files_source, 
+		bow_test_fraction, 
+		bow_test_number, 
+		bow_test_filename, 
+		bow_test_fancy_counts,
+		bow_doc_test},
+	       {bow_train_files_source, 
+		bow_train_fraction, 
+		bow_train_number, 
+		bow_train_filename, 
+		bow_train_fancy_counts,
+		bow_doc_train},
+	       {bow_unlabeled_files_source, 
+		bow_unlabeled_fraction, 
+		bow_unlabeled_number, 
+		bow_unlabeled_filename, 
+		bow_unlabeled_fancy_counts,
+		bow_doc_unlabeled},
+	       {0,0,0,0,0,0}};
+  
+  /* First set all files to be untagged. */
+  bow_set_all_files_untagged (barrel);
 
-/* This function takes the heap returned by bow_initialise_test_set and
-   creates a word vector corresponding to the next document in the test set.
-   The index of the test document is returned. If the test set is empty, 0
-   is returned and *wv == NULL. Also, when the test set is exhausted, the
-   heap is free'd (since it can't be used for anything else anways.
-   This can't really deal with vectors which are all zero, since they
-   are not represented explicitly in our data structure. Not sure what
-   we should/can do. */
-int
-bow_test_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv)
-{
-  bow_array *cdocs = barrel->cdocs;
-  bow_array *word_array;
-  bow_cdoc *doc;
-  bow_tmp_word_struct word, *wptr;
-  int current_di = -1;
-  int i;
+  /* count the number of document types */
+  for (num_types = 0; types[num_types].source; num_types++);
 
-  word_array = bow_array_new (50, sizeof(bow_tmp_word_struct), 0);
-
-  /* Keep going until we exhaust the heap or we find a test document. */
-  while ((heap->length > 0) && (word_array->length == 0))
+  /* Set document types based on input files first */
+  for (ti = 0; ti < num_types; ti++)
     {
-      current_di = heap->entry[0].current_di;
-      doc = bow_cdocs_di2doc(cdocs, current_di);
+      if (types[ti].source == bow_files_source_file)
+	bow_set_files_to_type (barrel,
+			       types[ti].filename,
+			       types[ti].doc_type);
+    }
 
-      if (doc->type == test)
+  /* Do any random splits to set document types */
+  for (ti = 0; ti < num_types; ti++)
+    {
+      if (types[ti].source == bow_files_source_fraction)
 	{
-	  /* We have the first entry for the next test document */
-	  do
+	  num_docs = (barrel->cdocs->length * types[ti].fraction);      
+	  bow_set_file_types_randomly_by_count (barrel, 
+						num_docs,
+						types[ti].doc_type);
+	}
+      else if (types[ti].source == bow_files_source_number)
+	bow_set_file_types_randomly_by_count (barrel, 
+					      types[ti].number,
+					      types[ti].doc_type);
+      else if (types[ti].source == bow_files_source_num_per_class)
+	{
+	  int ci;
+	  int *class_nums;
+
+	  class_nums = bow_malloc (sizeof (int) * bow_barrel_num_classes(barrel));
+	  for (ci = 0; ci < bow_barrel_num_classes(barrel); ci ++)
+	    class_nums[ci] = types[ti].number;
+	  
+	  bow_set_file_types_randomly_by_count_per_class (barrel, 
+							  class_nums, 
+							  types[ti].doc_type);
+	  bow_free(class_nums);
+	}
+      else if (types[ti].source == bow_files_source_fancy_counts)
+	{
+	  int *counts = bow_malloc (sizeof (int) * bow_barrel_num_classes(barrel));
+	  int ci;
+	  bow_split_fancy_count *class_count;
+
+	  for (ci = 0; ci < bow_barrel_num_classes(barrel); ci++)
+	    counts[ci] = -1;
+
+	  for (class_count = types[ti].fancy_counts; 
+	       class_count->class_name; 
+	       class_count++)
 	    {
-	      word.wi = heap->entry[0].wi;
-	      word.count = 
-		heap->entry[0].dv->entry[heap->entry[0].index].count;
-	      bow_array_append (word_array, &word);
-	      bow_dv_heap_update (heap);
+	      int class = -1;
+
+	      for (ci = 0; ci < bow_barrel_num_classes(barrel); ci++)
+		if (!strcmp(class_count->class_name, 
+			    bow_barrel_classname_at_index (barrel, ci)))
+		  {
+		    class = ci;
+		    break;
+		  }
+	      
+	      if (class == -1)
+		bow_error ("Unknown class %s.\n", class_count->class_name);
+	      
+	      counts[class] = class_count->num_docs;
 	    }
-	  while ((heap->length > 0)
-		 && (current_di == heap->entry[0].current_di));
-	}
-      else
-	{
-	  /* This is not a test document, go on to next document */
-	  do
-	    {
-	      bow_dv_heap_update (heap);
-	    }
-	  while ((heap->length > 0)
-		 && (current_di == heap->entry[0].current_di));
+
+	  for (ci = 0; ci < bow_barrel_num_classes(barrel); ci++)
+	    if (counts[ci] == -1)
+	      bow_error("Under-specified class counts");
+	  
+	  bow_set_file_types_randomly_by_count_per_class (barrel, 
+							  counts, 
+							  types[ti].doc_type);
+	  bow_free(counts);
 	}
     }
 
-  /* Here we either have a word_array or else we've run out of test
-     documents. */
-
-  if (word_array->length != 0)
+  /* Set remaining untagged docs if appropriate */
+  for (ti = 0; ti < num_types; ti++)
     {
-      if (*wv)
-	bow_wv_free (*wv);
-
-      /* We now have all the words for this test document in the word
-	 array - need to create a bow_wv */
-      (*wv) = bow_wv_new (word_array->length);
-      for (i = 0; i < word_array->length; i++)
+      if (types[ti].source == bow_files_source_remaining)
 	{
-	  wptr = bow_array_entry_at_index (word_array, i);
-	  (*wv)->entry[i].wi = wptr->wi;
-	  (*wv)->entry[i].count = wptr->count;
-	  (*wv)->entry[i].weight = wptr->count;
+	  assert (num_remaining == 0);
+	  num_remaining = 1;
+	  bow_set_file_types_of_remaining (barrel, types[ti].doc_type);
 	}
     }
-  else
-    {
-      /* Since we've run out of docs, might as well free the test set. */
-      bow_free (heap);
-      if (*wv)
-	bow_wv_free (*wv);
-      current_di = -1;
-      (*wv) = NULL;
-    }
-  /* Should be finished with the word array now */
-
-#if 1
-  /* XXX this causes a seg fault - don't know why. */
-  bow_array_free (word_array);
-#else
-  /* This does the same job for me. */
-  bow_free (word_array->entries);
-  bow_free (word_array);
-#endif
-
-  return current_di;
 }
 
-typedef struct _bow_tmp_word_struct2 {
-  int wi;
-  int count;
-} bow_tmp_word_struct2;
-
-/* like bow_test_next_wv, but for type==model instead of type==test */
-int
-bow_model_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv)
+void _register_split_args () __attribute__ ((constructor));
+void _register_split_args ()
 {
-  bow_array *cdocs = barrel->cdocs;
-  bow_array *word_array;
-  bow_cdoc *doc;
-  bow_tmp_word_struct2 word, *wptr;
-  int current_di = -1;
-  int i;
-
-  word_array = bow_array_new (50, sizeof(bow_tmp_word_struct2), 0);
-
-  /* Keep going until we exhaust the heap or we find a non-test document. */
-  while ((heap->length > 0) && (word_array->length == 0))
-    {
-      current_di = heap->entry[0].current_di;
-      doc = bow_cdocs_di2doc(cdocs, current_di);
-
-      if (doc->type == model)
-	{
-	 if (doc->type != model && doc->type != ignore && doc->type != ignored_model)
-	    fprintf(stderr, "\nWARNING: Around line %d of %s. Unanticipated.\n\n",
-			__LINE__, __FILE__);
-		
-	  /* We have the first entry for the next model document */
-	  do
-	    {
-	      word.wi = heap->entry[0].wi;
-	      word.count = 
-		heap->entry[0].dv->entry[heap->entry[0].index].count;
-	      bow_array_append (word_array, &word);
-	      bow_dv_heap_update (heap);
-	    }
-	  while ((heap->length > 0)
-		 && (current_di == heap->entry[0].current_di));
-	}
-      else
-	{
-	  /* This is not a model document, go on to next document */
-	  do
-	    {
-	      bow_dv_heap_update (heap);
-	    }
-	  while ((heap->length > 0)
-		 && (current_di == heap->entry[0].current_di));
-	}
-    }
-
-  /* Here we either have a word_array or else we've run out of non-test
-     documents. */
-
-  if (word_array->length != 0)
-    {
-      if (*wv)
-	bow_wv_free (*wv);
-
-      /* We now have all the words for this non-test document in the word
-	 array - need to create a bow_wv */
-      (*wv) = bow_wv_new (word_array->length);
-      for (i = 0; i < word_array->length; i++)
-	{
-	  wptr = bow_array_entry_at_index (word_array, i);
-	  (*wv)->entry[i].wi = wptr->wi;
-	  (*wv)->entry[i].count = wptr->count;
-	  (*wv)->entry[i].weight = wptr->count;
-	}
-    }
-  else
-    {
-      /* Since we've run out of docs, might as well free the non-test set. */
-      bow_free (heap);
-      if (*wv)
-	bow_wv_free (*wv);
-      current_di = -1;
-      (*wv) = NULL;
-    }
-  /* Should be finished with the word array now */
-
-#if 1
-  /* XXX this causes a seg fault - don't know why. */
-  bow_array_free (word_array);
-#else
-  /* This does the same job for me. */
-  bow_free (word_array->entries);
-  bow_free (word_array);
-#endif
-
-  return current_di;
+  static int done = 0;
+  if (done) 
+    return;
+  bow_argp_add_child (&bow_split_argp_child);
+  done = 1;
 }
 
 
-/* Like bow_test_next_wv, but for type!=test instead of type==test */
-int
-bow_nontest_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv)
-{
-  bow_array *cdocs = barrel->cdocs;
-  bow_array *word_array;
-  bow_cdoc *doc;
-  bow_tmp_word_struct2 word, *wptr;
-  int current_di = -1;
-  int i;
-
-  word_array = bow_array_new (50, sizeof(bow_tmp_word_struct2), 0);
-
-  /* Keep going until we exhaust the heap or we find a non-test document. */
-  while ((heap->length > 0) && (word_array->length == 0))
-    {
-      current_di = heap->entry[0].current_di;
-      doc = bow_cdocs_di2doc(cdocs, current_di);
-
-      if (doc->type != test)
-	{
-	 if (doc->type != model && doc->type != ignore && doc->type != ignored_model)
-	    fprintf(stderr, "\nWARNING: Around line %d of %s. Unanticipated.\n\n",
-			__LINE__, __FILE__);
-		
-	  /* We have the first entry for the next non-test document */
-	  do
-	    {
-	      word.wi = heap->entry[0].wi;
-	      word.count = 
-		heap->entry[0].dv->entry[heap->entry[0].index].count;
-	      bow_array_append (word_array, &word);
-	      bow_dv_heap_update (heap);
-	    }
-	  while ((heap->length > 0)
-		 && (current_di == heap->entry[0].current_di));
-	}
-      else
-	{
-	  /* This is not a non-test document, go on to next document */
-	  do
-	    {
-	      bow_dv_heap_update (heap);
-	    }
-	  while ((heap->length > 0)
-		 && (current_di == heap->entry[0].current_di));
-	}
-    }
-
-  /* Here we either have a word_array or else we've run out of non-test
-     documents. */
-
-  if (word_array->length != 0)
-    {
-      if (*wv)
-	bow_wv_free (*wv);
-
-      /* We now have all the words for this non-test document in the word
-	 array - need to create a bow_wv */
-      (*wv) = bow_wv_new (word_array->length);
-      for (i = 0; i < word_array->length; i++)
-	{
-	  wptr = bow_array_entry_at_index (word_array, i);
-	  (*wv)->entry[i].wi = wptr->wi;
-	  (*wv)->entry[i].count = wptr->count;
-	  (*wv)->entry[i].weight = wptr->count;
-	}
-    }
-  else
-    {
-      /* Since we've run out of docs, might as well free the non-test set. */
-      bow_free (heap);
-      if (*wv)
-	bow_wv_free (*wv);
-      current_di = -1;
-      (*wv) = NULL;
-    }
-  /* Should be finished with the word array now */
-
-#if 1
-  /* XXX this causes a seg fault - don't know why. */
-  bow_array_free (word_array);
-#else
-  /* This does the same job for me. */
-  bow_free (word_array->entries);
-  bow_free (word_array);
-#endif
-
-  return current_di;
-}
-
-/* like bow_test_next_wv, but for type==ignore instead of type==test */
-int
-bow_ignore_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv)
-{
-  bow_array *cdocs = barrel->cdocs;
-  bow_array *word_array;
-  bow_cdoc *doc;
-  bow_tmp_word_struct2 word, *wptr;
-  int current_di = -1;
-  int i;
-
-  word_array = bow_array_new (50, sizeof(bow_tmp_word_struct2), 0);
-
-  /* Keep going until we exhaust the heap or we find a non-test document. */
-  while ((heap->length > 0) && (word_array->length == 0))
-    {
-      current_di = heap->entry[0].current_di;
-      doc = bow_cdocs_di2doc(cdocs, current_di);
-
-      if (doc->type == ignore)
-	{
-		
-	  /* We have the first entry for the next ignore document */
-	  do
-	    {
-	      word.wi = heap->entry[0].wi;
-	      word.count = 
-		heap->entry[0].dv->entry[heap->entry[0].index].count;
-	      bow_array_append (word_array, &word);
-	      bow_dv_heap_update (heap);
-	    }
-	  while ((heap->length > 0)
-		 && (current_di == heap->entry[0].current_di));
-	}
-      else
-	{
-	  /* This is not an ignore document, go on to next document */
-	  do
-	    {
-	      bow_dv_heap_update (heap);
-	    }
-	  while ((heap->length > 0)
-		 && (current_di == heap->entry[0].current_di));
-	}
-    }
-
-  /* Here we either have a word_array or else we've run out of ignore
-     documents. */
-
-  if (word_array->length != 0)
-    {
-      if (*wv)
-	bow_wv_free (*wv);
-
-      /* We now have all the words for this non-test document in the word
-	 array - need to create a bow_wv */
-      (*wv) = bow_wv_new (word_array->length);
-      for (i = 0; i < word_array->length; i++)
-	{
-	  wptr = bow_array_entry_at_index (word_array, i);
-	  (*wv)->entry[i].wi = wptr->wi;
-	  (*wv)->entry[i].count = wptr->count;
-	  (*wv)->entry[i].weight = wptr->count;
-	}
-    }
-  else
-    {
-      /* Since we've run out of docs, might as well free the non-test set. */
-      bow_free (heap);
-      if (*wv)
-	bow_wv_free (*wv);
-      current_di = -1;
-      (*wv) = NULL;
-    }
-  /* Should be finished with the word array now */
-
-#if 1
-  /* XXX this causes a seg fault - don't know why. */
-  bow_array_free (word_array);
-#else
-  /* This does the same job for me. */
-  bow_free (word_array->entries);
-  bow_free (word_array);
-#endif
-
-  return current_di;
-}
-
-/* like bow_test_next_wv, but for type==ignored_model instead of type==test */
-int
-bow_ignored_model_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv)
-{
-  bow_array *cdocs = barrel->cdocs;
-  bow_array *word_array;
-  bow_cdoc *doc;
-  bow_tmp_word_struct2 word, *wptr;
-  int current_di = -1;
-  int i;
-
-  word_array = bow_array_new (50, sizeof(bow_tmp_word_struct2), 0);
-
-  /* Keep going until we exhaust the heap or we find a non-test document. */
-  while ((heap->length > 0) && (word_array->length == 0))
-    {
-      current_di = heap->entry[0].current_di;
-      doc = bow_cdocs_di2doc(cdocs, current_di);
-
-      if (doc->type == ignored_model)
-	{
-		
-	  /* We have the first entry for the next ignored_model document */
-	  do
-	    {
-	      word.wi = heap->entry[0].wi;
-	      word.count = 
-		heap->entry[0].dv->entry[heap->entry[0].index].count;
-	      bow_array_append (word_array, &word);
-	      bow_dv_heap_update (heap);
-	    }
-	  while ((heap->length > 0)
-		 && (current_di == heap->entry[0].current_di));
-	}
-      else
-	{
-	  /* This is not an ignored_model document, go on to next document */
-	  do
-	    {
-	      bow_dv_heap_update (heap);
-	    }
-	  while ((heap->length > 0)
-		 && (current_di == heap->entry[0].current_di));
-	}
-    }
-
-  /* Here we either have a word_array or else we've run out of ignored_model
-     documents. */
-
-  if (word_array->length != 0)
-    {
-      if (*wv)
-	bow_wv_free (*wv);
-
-      /* We now have all the words for this non-test document in the word
-	 array - need to create a bow_wv */
-      (*wv) = bow_wv_new (word_array->length);
-      for (i = 0; i < word_array->length; i++)
-	{
-	  wptr = bow_array_entry_at_index (word_array, i);
-	  (*wv)->entry[i].wi = wptr->wi;
-	  (*wv)->entry[i].count = wptr->count;
-	  (*wv)->entry[i].weight = wptr->count;
-	}
-    }
-  else
-    {
-      /* Since we've run out of docs, might as well free the non-test set. */
-      bow_free (heap);
-      if (*wv)
-	bow_wv_free (*wv);
-      current_di = -1;
-      (*wv) = NULL;
-    }
-  /* Should be finished with the word array now */
-
-#if 1
-  /* XXX this causes a seg fault - don't know why. */
-  bow_array_free (word_array);
-#else
-  /* This does the same job for me. */
-  bow_free (word_array->entries);
-  bow_free (word_array);
-#endif
-
-  return current_di;
-}

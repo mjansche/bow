@@ -1,6 +1,6 @@
 /* Word-index to document-vector-file */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -20,6 +20,7 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
 
 #include <bow/libbow.h>
+#include <bow/hdb.h>
 #include <netinet/in.h>		/* for machine-independent byte-order */
 #include <assert.h>
 
@@ -94,10 +95,40 @@ bow_wi2dvf_add_di_wv (bow_wi2dvf **wi2dvf, int di, bow_wv *wv)
     }
 }
 
+/* Read all the words from character array DATA, and add them to WI2DVF,
+   associated with document index DI. */
+int
+bow_wi2dvf_add_di_text_str (bow_wi2dvf **wi2dvf, int di, char *data,
+			    const char *filename)
+{
+  char word[BOW_MAX_WORD_LENGTH]; /* buffer for reading and stemming words */
+  int wi;			/* a word index */
+  bow_lex *lex;
+  int num_words = 0;
+
+  lex = bow_default_lexer->open_str (bow_default_lexer, data);
+
+  /* Loop once for each lexical token in this document. */
+  while (bow_default_lexer->get_word (bow_default_lexer,
+				      lex, word, BOW_MAX_WORD_LENGTH))
+    {
+      /* Find out the word's "index". */
+      wi = bow_word2int_add_occurrence (word);
+      if (wi < 0)
+	continue;
+      /* Increment our stats about this word/document pair. */
+      bow_wi2dvf_add_wi_di_count_weight (wi2dvf, wi, di, 1, 1);
+      /* Increment our count of the number of words in this document. */
+      num_words++;
+    }
+  return num_words;
+}
+
 /* Read all the words from file pointer FP, and add them to WI2DVF,
    associated with document index DI. */
 int
-bow_wi2dvf_add_di_text_fp (bow_wi2dvf **wi2dvf, int di, FILE *fp)
+bow_wi2dvf_add_di_text_fp (bow_wi2dvf **wi2dvf, int di, FILE *fp,
+			   const char *filename)
 {
   char word[BOW_MAX_WORD_LENGTH]; /* buffer for reading and stemming words */
   int wi;			/* a word index */
@@ -105,7 +136,8 @@ bow_wi2dvf_add_di_text_fp (bow_wi2dvf **wi2dvf, int di, FILE *fp)
   int num_words = 0;
 
   /* Loop once for each document in this file. */
-  while ((lex = bow_default_lexer->open_text_fp (bow_default_lexer, fp)))
+  while ((lex = bow_default_lexer->open_text_fp (bow_default_lexer, fp,
+						 filename)))
     {
       /* Loop once for each lexical token in this document. */
       while (bow_default_lexer->get_word (bow_default_lexer,
@@ -116,7 +148,7 @@ bow_wi2dvf_add_di_text_fp (bow_wi2dvf **wi2dvf, int di, FILE *fp)
 	  if (wi < 0)
 	    continue;
 	  /* Increment our stats about this word/document pair. */
-	  bow_wi2dvf_add_wi_di_count_weight (wi2dvf, wi, di, 1, 0);
+	  bow_wi2dvf_add_wi_di_count_weight (wi2dvf, wi, di, 1, 1);
 	  /* Increment our count of the number of words in this document. */
 	  num_words++;
 	}
@@ -229,10 +261,37 @@ bow_wi2dvf_hide_words_by_doc_count (bow_wi2dvf *wi2dvf, int count)
   bow_dv *dv;
   int num_hides = 0;
 
+  if (count == 0)
+    return 0;
+
   for (wi = 0; wi < wi2dvf->size; wi++)
     {
       dv = bow_wi2dvf_dv (wi2dvf, wi);
-      if (dv && dv->length < count)
+      if (dv && dv->length <= count)
+	{
+	  bow_wi2dvf_hide_wi (wi2dvf, wi);
+	  num_hides++;
+	}
+    }
+  return num_hides;
+}
+
+/* Hide all words occuring in only COUNT or fewer times.
+   Return the number of words hidden. */
+int
+bow_wi2dvf_hide_words_by_occur_count (bow_wi2dvf *wi2dvf, int count)
+{
+  int wi;
+  bow_dv *dv;
+  int num_hides = 0;
+
+  if (count == 0)
+    return 0;
+
+  for (wi = 0; wi < wi2dvf->size; wi++)
+    {
+      dv = bow_wi2dvf_dv (wi2dvf, wi);
+      if (dv && bow_words_occurrences_for_wi (wi) <= count)
 	{
 	  bow_wi2dvf_hide_wi (wi2dvf, wi);
 	  num_hides++;

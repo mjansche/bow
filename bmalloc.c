@@ -1,4 +1,4 @@
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -22,3 +22,61 @@
 
 #include <bow/libbow.h>
 /* This will compile the `malloc' functions without "inline extern" */
+
+#if BOW_MCHECK
+
+#include <mcheck.h>
+
+#define ptrs_size 100000
+static int ptrs_length = 0;
+static void *ptrs[ptrs_size];
+
+void
+bow_malloc_check_all ()
+{
+  int i;
+  enum mcheck_status status;
+
+  for (i = 0; i < ptrs_length; i++)
+    {
+      if (ptrs[i])
+	{
+	  status = mprobe (ptrs[i]);
+	  if (status != MCHECK_OK)
+	    bow_error ("Bad heap");
+	}
+    }
+}
+
+void
+_bow_malloc_hook (void *ptr)
+{
+  assert (ptrs_length < ptrs_size);
+  ptrs[ptrs_length++] = ptr;
+  bow_malloc_check_all ();
+}
+
+void
+_bow_free_hook (void *ptr)
+{
+  int i;
+  for (i = 0; i < ptrs_length; i++)
+    {
+      if (ptrs[i] == ptr)
+	{
+	  ptrs[i] = 0;
+	  break;
+	}
+    }
+  bow_malloc_check_all ();
+}
+
+void (*bow_malloc_hook) (void *ptr) = _bow_malloc_hook;
+void (*bow_free_hook) (void *ptr) = _bow_free_hook;
+
+#else /* BOW_MCHECK */
+
+void (*bow_malloc_hook) (void *ptr) = NULL;
+void (*bow_free_hook) (void *ptr) = NULL;
+
+#endif /* BOW_MCHECK */

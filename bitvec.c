@@ -1,6 +1,6 @@
 /* Getting and setting bits in a bit-vector. */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -85,9 +85,13 @@ bow_bitvec_set (bow_bitvec *bv, int *indices, int value)
     {
       /* The bit vector needs to grow to accomodate this entry. */
       int old_size = bv->vector_size;
-      bv->vector_size *= 3;
+      int increase = 3;
+
+      if (bv->vector_size * increase / 2 <= bit_index / BITSPERBYTE)
+	increase = 4 * bit_index / (BITSPERBYTE * bv->vector_size);
+      bv->vector_size *= increase;
       bv->vector_size /= 2;
-      bv->dimension_sizes[bv->num_dimensions-1] *= 3;
+      bv->dimension_sizes[bv->num_dimensions-1] *= increase;
       bv->dimension_sizes[bv->num_dimensions-1] /= 2;
       bv->vector = bow_realloc (bv->vector, bv->vector_size);
       memset (bv->vector + old_size, 0, bv->vector_size - old_size);
@@ -98,6 +102,13 @@ bow_bitvec_set (bow_bitvec *bv, int *indices, int value)
     (*vector_byte) |= (0x80 >> (bit_index % BITSPERBYTE));
   else
     (*vector_byte) &= ~(0x80 >> (bit_index % BITSPERBYTE));
+
+  /* Update the bits_set count */
+  if ((value == 0) && (ret == 1))
+    bv->bits_set--;
+  else if ((value != 0) && (ret == 0))
+    bv->bits_set++;
+
   return ret;
 }
 

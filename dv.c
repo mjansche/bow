@@ -1,6 +1,6 @@
 /* Functions for manipulating "document vectors". */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -56,11 +56,13 @@ _bow_dv_index_for_di (bow_dv **dv, int di, int error_on_creation)
     {
       if (error_on_creation)
 	bow_error ("Shouldn't be creating new entry for a weight.");
-      if ((*dv)->length == (*dv)->size)
+      if ((*dv)->length >= (*dv)->size)
 	{
-	  /* The DV must grow to accommodate another entry. */
-	  (*dv)->size *= 3;
+	  /* The DV must grow to accommodate another entry.  Add one
+	     to corrently handle case where (*DV)->SIZE==1. */
+	  (*dv)->size = ((*dv)->size + 1) * 3;
 	  (*dv)->size /= 2;
+	  assert ((*dv)->size > (*dv)->length);
 	  (*dv) = bow_realloc ((*dv), (sizeof (bow_dv) 
 				       + sizeof (bow_de) * (*dv)->size));
 	}

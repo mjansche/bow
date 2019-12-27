@@ -108,7 +108,7 @@ bow_wicoo_print_word_entropy (bow_wi2dvf *wicoo, int wi)
 
   entropy = 0;
   max_wi = bow_num_words ();
-  m_est_m = wicoo->num_words / 20;
+  m_est_m = wicoo->num_words / 100;
   total_pr_w_w = 0;
   for (wi2 = 0, coovi = 0; wi2 < max_wi; wi2++)
     {
@@ -142,3 +142,13 @@ bow_wicoo_print_word_entropy (bow_wi2dvf *wicoo, int wi)
   assert (total_pr_w_w > 0.99 && total_pr_w_w < 1.01);
   printf ("%-15.7f %s\n", entropy, bow_int2word (wi));
 }
+
+/* Shrink the weights of WV toward documents in BARREL, according to
+   their distance to WV. */
+void
+bow_barrel_shrink_wv (bow_barrel *barrel, bow_wv *wv)
+{
+  return;
+}
+
+

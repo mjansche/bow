@@ -1,6 +1,6 @@
 /* Weight-setting and scoring for Kuback-Leiber classification */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -62,7 +62,7 @@ bow_kl_set_weights (bow_barrel *barrel)
   /* Get the total number of unique terms in each class; store this in
      CDOC->NORMALIZER. */
   /* Calculate the total number of occurrences of each word; store this
-     int DV->IDF. */
+     in DV->IDF. */
   for (ci = 0; ci < barrel->cdocs->length; ci++)
     {
       cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
@@ -101,7 +101,7 @@ bow_kl_set_weights (bow_barrel *barrel)
 
 
   /* Set the weights in the BARREL's WI2DVF so that they are
-     equal to the log odds-ratio, Pr(w|C)/Pr(w|~C). */
+     equal to the log likelihood-ratio, Pr(w|C)/Pr(w|~C). */
   for (wi = 0; wi < max_wi; wi++) 
     {
       double pr_w = 0.0;
@@ -176,6 +176,9 @@ bow_kl_score (bow_barrel *barrel, bow_wv *query_wv,
   /* Allocate space to store scores for *all* classes (documents) */
   scores = alloca (barrel->cdocs->length * sizeof (double));
 
+  /* Calculate the total number of words in QUERY_WV.  Should we start
+     at one to prevent getting a zero here?  Also, would this be
+     statistically more correct, too? */
   query_word_count = 0;
   for (wvi = 0; wvi < query_wv->num_entries; wvi++)
     {
@@ -183,6 +186,8 @@ bow_kl_score (bow_barrel *barrel, bow_wv *query_wv,
       if (bow_wi2dvf_dv (barrel->wi2dvf, query_wv->entry[wvi].wi))
 	query_word_count += query_wv->entry[wvi].count;
     }
+  if (query_word_count == 0)
+    query_word_count = 1;
 
 #if KL_AGAINST_UNCOND
   for (ci = 0; ci < barrel->cdocs->length; ci++)
@@ -257,7 +262,7 @@ bow_kl_score (bow_barrel *barrel, bow_wv *query_wv,
 	  bow_cdoc *cdoc;
 
 	  cdoc = bow_array_entry_at_index (barrel->cdocs, ci);
-	  assert (cdoc->type == model);
+	  assert (cdoc->type == bow_doc_train);
 	  if (cdoc->word_count == 0)
 	    {
 	      assert (scores[ci] > 0);
@@ -309,12 +314,11 @@ bow_kl_score (bow_barrel *barrel, bow_wv *query_wv,
 		  assert (pr_w_c > 0 && pr_w_c <= 1);
 		  count_w_c = dv->entry[dvi].count;
 		  count_c = cdoc->word_count;
-#define WITTEN_BELL 1
-#if WITTEN_BELL
-		  /* Witten-Bell */
-		  pr_w_c = ((float)dv->entry[dvi].count 
-			    / (cdoc->word_count + cdoc->normalizer));
-#endif
+		  if (bow_smoothing_method == bow_smoothing_wittenbell)
+		    {
+		      pr_w_c = ((float)dv->entry[dvi].count 
+				/ (cdoc->word_count + cdoc->normalizer));
+		    }
 		}
 	    }
 	  else
@@ -340,22 +344,18 @@ bow_kl_score (bow_barrel *barrel, bow_wv *query_wv,
 		  assert (pr_w_c > 0 && pr_w_c <= 1);
 		  count_w_c = 0;
 		  count_c = cdoc->word_count;
-#if WITTEN_BELL
-		  /* Witten-Bell */
-		  if (cdoc->word_count)
+		  if (bow_smoothing_method == bow_smoothing_wittenbell)
 		    {
-		      /* There is training data for this class */
-		      pr_w_c =
-			(cdoc->normalizer
-			 / ((cdoc->word_count + cdoc->normalizer)
-			    * (barrel->wi2dvf->num_words - cdoc->normalizer)));
+		      if (cdoc->word_count)
+			/* There is training data for this class */
+			pr_w_c =
+			  (cdoc->normalizer
+			   / ((cdoc->word_count + cdoc->normalizer)
+			      *(barrel->wi2dvf->num_words-cdoc->normalizer)));
+		      else
+			/* There is no training data for this class. */
+			pr_w_c = 1.0 / barrel->wi2dvf->num_words;
 		    }
-		  else
-		    {
-		      /* There is no training data for this class. */
-		      pr_w_c = 1.0 / barrel->wi2dvf->num_words;
-		    }
-#endif
 		}
 	    }
 	  assert (pr_w_c > 0 && pr_w_c <= 1);
@@ -472,6 +472,6 @@ void _register_method_kl ()
   static int done = 0;
   if (done)
     return;
-  bow_method_register_with_name (&bow_method_kl, "kl");
+  bow_method_register_with_name (&bow_method_kl, "kl", NULL);
   done = 1;
 }
