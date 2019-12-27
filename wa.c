@@ -1,7 +1,7 @@
 /* An array of word indices, each associated with a floating point number. 
    Useful for lists of words by information gain, etc. */
 
-/* Copyright (C) 1998 Andrew McCallum
+/* Copyright (C) 1998, 1999 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -236,6 +236,13 @@ bow_wa_fprintf (bow_wa *wa, FILE *fp, int n)
     fprintf (fp, "%20.10f %s\n",
 	     wa->entry[i].weight,
 	     bow_int2word (wa->entry[i].wi));
+}
+
+/* Remove all entries from the word array */
+void
+bow_wa_empty (bow_wa *wa)
+{
+  wa->length = 0;
 }
 
 /* Free the word array */

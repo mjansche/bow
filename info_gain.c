@@ -482,6 +482,34 @@ bow_infogain_wa (bow_barrel *barrel, int num_classes)
   return wa;
 }
 
+/* Return a word array containing the count for each word, with +/-
+   0.1 noise added. */
+bow_wa *
+bow_word_count_wa (bow_barrel *doc_barrel)
+{
+  bow_wa *wa;
+  int wi, dvi;
+  bow_dv *dv;
+  bow_cdoc *cdoc;
+
+  wa = bow_wa_new (0);
+  for (wi = 0; wi < doc_barrel->wi2dvf->size; wi++)
+    {
+      dv = bow_wi2dvf_dv (doc_barrel->wi2dvf, wi);
+      if (!dv)
+	continue;
+      for (dvi = 0; dvi < dv->length; dvi++)
+	{
+	  cdoc = bow_array_entry_at_index (doc_barrel->cdocs, 
+					   dv->entry[dvi].di);
+	  if (cdoc->type == bow_doc_train)
+	    bow_wa_add_to_end (wa, wi, 
+			       dv->entry[dvi].count + bow_random_01 () * 0.01);
+	}
+    }
+  return wa;
+}
+
 
 /* Print to stdout the sorted results of bow_infogain_per_wi_new().
    It will print the NUM_TO_PRINT words with the highest infogain. */

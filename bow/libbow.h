@@ -724,6 +724,9 @@ void bow_wa_sort_reverse (bow_wa *wa);
 /* Print the first N entries of the word array WA to stream FP. */
 void bow_wa_fprintf (bow_wa *wa, FILE *fp, int n);
 
+/* Remove all entries from the word array */
+void bow_wa_empty (bow_wa *wa);
+
 /* Free the word array */
 void bow_wa_free (bow_wa *wa);
 
@@ -1901,6 +1904,10 @@ float *bow_infogain_per_wi_new (bow_barrel *barrel, int num_classes,
 /* Return a word array containing information gain scores, unsorted.
    Only includes words with non-zero infogain. */
 bow_wa *bow_infogain_wa (bow_barrel *barrel, int num_classes);
+
+/* Return a word array containing the count for each word, with +/-
+   0.1 noise added. */
+bow_wa *bow_word_count_wa (bow_barrel *doc_barrel);
 
 /* Return a malloc()'ed array containing an infomation-gain score for
    each word index, but the infogain scores are computing from

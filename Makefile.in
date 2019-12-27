@@ -260,6 +260,7 @@ TODO
 STANDARD_RAINBOW_METHOD_C_FILES = \
 active.c \
 deflexer.c \
+dirk.c \
 em.c \
 emsimple.c \
 kl.c \

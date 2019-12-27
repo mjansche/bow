@@ -1487,8 +1487,6 @@ rainbow_test_files (FILE *out_fp, const char *test_dirname)
 }
 
 
-/* Function to assign `Naive Bayes'-style weights to each element of
-   each document vector. */
 void
 bow_print_log_odds_ratio (FILE *fp, bow_barrel *barrel, int num_to_print)
 {
@@ -1500,8 +1498,13 @@ bow_print_log_odds_ratio (FILE *fp, bow_barrel *barrel, int num_to_print)
   int dvi;			/* an index into the DV */
   int weight_setting_num_words = 0;
   int total_num_words = 0;
-  struct lorth { int wi; float lor; } lors[barrel->cdocs->length][num_to_print];
+  struct lorth 
+  { 
+    int wi; 
+    float lor;
+  } lors[barrel->cdocs->length][num_to_print];
   int wci;
+  float *total_word_counts;
 
   /* bow_error("Can't use this while normalizer is being used for non-integral word_count"); */
 
@@ -1512,6 +1515,7 @@ bow_print_log_odds_ratio (FILE *fp, bow_barrel *barrel, int num_to_print)
   /* assert (barrel->is_vpc); */
 
   max_wi = MIN (barrel->wi2dvf->size, bow_num_words());
+  total_word_counts = bow_malloc (sizeof (float) * max_wi);
 
   for (ci = 0; ci < barrel->cdocs->length; ci++)
     for (wci = 0; wci < num_to_print; wci++)
@@ -1523,26 +1527,27 @@ bow_print_log_odds_ratio (FILE *fp, bow_barrel *barrel, int num_to_print)
   /* assume that word_count, normalizer are already set */
 
   /* Calculate the total number of occurrences of each word; store this
-     int DV->IDF. */
+     int TOTAL_WORD_COUNTS. */
 
   for (wi = 0; wi < max_wi; wi++) 
     {
       dv = bow_wi2dvf_dv (barrel->wi2dvf, wi);
       if (dv == NULL)
 	continue;
-      dv->idf = 0;
+      total_word_counts[wi] = 0;
       for (dvi = 0; dvi < dv->length; dvi++) 
 	{
 	  /* Is cdoc used for anything? - jrennie */
 	  cdoc = bow_array_entry_at_index (barrel->cdocs, 
 					   dv->entry[dvi].di);
-	  total_num_words += dv->entry[dvi].weight;
-	  dv->idf += dv->entry[dvi].weight;
+	  if (cdoc->type == bow_doc_train)
+	    {
+	      total_num_words += dv->entry[dvi].weight;
+	      total_word_counts[wi] += dv->entry[dvi].weight;
+	    }
 	}
     }
 
-
-  bow_verbosify(bow_progress, "Calculating word weights:        ");
 
   /* Set the weights in the BARREL's WI2DVF so that they are
      equal to P(w|C), the probability of a word given a class. */
@@ -1558,7 +1563,7 @@ bow_print_log_odds_ratio (FILE *fp, bow_barrel *barrel, int num_to_print)
       if (dv == NULL)
 	continue;
 
-      pr_w = ((double)dv->idf) / total_num_words;
+      pr_w = total_word_counts[wi] / total_num_words;
 
       /* Now loop through all the elements, setting their weights */
       for (dvi = 0; dvi < dv->length; dvi++) 
@@ -1574,7 +1579,7 @@ bow_print_log_odds_ratio (FILE *fp, bow_barrel *barrel, int num_to_print)
 		    / (cdoc->word_count + cdoc->normalizer));
 	  pr_w_c = (((double)dv->entry[dvi].weight + 1)
 		    / (cdoc->word_count + barrel->wi2dvf->num_words));
-	  pr_w_not_c = ((dv->idf - dv->entry[dvi].weight 
+	  pr_w_not_c = ((total_word_counts[wi] - dv->entry[dvi].weight 
 			 + barrel->cdocs->length - 1)
 			/ 
 			(total_num_words - cdoc->word_count
@@ -1605,8 +1610,6 @@ bow_print_log_odds_ratio (FILE *fp, bow_barrel *barrel, int num_to_print)
 	    }
 	}
       weight_setting_num_words++;
-      /* Set the IDF.  Kl doesn't use it; make it have no effect */
-      dv->idf = 1.0;
     }
   bow_verbosify (bow_progress, "\n");
 

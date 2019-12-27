@@ -595,11 +595,59 @@ archer_index_lines ()
   bow_lex *lex;
   char word[BOW_MAX_WORD_LENGTH];
   int wi, di, pi;
-  char filename[1024];
+  char filename[BOW_MAX_WORD_LENGTH];
 
-  archer_docs = bow_sarray_new (0, sizeof (archer_doc), archer_doc_free);
+  /*
+    archer_docs = bow_sarray_new (0, sizeof (archer_doc), archer_doc_free);
+    archer_wi2pv = bow_wi2pv_new (0, "pv", "wi2pv");
+  */
 
-  archer_wi2pv = bow_wi2pv_new (0, "pv", "wi2pv");
+  if (!archer_docs_i4k_fp)
+  {
+    sprintf (filename, "%s/docs.i4k", bow_data_dirname);
+    archer_docs_i4k_fp =  bow_fopen (filename, "wb+");
+  }
+  if (!archer_docs_array_fp)
+  {
+    sprintf (filename, "%s/docs.array", bow_data_dirname);
+    archer_docs_array_fp =  bow_fopen (filename, "wb+");
+  }
+  if (!archer_docs)
+  {
+    archer_docs = bow_sarray_new (0, sizeof (archer_doc), archer_doc_free);
+    bow_array_write_header_inc (archer_docs->array, archer_docs_array_fp);
+  }
+  
+  if (!archer_labels_i4k_fp)
+  {
+    sprintf (filename, "%s/labels.i4k", bow_data_dirname);
+    archer_labels_i4k_fp =  bow_fopen (filename, "wb+");
+  }
+  if (!archer_labels_array_fp)
+  {
+    sprintf (filename, "%s/labels.array", bow_data_dirname);
+    archer_labels_array_fp =  bow_fopen (filename, "wb+");
+  }
+  if (!archer_labels)
+  {
+    archer_labels = bow_sarray_new (0, sizeof (archer_label), archer_label_free);
+    bow_array_write_header_inc (archer_labels->array, archer_labels_array_fp);
+  }
+
+  if (!archer_wi2pv)
+    archer_wi2pv = bow_wi2pv_new (0, "pv", "wi2pv");
+  if (!archer_li2pv)
+    archer_li2pv = bow_wi2pv_new (0, "lipv", "li2pv");
+
+  if (!archer_vocabulary_fp)
+  {
+    sprintf (filename, "%s/vocabulary", bow_data_dirname);
+    archer_vocabulary_fp = bow_fopen (filename, "wb+");
+  }
+
+  /* Do NOT write to disk every word */
+  archer_index_inc = 1;
+
   fp = bow_fopen (archer_arg_state.dirname, "r");
   bow_verbosify (bow_progress, "Indexing lines:              ");
   while (fgets (buf, max_line_length, fp))
@@ -613,10 +661,13 @@ archer_index_lines ()
       while (bow_default_lexer->get_word (bow_default_lexer,
 					  lex, word, BOW_MAX_WORD_LENGTH))
 	{
-	  wi = bow_word2int_add_occurrence (word);
+	  wi = bow_word2int_inc (word, archer_vocabulary_fp);
 	  if (wi < 0)
 	    continue;
 	  bow_wi2pv_add_wi_di_pi (archer_wi2pv, wi, di, pi);
+	  if (archer_index_inc) 
+	    bow_wi2pv_write_entry (archer_wi2pv, wi);
+	  pi++;
 	}
       bow_default_lexer->close (bow_default_lexer, lex);
       doc.tag = bow_doc_train;
@@ -632,8 +683,10 @@ archer_index_lines ()
   bow_verbosify (bow_progress, "\n");
 
   archer_archive ();
-  /* To close the FP for FILENAME_PV */
+
+  /* Close the wi2pv and pv files */
   bow_wi2pv_free (archer_wi2pv);
+  bow_wi2pv_free (archer_li2pv);
 }
 
 /* Set the special flag in FILENAME's doc structure indicating that

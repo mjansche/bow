@@ -1,3 +1,33 @@
+1999-11-22  Andrew McCallum  <mccallum@justresearch.com>
+
+	* Makefile.in (STANDARD_RAINBOW_METHOD_C_FILES): Added dirk.c.
+	* dirk.c (log_gamma): Cache 100 integer x's.
+	(bow_dirk_log_kernel): Take vocab size as argument instead of barrel.
+	(bow_dirk_score): Add exponentiated log-densities, instead of log
+	densities.  Do this by finding the max and subtracting.
+
+1999-11-16  Andrew McCallum  <mccallum@justresearch.com>
+
+	* cdm.c (cdm_options): New command-line options
+	"cdm-print-smallest-alphas" and "cdm-print-largest-alphas".
+	(cdm_parse_opt): Handle them.
+	(bow_cdm_initialize_ct): New code allows this to be called more than
+	once.  This way you can add new document (and hence words) and
+	re-calculate the infogain.
+	(bow_cdm_ct_set_alphas): Added structure ALPHA_RECORD for printing
+	largest and smallest alphas.  Added, but commented out, code for
+	smoothing the counts before fitting the Dirichlet, using
+	log(alpha) in place of alpha, smoothing the alphas.  Print the
+	largest and smallest alphas.
+	(CDM_SCORE_ANNEAL_TEMPERATURE): New macro, currently defined not to be
+	used.
+	(bow_cdm_score): Handle it.
+
+1999-11-10  Andrew McCallum  <mccallum@justresearch.com>
+
+	* svm_base.c (sqrtf): New macro, necessary on some non-Linux
+	machines.  Bug reported by Chuck Rosenberg.
+
 1999-11-08  Andrew McCallum  <mccallum@justresearch.com>
 
 	* readme.texi: Add simple usage examples for arrow.
@@ -28,6 +58,12 @@
 	bow_wv_set_weights_to_count_times_idf() instead of
 	bow_wv_set_weights_to_count(), as is correct for TFIDF.  This was
 	previously corrected in the scoring function.
+	(bow_tfidf_params_tfidf): Change parameter settings for "tfidf"
+	method.  Previously it was identical to the "tfidf_log_words"
+	method, now it is identical to the "tfidf_log_occur" method.  In
+	other words, previously it calculated IDF using the number of
+	times the word occurred in the training data; now it uses the
+	number of training documents in which the word occurs.
 
 	* split.c (bow_split_options): Remove documentation for 'r'
 	suffix.  It's confusing and shouldn't be used unawares.
