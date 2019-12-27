@@ -1,7 +1,7 @@
 Bag Of Words Library README
 ***************************
 
-`libbow', version 0.95.
+`libbow', version 1.0.
 
    Documentation and updates for `libbow' are available at
 http://www.cs.cmu.edu/~mccallum/bow
@@ -85,6 +85,7 @@ Here are some examples:
      Perform 5 trials, each consisting of a new random test/train split
      and outputs of the classification of the test documents.
 
+
    Typing `rainbow --help' will give list of all rainbow options.
 
    After you have compiled `libbow' and `rainbow', you can run the
@@ -137,6 +138,7 @@ Archer
 ======
 
    `Archer' is a standalone program that does document retrieval with
-AltaVista-type queries.  Sorry, there is no documentation yet, however,
-the basic interface is much like arrow.
+AltaVista-type queries, using +, -, "", etc.  The commands in the
+"arrow" examples above also work for archer.  See "archer -help" for
+more information.
 

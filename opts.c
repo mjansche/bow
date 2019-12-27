@@ -530,10 +530,12 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
       {
 	const char sw_fn[] = "/.bow-stopwords";
 	const char *home = getenv ("HOME");
-	char filename[strlen (home) + strlen (sw_fn) + 1];
-	strcpy (filename, home);
-	strcat (filename, sw_fn);
-	bow_stoplist_add_from_file (filename);    
+	if (home != NULL) {
+	    char filename[strlen (home) + strlen (sw_fn) + 1];
+	    strcpy (filename, home);
+	    strcat (filename, sw_fn);
+	    bow_stoplist_add_from_file (filename);    
+	}
       }
  
       /* Build the default data directory name, in case it wasn't
@@ -542,14 +544,16 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
       if (!bow_data_dirname)
 	{
 	  char *homedir = getenv ("HOME");
-	  char *dirname = bow_malloc (strlen (homedir) 
-				      + strlen ("/.")
-				      + strlen (program_invocation_short_name)
-				      + 1);
-	  strcpy (dirname, homedir);
-	  strcat (dirname, "/.");
-	  strcat (dirname, program_invocation_short_name);
-	  bow_data_dirname = dirname;
+	  if (homedir != NULL) {
+	      char *dirname = bow_malloc (strlen (homedir) 
+					  + strlen ("/.")
+					  + strlen (program_invocation_short_name)
+					  + 1);
+	      strcpy (dirname, homedir);
+	      strcat (dirname, "/.");
+	      strcat (dirname, program_invocation_short_name);
+	      bow_data_dirname = dirname;
+	  }
 	}
 
     case ARGP_KEY_ARG:

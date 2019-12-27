@@ -25,8 +25,8 @@
 
 /* These next two macros are automatically maintained by the Makefile,
    in conjunction with the file ./Version. */
-#define BOW_MAJOR_VERSION 0
-#define BOW_MINOR_VERSION 95
+#define BOW_MAJOR_VERSION 1
+#define BOW_MINOR_VERSION 0
 #define BOW_VERSION BOW_MAJOR_VERSION.BOW_MINOR_VERSION
 
 #define _FILE_OFFSET_BITS 64

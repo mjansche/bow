@@ -93,38 +93,8 @@ _str2id (const unsigned char *s)
 {
   unsigned h;
 
-#if 0
-  static const unsigned bigprime = 1931045213L;
-  static const unsigned copying = 0x1111U;
-  unsigned c = 0;
-  unsigned x;
-  int i;
-#endif
-
   for (h = 0; *s; s++)
     h = 131*h + *s;
-
-#if 0
-  while (*s++ != '\0')
-    {
-      x = (*s) * copying;
-      for (i = 0; i < c; i++)
-	x = (x & 0x1) ? ((x << 1) | 0x1) : (x << 1);
-      h ^= x;
-      c++;
-    }
-#endif
-
-#if 0
-  while (*s++ != '\0')
-    h ^= (((unsigned)*s) * copying) << (c++ % 7);
-#endif
-
-#if 0
-  while (*s++ != '\0')
-    h ^= (((unsigned)*s) * bigprime) << (c++ % 7);
-    //h ^= (((unsigned)*s) * bigprime);
-#endif
 
   /* Never return 0, otherwise _str_hash_add() will infinite-loop */
   //assert (h != 0);
@@ -140,116 +110,6 @@ int my_strcmp (const char *s1, const char *s2)
 }
 #endif
 
-#if 0
-/* Look up STRING in the MAP->STR_HASH; or, more precisely: Return the
-   index to the location in MAP->STR_HASH that contains the index to
-   the location in MAP->STR_ARRAY that contains a (char*) with
-   contents matching STRING.  The second argument ID must be the value
-   returned by _STR2ID(STRING).  If the string was found, then the
-   return value will be different from HASH_EMPTY, and *STRDIFF will
-   be zero. */
-static int
-old_str_hash_lookup (bow_int4str *map, const char *string, unsigned id, int *strdiffp)
-{
-  unsigned h;
-  int firsth = -1;		/* the first value of H */
-
-  assert (map->str_hash[0] >= -1);
-  //assert (id == _str2id (string));
-  /* Keep looking at STR_HASH locations until we either (1) find the
-     string, or (2) find an empty spot, or (3) "modulo-loop" around to
-     the same spot we began the search.  In the third case, we know
-     that we will have to grow the STR_HASH before we can add the
-     string corresponding to ID. */
-  *strdiffp = 1;
-  for (h = HASH(map, id);
-       h != firsth
-	 && map->str_hash[h] != HASH_EMPTY 
-	 && (*strdiffp = strcmp (string, map->str_array[map->str_hash[h]]));
-       h = REHASH(map, id, h))
-    {
-      assert (h >= 0);
-      if (firsth == -1)
-	firsth = h;
-    }
-  return h;
-}
-
-
-
-static int
-old2_str_hash_lookup (bow_int4str *map, const char *string, unsigned id, int *strdiffp)
-{
-  unsigned h;
-  int num_hops = 0;
-  register int local_strdiffp = 1;
-  static int num_hops_sum = 0;
-  static int num_calls = 0;
-  static int max_num_hops = 0;
-  /* Make INCR be relatively prime to the STR_HASH_SIZE */
-  unsigned incr = 1 + (id % (map->str_hash_size - 1));
-
-  //assert (map->str_hash[0] >= -1);
-  //assert (id == _str2id (string));
-  /* Keep looking at STR_HASH locations until we either (1) find the
-     string, or (2) find an empty spot, or (3) "modulo-loop" around to
-     the same spot we began the search.  In the third case, we know
-     that we will have to grow the STR_HASH before we can add the
-     string corresponding to ID.  We don't need to check to stop when
-     H == the first H because we are now growing the table whenever it gets
-     half full, and so we can never loop around completely.  */
-  //assert (h > 0);
-  num_hops++;
-  for (h = HASH(map, id);
-       map->str_hash[h] != HASH_EMPTY 
-	 && (//id != map->hash_id_array[map->str_hash[h]] ||
-	     (local_strdiffp = strcmp (string, map->str_array[map->str_hash[h]])));
-       h = (h + incr) % map->str_hash_size)
-    {
-      num_hops++;
-      //assert (h > 0);
-    }
-  *strdiffp = local_strdiffp;
-#if 1
-  num_calls++;
-  num_hops_sum += num_hops;
-  if (num_hops > max_num_hops)
-    max_num_hops = num_hops;
-  if (num_calls % 10000 == 0)
-    {
-      bow_verbosify (bow_progress,
-		     "0x%x Average num hops = %f\n "
-		     "Max num hops = %d\n "
-		     "Hash size = %d  Num entries = %d\n",
-		     map,
-		     ((float)num_hops_sum)/num_calls, max_num_hops,
-		     map->str_hash_size, map->str_array_length);
-      num_calls = num_hops_sum = max_num_hops = 0;
-    }
-#endif
-  return h;
-}
-
-static int
-old3_str_hash_lookup (bow_int4str *map, const char *string, unsigned id, int *strdiffp)
-{
-  register unsigned h;
-  /* Make INCR be relatively prime to the STR_HASH_SIZE */
-  unsigned incr = 1 + (id % (map->str_hash_size - 1));
-
-  /* Keep looking at STR_HASH locations until we either (1) find the
-     string, or (2) find an empty spot.  We don't need to check to
-     stop when H == the first H because we are now growing the table
-     whenever it gets half full, and so we can never loop around
-     completely.  */
-  for (h = id % map->str_hash_size;
-       map->str_hash[h] != HASH_EMPTY 
-	 && (*strdiffp = strcmp (string, map->str_array[map->str_hash[h]]));
-       h = (h + incr) % map->str_hash_size)
-    ;
-  return h;
-}
-#endif /* 0 */
 
 int
 _bow_str_hash_lookup (bow_int4str *map, const char *string, unsigned id, 
@@ -280,28 +140,6 @@ _bow_str_hash_lookup (bow_int4str *map, const char *string, unsigned id,
   }
 }
 
-/* Problem:
-56911565 65517 %p
-42809
-1-p
-42808
-56911565 65516 %p
-43677
-42809 43678 + 65517 %p
-20970
-43678 + 65517 %p
-64648
-43678 + 65517 %p
-42809
-43678 + 65517 %p
-20970
-
-65517 2*p
-131034
-43678 3*p
-131034
-
-*/
 
 int
 _bow_str_hash_lookup2 (bow_int4str *map, const char *string, unsigned id)

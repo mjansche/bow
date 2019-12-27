@@ -4,6 +4,11 @@
  * pass through some function here */
 #include <bow/svm.h>
 
+#if !HAVE_SQRTF
+#define sqrtf sqrt
+#endif
+
+
 #define BARREL_GET_MAX_NSV(barrel) (*((int *) &((GET_CDOC_ARRAY_EL(barrel,0))->normalizer)))
 #define BARREL_GET_NCLASSES(barrel) (*((int *) &((GET_CDOC_ARRAY_EL(barrel,0))->prior)))
 #define BARREL_GET_NMETA_DOCS(barrel) (*((int *) &((GET_CDOC_ARRAY_EL(barrel,1))->normalizer)))

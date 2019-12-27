@@ -115,5 +115,7 @@ Sorry, there is no documentation yet.
 @section Archer
 
 @samp{Archer} is a standalone program that does document retrieval with
-AltaVista-type queries.  Sorry, there is no documentation yet, however,
-the basic interface is much like arrow.
+AltaVista-type queries, using +, -, "", etc.  The commands in the
+"arrow" examples above also work for archer.  See "archer --help" for
+more information.
+

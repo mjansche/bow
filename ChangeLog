@@ -1,4 +1,24 @@
-2001-09-26  Andrew McCallum  <mccallum@pail.whizbang.com>
+2002-02-13  Andrew McCallum  <mccallum@slide.whizbang.com>
+
+	* opts.c (parse_bow_opt): Make it still work if $HOME isn't
+	defined (as in a CGI).
+	(Patch from John McCall <rjmccall@andrew.cmu.edu>.)
+
+	* svm_base.c (sqrtf): #define as sqrt if we don't HAVE_SQRTF.
+	(Suggestion from Alberto Lavelli <lavelli@itc.it>.)
+
+	* lex-html.c: Added the ability to deal with html entities of the
+	form &ENTITY; or &#DIGITS;.  Patch from Arturo Perez
+	<arturo@montecarlo.bigchalk.com>.
+
+	* primelist.c: Fixed off-by-one error in list of primes.  This was
+	occasionally causing an infinite loop.  (Reported by Mikhail
+	Sogrine <mics@cnds.ucd.ie> and Arturo Perez
+	<arturo@montecarlo.bigchalk.com>.)
+
+	* int4str.c: Removed old, irrelevant comments.
+
+2001-09-26  Andrew McCallum  <mccallum@whizbang.com>
 
 	* wi2pv.c (bow_wi2pv_flush): Assert that there are no bytes in the
 	PVM.
