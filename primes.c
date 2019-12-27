@@ -1,5 +1,5 @@
 /* Prime number generation
-   Copyright (C) 1994, 1996 Free Software Foundation
+   Copyright (C) 1994, 1996, 1997 Free Software Foundation
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -19,7 +19,7 @@
 #include <limits.h>
 #include <string.h>
 #include <assert.h>
-#include "libbow.h"
+#include <bow/libbow.h>
 
 
 
@@ -37,8 +37,8 @@ _bow_nextprime (unsigned n)
      next_multiple[i] is not a multiple of two unless primes[i] == 2, and
      next_multiple[i] is the smallest such value.  */
   static unsigned *primes, *next_multiple;
-  static int primes_len;
-  static int primes_size;
+  static unsigned  primes_len;
+  static unsigned  primes_size;
   static unsigned next_sieve;	/* always even */
   unsigned max_prime;
 
@@ -69,7 +69,7 @@ _bow_nextprime (unsigned n)
       unsigned start = next_sieve;
       unsigned end   = start + max_prime + 1;
       char *sieve = (char *) alloca ((end - start) * sizeof (*sieve));
-      int i;
+      unsigned int i;
 
       assert (sieve);
 

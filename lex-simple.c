@@ -1,7 +1,27 @@
 /* Implementation of some simple, context-free lexers. */
 
-#include "libbow.h"
+/* Copyright (C) 1997 Andrew McCallum
+
+   Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
+
+   This file is part of the Bag-Of-Words Library, `libbow'.
+
+   This library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Library General Public License
+   as published by the Free Software Foundation, version 2.
+   
+   This library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Library General Public License for more details.
+
+   You should have received a copy of the GNU Library General Public
+   License along with this library; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
+
+#include <bow/libbow.h>
 #include <ctype.h>		/* for isalpha() */
+#include <unistd.h>		/* for SEEK_END, etc on SunOS */
 
 #define NO 0
 #define YES 1
@@ -23,6 +43,7 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
   bow_lex *ret;			/* the BOW_LEX we will return.  */
   const char *end_pattern_ptr;
   int byte;			/* a character read from FP */
+  FILE *pre_pipe_fp = NULL;
 
   if (feof (fp))
     return NULL;
@@ -42,6 +63,26 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
      would cause it to match and finish filling immediately. */
   assert (!self->document_end_pattern || self->document_end_pattern[0]);
 
+  if (bow_lex_pipe_command)
+    {
+      char redirected_command[strlen (bow_lex_pipe_command) + 20];
+      /* Make the file descriptor of FP be the standard input
+	 for the COMMAND. */
+      sprintf (redirected_command,
+	       "0<&%d %s", fileno (fp), bow_lex_pipe_command);
+      /* Make sure that the file descriptor file position matches
+	 the stdio FP position, otherwise we can get a premature EOF
+	 because the stdio has already read much of the file for 
+	 buffering.  WARNING: If you try to use stdio on this FP later,
+	 then stdio buffering may get very confused because the underlying
+	 file descriptor position isn't where stdio left it. */
+      pre_pipe_fp = fp;
+      lseek (fileno (fp), ftell (fp), SEEK_SET);
+      fp = popen (redirected_command, "r");
+      if (!fp)
+	bow_error ("Could not create pipe to `%s'\n", bow_lex_pipe_command);
+    }
+
   /* Fill the document buffer until we get EOF, or until we get to the
      DOCUMENT_END_PATTERN. */
   for (len = 0, end_pattern_ptr = self->document_end_pattern;
@@ -49,12 +90,14 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
        (((byte = fgetc (fp)) != EOF)
 	/* We found the DOCUMENT_END_PATTERN */ 
 	&& !(end_pattern_ptr 
-	     && *end_pattern_ptr == byte && end_pattern_ptr+1 == '\0'));
+	     && *end_pattern_ptr == byte && *(end_pattern_ptr+1) == '\0'));
        len++)
     {
-      if (len >= document_size)
+      if (len >= document_size-1)
 	{
 	  /* The RET->DOCUMENT buffer must grow to accommodate more chars. */
+	  /* We need `DOCUMENT_SIZE-1' in the above test, because we
+	     must have room for the terminating '\0'! */
 	  document_size *= 2;
 	  ret->document = bow_realloc (ret->document, document_size);
 	}
@@ -76,6 +119,24 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
 	}
     }
 
+  if (bow_lex_pipe_command)
+    {
+#if 0 /* This doesn't work because we can't seem to tell() a pipe. */
+      /* Put the old FP at the position up to which we've read the 
+	 pipe's input */
+      fseek (pre_pipe_fp, tell (fileno (fp)), 0);
+#else
+      /* Put the file pointer for PRE_PIPE_FP all the way to the end
+	 of the file.  It seems that sometimes popen() does this for
+	 us, but not always!  Sometimes it is left pointing where it
+	 was before the popen() call was made, and when this happens,
+	 we read the file over and over and over again... I never saw
+	 an actual infinite loop because eventually, popen() does put
+	 the file pointer at the end, and then we exit. */
+      fseek (pre_pipe_fp, 0, SEEK_END);
+#endif
+      pclose (fp);
+    }
   if (len == 0)
     {
       bow_free (ret->document);
@@ -83,6 +144,9 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
       return NULL;
     }
 
+#if 0
+  /* xxx CAREFUL!  If BOW_LEX_PIPE_COMMAND was used, FP isn't what you
+     want it to be. */
   /* If we found the DOCUMENT_END_PATTERN, push it back into the input
      stream, so we'll see it next time we read from this file. */
   /* xxx Will this work for stdin? */
@@ -95,10 +159,12 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
 	perror (__PRETTY_FUNCTION__);
       len -= end_pattern_len;
     }
+#endif
 
   /* Remember, it may be the case that LEN is zero. */
   ret->document_position = 0;
   ret->document_length = len;
+  assert (ret->document_length < document_size);
   ((char*)ret->document)[ret->document_length] = '\0';
   return ret;
 }
@@ -122,16 +188,20 @@ bow_lexer_simple_get_raw_word (bow_lexer_simple *self, bow_lex *lex,
   int byte;			/* characters read from the FP */
   int wordlen;			/* number of characters in the word so far */
 
-  /* Ignore characters until we get an beginning character. */
+  assert (lex->document_position <= lex->document_length);
+  /* Ignore characters until we get a beginning character. */
   do
     {
       byte = lex->document[lex->document_position++];
       if (byte == 0)
-	return 0;
+	{
+	  lex->document_position--;
+	  return 0;
+	}
     }
   while (! self->true_to_start (byte));
 
-      /* Add the first alphabetic character to the word. */
+  /* Add the first alphabetic character to the word. */
   buf[0] = (self->case_sensitive) ? byte : tolower (byte);
 
   /* Add all the following satisfying characters to the word. */
@@ -139,14 +209,18 @@ bow_lexer_simple_get_raw_word (bow_lexer_simple *self, bow_lex *lex,
     {
       byte = lex->document[lex->document_position++];;
       if (byte == 0)
-	return 0;
+	break;
       if (! self->false_to_end (byte))
 	break;
       buf[wordlen] = tolower (byte);
     }
+  assert (lex->document_position <= lex->document_length);
 
   if (wordlen >= buflen)
     bow_error ("Encountered word longer than buffer length=%d", buflen);
+
+  /* Back up to point at the character that caused the end of the word. */
+  lex->document_position--;
 
   /* Terminate it. */
   buf[wordlen] = '\0';
@@ -164,16 +238,24 @@ int
 bow_lexer_simple_postprocess_word (bow_lexer_simple *self, bow_lex *lex, 
 				   char *buf, int buflen)
 {
-  int wordlen;
-  int byte;
+  int wordlen = strlen (buf);
+
+  /* Toss words that are longer than SELF->TOSS_WORDS_LONGER_THAN */
+  if (self->toss_words_longer_than)
+    {
+      if (wordlen > self->toss_words_longer_than)
+	return 0;
+    }
 
   if (self->strip_non_alphas_from_end)
     {
       /* Strip any non-alphabetic characters off the end of the word */
-      while (!isalpha(buf[wordlen-1]))
+      while (wordlen && !isalpha(buf[wordlen-1]))
 	wordlen--;
       /* Terminate it. */
       buf[wordlen] = '\0';
+      if (wordlen == 0)
+	return 0;
     }
 
   if (self->toss_words_containing_non_alphas)
@@ -195,6 +277,7 @@ bow_lexer_simple_postprocess_word (bow_lexer_simple *self, bow_lex *lex,
          variable BYTE holds the count of the number of digits.) */
   if (self->toss_words_containing_this_many_digits)
     {
+      int byte;
       char *bufp;
       for (bufp = buf, byte = 0; *bufp; bufp++)
 	{
@@ -283,11 +366,12 @@ const bow_lexer_simple _bow_alpha_lexer =
   bow_isalpha,			/* begin words with an alphabetic char */
   bow_isalpha,			/* end words with any non-alphabetic char */
   bow_stoplist_present,		/* use the default stoplist */
-  bow_stem_porter,		/* use the Porter stemming algorithm */
+  0,				/* don't use the Porter stemming algorithm */
   NO,				/* be case-INsensitive */
   NO,				/* don't strip non-alphas from end */
   NO,				/* don't toss words w/ non-alphas */
-  0				/* don't toss words with digits */
+  0,				/* don't toss words with digits */
+  59				/* toss words longer than 59 chars, uuenc=60 */
 };
 const bow_lexer_simple *bow_alpha_lexer = &_bow_alpha_lexer;
 
@@ -308,11 +392,12 @@ const bow_lexer_simple _bow_alpha_only_lexer =
   bow_isalpha,			/* begin words with an alphabetic char */
   bow_isgraph,			/* end words with any non-alphabetic char */
   bow_stoplist_present,		/* use the default stoplist */
-  bow_stem_porter,		/* use the Porter stemming algorithm */
+  0,				/* don't use the Porter stemming algorithm */
   NO,				/* be case-INsensitive */
   YES,				/* strip non-alphas from end */
   YES,				/* toss words w/ non-alphas */
-  3				/* toss words with 3 digits */
+  3,				/* toss words with 3 digits */
+  59				/* toss words longer than 59 chars, uuenc=60 */
 };
 const bow_lexer_simple *bow_alpha_only_lexer = &_bow_alpha_only_lexer;
 
@@ -332,11 +417,12 @@ const bow_lexer_simple _bow_white_lexer =
   bow_isalpha,			/* begin words with an alphabetic char */
   bow_isgraph,			/* end words with any non-alphabetic char */
   bow_stoplist_present,		/* use the default stoplist */
-  bow_stem_porter,		/* use the Porter stemming algorithm */
+  0,				/* don't use the Porter stemming algorithm */
   NO,				/* be case-INsensitive */
   YES,				/* strip non-alphas from end */
   NO,				/* don't toss words w/ non-alphas */
-  4				/* toss words with 4 digits */
+  4,				/* toss words with 4 digits */
+  59				/* toss words longer than 59 chars, uuenc=60 */
 };
 const bow_lexer_simple *bow_white_lexer = &_bow_white_lexer;
 

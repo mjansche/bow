@@ -15,9 +15,18 @@ $total_accuracy = 0.0;
 # When this is zero, only print accuracy average and std.dev.
 $verbosity = 1;
 
-if ($#ARGV >= 0 && $ARGV[0] == "-s") {
+# Prune this regex from the end of classnames.
+$prune_from_classname = "";
+
+if ($#ARGV >= 0 && $ARGV[0] eq "-s") {
     $verbosity = 0;
     shift;
+}
+
+if ($#ARGV >= 0 && $ARGV[0] eq "-p") {
+    $prune_from_classname = $ARGV[1];
+    printf "Pruning `%s' from classnames\n", $prune_from_classname;
+    shift; shift;
 }
 
 # Read in the first #
@@ -62,8 +71,26 @@ sub read_trial {
 	chop $line;
 
 	@line = split(' ', $line);
-	
+
+	# Remove the filename from @line and append it to @ids
 	push(@ids, shift @line);
+
+	if (length ($prune_from_classname) > 0) {
+	    # Remove $prune_from_classname from end of the actual classname
+	    #printf ("Before: %s  ", $line[0]);
+	    $pruning_regex = sprintf ("^(.+)%s\$", $prune_from_classname);
+	    $line[0] =~ s,$pruning_regex,\1,;
+	    #printf ("After: %s\n", $line[0]);
+
+	    # Remove $prune_from_classname from end of the predicted classnames
+	    $pruning_regex = 
+		sprintf ("^(.+)%s(:[\.0-9e+\-]+)\$", $prune_from_classname);
+	    for ($i = 1; $i < @line; $i++) {
+	        #printf ("Before: %s  ", $line[$i]);
+		$line[$i] =~ s,$pruning_regex,\1\2,;
+	        #printf ("After: %s\n", $line[$i]);
+	    }
+	}
 
 	# Ensure we have a code for the actual class
 	if (grep(/^$line[0]$/, @codes_to_classes) == 0) {
@@ -115,7 +142,8 @@ sub calculate_accuracy {
     $trial_accuracy[$trial] = $accuracy;
     $total_accuracy += $accuracy;
     if ($verbosity > 0) {
-	printf ("Correct: %d out of %d (%.2f)\n", $correct, $total, $accuracy);
+	printf ("Correct: %d out of %d (%.2f percent accuracy)\n",
+		$correct, $total, $accuracy);
     }
 }
 
@@ -132,7 +160,7 @@ sub overall_accuracy {
     $overall_accuracy_stddev = sqrt ($overall_accuracy_stddev / $trial);
 
     if ($verbosity > 0) {
-	printf ("Overall_accuracy_and_stderr %.2f %.2f\n", 
+	printf ("Percent_Accuracy  average %.2f stderr %.2f\n", 
 		$overall_accuracy, 
 		$overall_accuracy_stddev / sqrt($trial));
     } else {
@@ -146,12 +174,13 @@ sub overall_accuracy {
 sub confusion {
     
     undef @confusion;
+    my $total_predicted;
 
     if (! $verbosity > 0) {
 	return;
     }
 
-    print "\n - Confusion details\n";
+    print "\n - Confusion details, row is actual, column is predicted\n";
     # Loop over all the examples
     for ($i = 0; $i < @ids; $i++) {
 
@@ -164,12 +193,43 @@ sub confusion {
 	$confusion[$actual_code][$predicted_code] += 1;
     }
 
+    # Get the maximum classname length, so we know how much space
+    # to allow for it in the formatting.
+    $max_classname_length = length ("classname");
+    for ($i = 0; $i < @codes_to_classes; $i++) {
+	$classname_length = length ($codes_to_classes[$i]);
+	if ($classname_length > $max_classname_length) {
+	    $max_classname_length = $classname_length;
+	}
+    }
+
+    # Print out a header for the matrix
+    printf ("   %${max_classname_length}s ", "classname");
+    for ($i = 0; $i < @codes_to_classes; $i++) {
+	printf ("%3d ", $i);	
+    }
+    print " :total\n";
+
     # Now print out the matrix
     for ($i = 0; $i < @codes_to_classes; $i++) {
-	print "Actual: $codes_to_classes[$i]\n";
+	printf ("%2d %${max_classname_length}s ", 
+		$i, $codes_to_classes[$i]);
+	$total_predicted = 0;
 
 	for ($j = 0; $j < @codes_to_classes; $j++) {
-	    print "$codes_to_classes[$j]:$confusion[$i][$j] ";
+	    if ($confusion[$i][$j] == 0) {
+		printf ("%3s ", ".");
+	    } else {
+		printf ("%3d ", $confusion[$i][$j]);
+	    }
+	    $total_predicted += $confusion[$i][$j];
+	}
+	if ($total_predicted > 0) {
+	    printf (" :%3d %6.2f%%", 
+		    $total_predicted, 
+		    100 * $confusion[$i][$i] / $total_predicted);
+	} else {
+	    printf (" :%3s", ".");
 	}
 	print "\n";
     }

@@ -1,6 +1,25 @@
 /* Functions for reading FILE*'s up to certain strings or characters. */
 
-#include "libbow.h"
+/* Copyright (C) 1997 Andrew McCallum
+
+   Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
+
+   This file is part of the Bag-Of-Words Library, `libbow'.
+
+   This library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Library General Public License
+   as published by the Free Software Foundation, version 2.
+   
+   This library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Library General Public License for more details.
+
+   You should have received a copy of the GNU Library General Public
+   License along with this library; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
+
+#include <bow/libbow.h>
 #include <ctype.h>		/* for tolower() */
 
 /* Read characters from the file pointer FP until the string STRING is
@@ -42,14 +61,21 @@ bow_scan_fp_for_string (FILE *fp, const char *string, int oneline)
 
   /* Step through the characters in STRING, starting all over again
      if we encounter a mismatch. */
-  for (string_ptr = string+1; *string_ptr; string_ptr++)
+  string_ptr = string+1;
+  while (*string_ptr)
     {
       byte = fgetc (fp);
       if (byte == EOF || (oneline && byte == '\n'))
 	return 0;
+      /* Ignore Carriage-Return characters, so we can match MIME headers
+	 like "\r\n\r\n" with a search STRING of "\n\n" */
+      if (byte == '\r')
+	continue;
       if (tolower (byte) != tolower (*string_ptr))
 	/* A mismatch; start the search again. */
 	goto again;
+      /* Move on to next character in the pattern. */
+      string_ptr++;
     }
 
   /* Success!  We found the string. */

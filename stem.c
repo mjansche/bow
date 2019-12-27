@@ -1,6 +1,6 @@
-/* stem.c - implementation of the Porter algorithm for standardizing suffixes
+/* stem.c - the Porter algorithm for standardizing suffixes */
 
-   The Porter stemming algorithm is documented in: Porter, M.F., "An
+/* The Porter stemming algorithm is documented in: Porter, M.F., "An
    Algorithm For Suffix Stripping," Program 14 (3), July 1980,
    pp. 130-137.
 

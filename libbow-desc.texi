@@ -1,1 +1,40 @@
-The Bag-Of-Words Library is....
+@samp{Libbow} is a library of C code intended for writing statistical
+text-processing programs.  This distribution includes the library, as
+well as a text classification front-end, and a document retrieval
+front-end.
+
+@format
+The library provides facilities for:
+        Recursively descending directories, finding text files.
+        Finding `document' boundaries when there are multiple docs per file.
+        Tokenizing a text file, according to several different methods.
+        Including N-grams among the tokens.
+        Mapping strings to integers and back again, very efficiently.
+        Building a sparse matrix of document/token counts.
+        Pruning vocabulary by occurrence counts or by information gain.
+        Building and manipulating word vectors.
+        Setting word vector weights according to NaiveBayes, TFIDF, and a
+          simple form of Probabilistic Indexing.
+        Scoring queries for retrieval or classification.
+        Writing all data structures to disk in a machine-architecture-
+          independent format.
+        Reading the document/token matrix from disk in an efficient, 
+          sparse fashion.
+        Performing test/train splits, and automatic classification tests.
+@end format       
+ 
+It should compile on most UNIX systems, and WindowsNT (with a GNU build
+environment).
+
+The code conforms to the GNU coding standards.  It is released under the
+Library GNU Public License.
+
+@format
+The library does not:
+        Have parsing facilities.
+        Do smoothing across N-gram models.
+        Claim to be finished.
+        Have good documentation.
+        Claim to be bug-free.
+        ...many other things.
+@end format

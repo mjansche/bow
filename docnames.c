@@ -1,12 +1,32 @@
 /* Managing lists of document names. */
 
-#include "libbow.h"
+/* Copyright (C) 1997 Andrew McCallum
+
+   Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
+
+   This file is part of the Bag-Of-Words Library, `libbow'.
+
+   This library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Library General Public License
+   as published by the Free Software Foundation, version 2.
+   
+   This library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Library General Public License for more details.
+
+   You should have received a copy of the GNU Library General Public
+   License along with this library; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
+
+#include <bow/libbow.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <string.h>
 #include <assert.h>
+#include <stdio.h>
 
 int bow_map_verbosity_level = bow_chatty;
 
@@ -24,90 +44,92 @@ int
 bow_map_filenames_from_dir (int (*callback)(const char *filename, 
 					    void *context),
 			    void *context,
-			    const char *dirname,
+			    const char *dirname_arg,
 			    const char *exclude_patterns)
 {
   DIR *dir;
   struct dirent *dirent_p;
   struct stat st;
-  char initial_cwd[PATH_MAX];
   char cwd[PATH_MAX];
-  int cwdlen;
   int num_files = 0;
+  char dirname[1024];
+
+  strcpy (dirname, dirname_arg);
+#if 0
+  /* strcat (dirname, "/"); */
+
+  stat (dirname, &st);
+  if (!S_ISDIR (st.st_mode))
+    {
+      /* assert ((dirname[0] == '/') || (dirname[0] == '\\') || 
+	      ((dirname[1] == ':') && (dirname[2] == '\\'))); */
+      /* DIRNAME is not a directory, it's a file. */
+      (*callback) (dirname, context);
+      return 1;
+    }
+#endif
 
   if (!(dir = opendir (dirname)))
-    bow_error ("Couldn't open directory `%s'", dirname);
+    {
+      perror (__PRETTY_FUNCTION__);
+      getcwd (cwd, PATH_MAX);
+      fprintf (stderr, "CWD is `%s'\n", cwd);
+      bow_error ("Couldn't open directory `%s'", dirname);
+    }
 
+#if 0
   getcwd (initial_cwd, PATH_MAX);
   chdir (dirname);
   getcwd (cwd, PATH_MAX);
   strcat (cwd, "/");
   cwdlen = strlen (cwd);
+#endif
 
   if (bow_verbosity_use_backspace 
       && bow_verbosity_level >= bow_map_verbosity_level)
     bow_verbosify (bow_progress, "%s:       ", dirname);
   while ((dirent_p = readdir (dir)))
     {
-      stat (dirent_p->d_name, &st);
+      char subname[strlen(dirname) + strlen(dirent_p->d_name) + 5];
+      strcpy (subname, dirname);
+      strcat (subname, "/");
+      strcat (subname, dirent_p->d_name);
+      
+      stat (subname, &st);
       if (S_ISDIR (st.st_mode)
 	  && strcmp (dirent_p->d_name, ".")
 	  && strcmp (dirent_p->d_name, ".."))
 	{
 	  /* This directory entry is a subdirectory.  Recursively 
 	     descend into it and append its files also. */
-	  char subdirname[strlen(dirname) + 
-			 strlen(dirent_p->d_name) + 2];
-	  strcpy (subdirname, dirname);
-	  strcat (subdirname, "/");
-	  strcat (subdirname, dirent_p->d_name);
 	  num_files += 
 	    bow_map_filenames_from_dir (callback, context,
-					subdirname, exclude_patterns);
+					subname, exclude_patterns);
 	}
       else if (S_ISREG (st.st_mode))
 	{
 	  /* It's a regular file; add it to the list. */
-	  int filename_len = cwdlen + strlen (dirent_p->d_name) + 1;
-	  char filename[filename_len];
 
-	  strcpy (filename, cwd);
-	  strcat (filename, dirent_p->d_name);
-#if TESTING_TEXT_IN_DOC_LIST_APPEND
-	  FILE *fp;
+	  /* xxx Move this out of this function, and subsitute
+             BOW_EXCLUDE_FILENAME with EXCLUDE_PATTERNS here? */
+	  if (bow_exclude_filename
+	      && !strcmp (dirent_p->d_name, bow_exclude_filename))
+	    continue;
 
-	  /* xxx Is this worth it at this point?  It means we're probably
-	     opening and closing each file twice: once for text testing,
-	     and again to read the actual words.  The advantage of doing
-	     it here is that we won't overestimate the number of documents
-	     that we will actually parse, so we can nicely create arrays
-	     of just the right size. */
-	  if (!(fp = fopen (filename, "r")))
-	    {
-	      bow_verbosify (bow_verbose,
-			     "%s: Couldn't open file %s to test for text\n",
-			     __PRETTY_FUNCTION__, filename);
-	      continue;
-	    }
-	  if (bow_fp_is_text (fp))
-#endif /* TESTING_TEXT_IN_DOC_LIST_APPEND */
-	    {
-	      /* Here is where we actually call the map-function with
-		 the filename. */
-	      (*callback) (filename, context);
-	      num_files++;
-	      if (!bow_verbosify (bow_screaming, "%6d Adding %s\n",
-				  num_files, filename))
-		if (bow_verbosity_level >= bow_map_verbosity_level)
-		  bow_verbosify (bow_progress, "\b\b\b\b\b\b%6d", num_files);
-	    }
-#if TESTING_TEXT_IN_DOC_LIST_APPEND
-	  fclose (fp);
-#endif /* TESTING_TEXT_IN_DOC_LIST_APPEND */
+	  /* Here is where we actually call the map-function with
+	     the filename. */
+	  (*callback) (subname, context);
+	  num_files++;
+	  if (!bow_verbosify (bow_screaming, "%6d Adding %s\n",
+			      num_files, subname))
+	    if (bow_verbosity_level >= bow_map_verbosity_level)
+	      bow_verbosify (bow_progress, "\b\b\b\b\b\b%6d", num_files);
 	}
     }
   closedir (dir);
+#if 0
   chdir (initial_cwd);
+#endif
 
   if (bow_verbosity_use_backspace
       && bow_verbosity_level >= bow_map_verbosity_level)

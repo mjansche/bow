@@ -1,15 +1,13 @@
 /* libbow.h - public declarations for the Bag-Of-Words Library, libbow.
-   Copyright (C) 1996, 1997 Andrew McCallum
+   Copyright (C) 1997 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
-   Created: September 1996
 
    This file is part of the Bag-Of-Words Library, `libbow'.
 
    This library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Library General Public
-   License as published by the Free Software Foundation; either
-   version 2 of the License, or (at your option) any later version.
+   modify it under the terms of the GNU Library General Public License
+   as published by the Free Software Foundation, version 2.
    
    This library is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -17,36 +15,38 @@
    Library General Public License for more details.
 
    You should have received a copy of the GNU Library General Public
-   License along with this library; if not, write to the Free
-   Software Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-*/ 
+   License along with this library; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
 
 /* Pronounciation guide: "libbow" rhymes with "lib-low", not "lib-cow". */
 
-#ifndef __bow_h_INCLUDE
-#define __bow_h_INCLUDE
+#ifndef __libbow_h_INCLUDE
+#define __libbow_h_INCLUDE
 
 /* These next two macros are automatically maintained by the Makefile,
    in conjunction with the file ./Version. */
 #define BOW_MAJOR_VERSION 0
-#define BOW_MINOR_VERSION 5
+#define BOW_MINOR_VERSION 8
 #define BOW_VERSION BOW_MAJOR_VERSION.BOW_MINOR_VERSION
 
 #include <stdio.h>
+#include <math.h>
 #include <assert.h>
 #include <sys/types.h>		/* for netinet/in.h on SunOS */
+#include <sys/stat.h>
 #include <netinet/in.h>		/* for machine-independent byte-order */
 #include <malloc.h>		/* for malloc() and friends. */
 #include <stdlib.h>             /* For malloc() etc. on DEC Alpha */
 #include <string.h>		/* for strlen() on DEC Alpha */
-#include <limits.h>		/* for PATH_MAX */
+#include <limits.h>		/* for PATH_MAX and SHRT_MAX and friends */
+#include <float.h>		/* for FLT_MAX and friends */
+#include <unistd.h>		/* for SEEK_SET and friends on SunOS */
 
-#if !defined(MIN)
-#define MIN(a,b) (((a) < (b)) ? (a) : (b))
-#endif
-
-#if !defined(MAX)
-#define MAX(a,b) (((a) > (b)) ? (a) : (b))
+#if defined (Windows_NT) && OS == Windows_NT
+#define htonl(a) (a)
+#define htons(a) (a)
+#define ntohl(a) (a)
+#define ntohs(a) (a)
 #endif
 
 #if !PATH_MAX			/* for SunOS */
@@ -56,7 +56,24 @@
 #if !defined SEEK_SET || !defined(SEEK_CUR) /* for SunOS */
 #define SEEK_SET 0
 #define SEEK_CUR 1
+#define SEEK_END 2
 #endif
+
+#if !defined(MIN)
+#define MIN(a,b) (((a) < (b)) ? (a) : (b))
+#endif
+
+#if !defined(MAX)
+#define MAX(a,b) (((a) > (b)) ? (a) : (b))
+#endif
+
+#ifndef STRINGIFY
+#define STRINGIFY(s) XSTRINGIFY(s)
+#define XSTRINGIFY(s) #s
+#endif
+
+typedef enum { bow_no, bow_yes } bow_boolean;
+
 
 
 /* Lexing words from a file. */
@@ -102,6 +119,7 @@ typedef struct _bow_lexer_simple {
   int strip_non_alphas_from_end;                /* boolean */
   int toss_words_containing_non_alphas;	        /* boolean */
   int toss_words_containing_this_many_digits;
+  int toss_words_longer_than;
 } bow_lexer_simple;
 
 /* Get the raw token from the document buffer by scanning forward
@@ -189,10 +207,19 @@ typedef struct _bow_lex_gram {
    specified by GRAM_SIZE.  */
 extern const bow_lexer_gram *bow_gram_lexer;
 
-
 /* A lexer that ignores all HTML directives, ignoring all characters
    between angled brackets: < and >. */
 extern const bow_lexer_indirect *bow_html_lexer;
+
+/* An unsorted, NULL-terminated array of strings, indicating headers
+   which should be removed from an e-mail/newsgroup message.  If this
+   pointer is not NULL, the GET_WORD() function should be
+   BOW_LEXER_EMAIL_GET_WORD. */
+extern char **bow_email_headers_to_remove;
+
+/* A lexer that removes all header lines which is one of the headers contained
+   in HEADERS_TO_REMOVE */
+extern const bow_lexer_indirect *bow_email_lexer;
 
 
 /* The default lexer that will be used by various library functions
@@ -200,6 +227,14 @@ extern const bow_lexer_indirect *bow_html_lexer;
    point at whichever lexer you desire.  If you do not set it, it
    will point at bow_alpha_lexer. */
 extern bow_lexer *bow_default_lexer;
+
+/* Default instances of the lexers that can be modified by libbow's
+   argp cmdline argument processing. */
+extern bow_lexer_simple *bow_default_lexer_simple;
+extern bow_lexer_indirect *bow_default_lexer_indirect;
+extern bow_lexer_gram *bow_default_lexer_gram;
+extern bow_lexer_indirect *bow_default_lexer_html;
+extern bow_lexer_indirect *bow_default_lexer_email;
 
 
 
@@ -221,6 +256,9 @@ int bow_stoplist_present (const char *word);
    Return the number of words added.  If the file could not be opened,
    return -1. */
 int bow_stoplist_add_from_file (const char *filename);
+
+/* Add WORD to the stop list. */
+void bow_stoplist_add_word (const char *word);
 
 
 /* Arrays of C struct's that can grow. */
@@ -294,6 +332,9 @@ int bow_str2int (bow_int4str *map, const char *string);
 /* Given the char-pointer STRING, return its integer index.  If STRING
    is not yet in the mapping, return -1. */
 int bow_str2int_no_add (bow_int4str *map, const char *string);
+
+/* Create a new int-str mapping by lexing words from FILE. */
+bow_int4str *bow_int4str_new_from_text_file (const char *filename);
 
 /* Write the int-str mapping to file-pointer FP. */
 void bow_int4str_write (bow_int4str *map, FILE *fp);
@@ -428,7 +469,7 @@ int bow_words_add_occurrences_from_text_dir (const char *dirname,
 int bow_words_occurrences_for_wi (int wi);
 
 /* Replace the current word/int mapping with MAP. */
-void bow_words_set_map (bow_int4str *map);
+void bow_words_set_map (bow_int4str *map, int free_old_map);
 
 /* Modify the int/word mapping by removing all words that occurred 
    less than OCCUR number of times.  WARNING: This totally changes
@@ -442,9 +483,18 @@ int bow_num_words ();
 /* Save the int/word map to file-pointer FP. */
 void bow_words_write (FILE *fp);
 
+/* Same as above, but with a filename instead of a FILE* */
+void bow_words_write_to_file (const char *filename);
+
 /* Read the int/word map from file-pointer FP. */
 void bow_words_read_from_fp (FILE *fp);
 
+/* Same as above, but with a filename instead of a FILE* */
+void bow_words_read_from_file (const char *filename);
+
+/* Same as above, but don't bother rereading unless filename is different
+   from the last one, or FORCE_UPDATE is non-zero. */
+void bow_words_reread_from_file (const char *filename, int force_update);
 
 
 /* Word vectors.  A "word vector" is sorted array of words, with count
@@ -468,6 +518,9 @@ typedef struct _bow_wv {
 /* Create and return a new "word vector" from a file. */
 bow_wv *bow_wv_new_from_text_fp (FILE *fp);
 
+/* Create and return a new "word vector" from a string. */
+bow_wv *bow_wv_new_from_text_string (char *the_string);
+
 /* Create and return a new "word vector" from a document buffer LEX. */
 bow_wv *bow_wv_new_from_lex (bow_lex *lex);
 
@@ -487,6 +540,26 @@ int bow_wv_count_for_wi (bow_wv *wv, int wi);
 
 /* Print "word vector" WV on stream FP in a human-readable format. */
 void bow_wv_fprintf (FILE *fp, bow_wv *wv);
+
+/* Print "word vector" WV to a string in a human-readable format. */
+char *bow_wv_sprintf (bow_wv *wv, unsigned int max_size_for_string);
+
+/* Print "word vector"'s actual words to a string. */
+char *bow_wv_sprintf_words (bow_wv *wv, unsigned int max_size_for_string);
+
+/* Assign the values of the "word vector entry's" WEIGHT field
+   equal to the COUNT. */
+void bow_wv_set_weights_to_count (bow_wv *wv);
+
+/* Assign a value to the "word vector's" NORMALIZER field, such that
+   when all the weights in the vector are multiplied by the
+   NORMALIZER, the Euclidian length of the vector will be one. */
+void bow_wv_normalize_weights_by_vector_length (bow_wv *wv);
+
+/* Assign a value to the "word vector's" NORMALIZER field, such that
+   when all the weights in the vector are multiplied by the
+   NORMALIZER, all the vector entries will to one. */
+void bow_wv_normalize_weights_by_summing (bow_wv *wv);
 
 /* Return the number of bytes required for writing the "word vector" WV. */
 int bow_wv_write_size (bow_wv *wv);
@@ -515,16 +588,17 @@ typedef struct _bow_di2wv {
 
 /* We want a nice way of saying this is a training or test document, or do
    we ignore it for now. */
-typedef enum {model, test, ignore} bow_doc_type;
+typedef enum {model, test, ignore, ignored_model} bow_doc_type;
 
 /* A "document" entry useful for standard classification tasks. */
 typedef struct _bow_cdoc {
   bow_doc_type type;		/* Is this document part of the model to be
 				   built, a test document, or to be ignored */
   float normalizer;		/* Multiply weights by this for normalizing */
+  int word_count;		/* Total number of words in this document */
   float prior;			/* Prior probability of this class/doc */
   const char *filename;		/* Where to find the original document */
-  short class;			/* A classification label. */
+  int class;			/* A classification label. */
 } bow_cdoc;
 
 /* A convenient interface to bow_array that is specific to bow_cdoc. */
@@ -621,8 +695,8 @@ void bow_docnames_read_from_fp (FILE *fp);
 
 /* A "document entry"; these are the elements of a "document vector". */
 typedef struct _bow_de {
-  short di;			/* a "document index" */
-  short count;			/* number of times X appears in document DI */
+  int di;			/* a "document index" */
+  int count;			/* number of times X appears in document DI */
   float weight;
 } bow_de;
 
@@ -647,6 +721,10 @@ void bow_dv_add_di_count_weight (bow_dv **dv, int di, int count, float weight);
    creating a new entry in the document vector if necessary. */
 void bow_dv_add_di_weight (bow_dv **dv, int di, float weight);
 
+/* Return a pointer to the BOW_DE for a particular document, or return
+   NULL if there is no entry for that document. */
+bow_de *bow_dv_entry_at_di (bow_dv *dv, int di);
+
 /* Write "document vector" DV to the stream FP. */
 void bow_dv_write (bow_dv *dv, FILE *fp);
 
@@ -666,12 +744,13 @@ typedef struct _bow_dvf {
 } bow_dvf;
 
 
-/* xxx Perhaps these should be generalized and renamed to `bow_i2v'. */
+/* xxx Perhaps these should be generalized and renamed to `bow_i2v'? */
 /* An array that maps "word indices" to "document vectors with file info" */
 typedef struct _bow_wi2dvf {
-  int size;
-  FILE *fp;
-  bow_dvf entry[0];
+  int size;			/* the number of ENTRY's allocated */
+  int num_words;		/* number of non-NULL dv's in this wi2dvf */
+  FILE *fp;			/* where to get DVF's that aren't cached yet */
+  bow_dvf entry[0];		/* array of info about each word */
 } bow_wi2dvf;
 
 /* Create an empty `wi2dvf' */
@@ -696,6 +775,10 @@ bow_wi2dvf *bow_wi2dvf_new_from_data_file (const char *filename);
    vector" out of the file passed to bow_wi2dvf_new_from_data_file(). */
 bow_dv *bow_wi2dvf_dv (bow_wi2dvf *wi2dvf, int wi);
 
+/* Return a pointer to the BOW_DE for a particular word/document pair, 
+   or return NULL if there is no entry for that pair. */
+bow_de *bow_wi2dvf_entry_at_wi_di (bow_wi2dvf *wi2dvf, int wi, int di);
+
 /* Read all the words from file pointer FP, and add them to the map
    WI2DVF, such that they are associated with document index DI. */
 void bow_wi2dvf_add_di_text_fp (bow_wi2dvf **wi2dvf, int di, FILE *fp);
@@ -711,6 +794,14 @@ void bow_wi2dvf_add_wi_di_count_weight (bow_wi2dvf **wi2dvf, int wi,
 
 /* Remove the word with index WI from the vocabulary of the map WI2DVF */
 void bow_wi2dvf_remove_wi (bow_wi2dvf *wi2dvf, int wi);
+
+/* Temporarily hide the word with index WI from the vocabulary of the
+   map WI2DVF. The function BOW_WI2DVF_DV() will no longer see the entry
+   for this WI, but */
+void bow_wi2dvf_hide_wi (bow_wi2dvf *wi2dvf, int wi);
+
+/* Make visible all DVF's that were hidden with BOW_WI2DVF_HIDE_WI(). */
+void bow_wi2dvf_unhide_all_wi (bow_wi2dvf *wi2dvf);
 
 /* Write WI2DVF to file-pointer FP, in a machine-independent format.
    This is the format expected by bow_wi2dvf_new_from_fp(). */
@@ -730,6 +821,7 @@ void bow_wi2dvf_print_stats (bow_wi2dvf *map);
 /* Free the memory held by the map WI2DVF. */
 void bow_wi2dvf_free (bow_wi2dvf *wi2dvf);
 
+#if 0
 typedef enum {
   bow_method_tfidf_words,	/* TFIDF with DF=`word-count' */
   bow_method_tfidf_log_words,	/* TFIDF with DF=`log-word-count' */
@@ -738,63 +830,97 @@ typedef enum {
   bow_method_naivebayes,	/* Naive Bayes */
   bow_method_prind,		/* Fuhr's Probabilistic Indexing */
 } bow_method;
+#endif
 
 /* If this is non-zero, use uniform class priors. */
 extern int bow_prind_uniform_priors;
 
-#define bow_str2method(METHODNAME)					     \
-(!strcmp (METHODNAME, "tfidf_words")					     \
- ? bow_method_tfidf_words						     \
- : (!strcmp (METHODNAME, "tfidf_log_words")				     \
-    ? bow_method_tfidf_log_words					     \
-    : (!strcmp (METHODNAME, "tfidf_log_occur")				     \
-       || !strcmp (METHODNAME, "tfidf")					     \
-       ? bow_method_tfidf_log_occur					     \
-       : (!strcmp (METHODNAME, "tfidf_prtfidf")				     \
-	  ? bow_method_tfidf_prtfidf					     \
-	  : (!strcmp (METHODNAME, "naivebayes")				     \
-	     ? bow_method_naivebayes					     \
-	     : (!strcmp (METHODNAME, "prind")				     \
-		? bow_method_prind					     \
-		: (bow_error ("Bad method name `%s'", METHODNAME), -1)))))))
+/* If this is non-zero, scale PrInd P(w|d) by information gain */
+extern int bow_prind_scale_by_infogain;
 
-#if 0
-/* The parameters of weighting and scoring in barrel's. */
-typedef struct _bow_method {
-  /* Numerical label for this method */
-  bow_method_id id;
-  /* Functions for implementing parts of the method. */
-  void (*set_weights)();
-  bow_barrel* (*vpc_with_weights)();
-  void (*normalize_weights)();
-  int (*score)();
-  /* Parameters of the method. */
-  union {
-    struct _tfidf_params {
-      /* The parameters of TFIDF-like weight settings. */
-      enum { words, occurrences } df_counts;
-      enum { log, straight } df_transform;
-    } tfidf;
-    struct _naivebayes_params {
-      /* The parameters of NaiveBayes-like weight settings. */
-      enum { no, yes } uniform_priors;
-    } naivebayes;
-    struct _prind_params {
-      enum { no, yes } uniform_priors;
-    } prind;
-  } params;
-} bow_method;
-#endif
+/* If this is zero, do not normalize the PrInd classification scores. */
+extern int bow_prind_normalize_scores;
 
-
 /* A wrapper around a wi2dvf/cdocs combination. */
 typedef struct _bow_barrel {
-  int is_vpc;			/* non-zero if each `document' is a `class' */
-  bow_method method;		/* TFIDF, NaiveBayes, PrInd, or whatever. */
+  struct _bow_method *method;	/* TFIDF, NaiveBayes, PrInd, or others. */
   bow_array *cdocs;		/* The documents */
   bow_wi2dvf *wi2dvf;		/* The matrix of words vs documents */
+  int is_vpc;			/* non-zero if each `document' is a `class' */
 } bow_barrel;
 
+/* An array of these is filled in by the method's scoring function. */
+typedef struct _bow_score {
+  int di;			/* The "document index" for this document */
+  float weight;			/* Its score */
+  const char *name;
+} bow_score;
+
+/* The parameters of weighting and scoring in barrel's. */
+typedef struct _bow_method {
+  /* String identifer for the method, used for archiving. */
+  const char *name;
+  /* Functions for implementing parts of the method. */
+  void (*set_weights)(bow_barrel *barrel);
+  void (*scale_weights)(bow_barrel *barrel, bow_barrel *doc_barrel);
+  void (*normalize_weights)(bow_barrel *barrel);
+  bow_barrel* (*vpc_with_weights)(bow_barrel *doc_barrel, 
+				  const char **classnames, int num_classes);
+  void (*vpc_set_priors)(bow_barrel *barrel, bow_barrel *doc_barrel);
+  int (*score)(bow_barrel *barrel, bow_wv *query_wv, 
+	       bow_score *scores, int num_scores, int loo_class);
+  void (*wv_set_weights)(bow_wv *wv);
+  void (*wv_normalize_weights)(bow_wv *wv);
+  /* Parameters of the method. */
+  void *params;
+} bow_method;
+
+/* Macros that make it easier to call the BOW_METHOD functions */
+
+#define bow_barrel_set_weights(BARREL)		\
+((*(BARREL)->method->set_weights)(BARREL))
+
+#define bow_barrel_scale_weights(BARREL, DOC_BARREL)		\
+if ((*(BARREL)->method->scale_weights))				\
+  ((*(BARREL)->method->scale_weights)(BARREL, DOC_BARREL))
+
+#define bow_barrel_normalize_weights(BARREL)		\
+if ((*(BARREL)->method->normalize_weights))		\
+  ((*(BARREL)->method->normalize_weights)(BARREL))
+
+#define bow_barrel_new_vpc_with_weights(BARREL, CLASSNAMES, NUMCLASSES) \
+((*(BARREL)->method->vpc_with_weights)(BARREL, CLASSNAMES, NUMCLASSES))
+
+#define bow_barrel_score(BARREL, QUERY_WV, SCORES, NUM_SCORES, LOO_CLASS) \
+((*(BARREL)->method->score)(BARREL, QUERY_WV, SCORES, NUM_SCORES, LOO_CLASS))
+
+#define bow_wv_set_weights(WV,BARREL)		\
+if ((*(BARREL)->method->wv_set_weights))	\
+  ((*(BARREL)->method->wv_set_weights)(WV))
+
+#define bow_wv_normalize_weights(WV,BARREL)		\
+if (((*(BARREL)->method->wv_normalize_weights)))	\
+  ((*(BARREL)->method->wv_normalize_weights)(WV))
+
+#include <bow/tfidf.h>
+#include <bow/naivebayes.h>
+#include <bow/prind.h>
+#include <bow/kl.h>
+
+/* Associate method M with the string NAME, so the method structure can
+   be retrieved later with BOW_METHOD_AT_NAME(). */
+int bow_method_register_with_name (bow_method *m, const char *name);
+
+/* Return a pointer to a method structure that was previous registered 
+   with string NAME using BOW_METHOD_REGISTER_WITH_NAME(). */
+bow_method *bow_method_at_name (const char *name);
+
+/* The mapping from names to BOW_METHOD's. */
+extern bow_sarray *bow_methods;
+
+#define bow_default_method_name "naivebayes"
+
+
 /* Create a new, empty `bow_barrel', with cdoc's of size ENTRY_SIZE
    and cdoc free function FREE_FUNC.  WORD_CAPACITY and CLASS_CAPACITY
    are just hints. */
@@ -810,16 +936,61 @@ int bow_barrel_add_from_text_dir (bow_barrel *barrel,
 				  const char *except_name, 
 				  int class);
 
+/* Add statistics about the document described by CDOC and WV to the
+   BARREL. */
+int bow_barrel_add_document (bow_barrel *barrel, 
+			     bow_cdoc *cdoc, bow_wv *wv);
+
+/* Call this on a vector-per-document barrel to set the CDOC->PRIOR's
+   so that the CDOC->PRIOR's for all documents of the same class sum
+   to 1. */
+void bow_barrel_set_cdoc_priors_to_class_uniform (bow_barrel *barrel);
+
 /* Given a barrel of documents, create and return another barrel with
    only one vector per class. The classes will be represented as
    "documents" in this new barrel.  CLASSNAMES is an array of strings
    that maps class indices to class names. */
-bow_barrel *bow_barrel_new_vpc (bow_barrel *barrel, const char **classnames);
+bow_barrel *bow_barrel_new_vpc (bow_barrel *barrel, 
+				const char **classnames, int num_classes);
 
 /* Like bow_barrel_new_vpc(), but it also sets and normalizes the
-   weights appropriately. */
-bow_barrel *bow_barrel_new_vpc_with_weights (bow_barrel *doc_barrel, 
-					     const char **classnames);
+   weights appropriately by calling SET_WEIGHTS from the METHOD of
+   DOC_BARREL on the `vector-per-class' barrel that will be returned. */
+bow_barrel *
+bow_barrel_new_vpc_merge_then_weight (bow_barrel *doc_barrel, 
+				      const char **classnames, 
+				      int num_classes);
+
+/* Same as above, but set the weights in the DOC_BARREL, create the
+   `Vector-Per-Class' barrel, and set the weights in the VPC barrel by
+   summing weights from the DOC_BARREL. */
+bow_barrel *
+bow_barrel_new_vpc_weight_then_merge (bow_barrel *doc_barrel, 
+				      const char **classnames,
+				      int num_classes);
+
+/* Set the class prior probabilities by counting the number of
+   documents of each class. */
+void bow_barrel_set_vpc_priors_by_counting (bow_barrel *vpc_barrel,
+					    bow_barrel *doc_barrel);
+
+
+/* Assign the values of the "word vector entry's" WEIGHT field
+   equal to the COUNT times the word's IDF, taken from the BARREL. */
+void bow_wv_set_weights_to_count_times_idf (bow_wv *wv, bow_barrel *barrel);
+
+/* Multiply each weight by the Quinlan `Foilgain' of that word. */
+void bow_barrel_scale_weights_by_foilgain (bow_barrel *barrel,
+					   bow_barrel *doc_barrel);
+
+/* Multiply each weight by the information gain of that word. */
+void bow_barrel_scale_weights_by_infogain (bow_barrel *barrel,
+					   bow_barrel *doc_barrel);
+
+/* Modify the BARREL by removing those entries for words that are not
+   in the int/str mapping MAP. */
+void bow_barrel_prune_words_not_in_map (bow_barrel *barrel,
+					bow_int4str *map);
 
 /* Modify the BARREL by removing those entries for words that are not
    among the NUM_WORDS_TO_KEEP top words, by information gain.  This
@@ -834,6 +1005,13 @@ void bow_barrel_write (bow_barrel *barrel, FILE *fp);
 
 /* Create and return a `barrel' by reading data from the file-pointer FP. */
 bow_barrel *bow_barrel_new_from_data_fp (FILE *fp);
+
+/* Print barrel to FP in human-readable and awk-accessible format. */
+void bow_barrel_printf (bow_barrel *barrel, FILE *fp, const char *format);
+
+/* Print on stdout the number of times WORD occurs in the various
+   docs/classes of BARREL. */
+void bow_barrel_print_word_count (bow_barrel *barrel, const char *word);
 
 /* Free the memory held by BARREL. */
 void bow_barrel_free (bow_barrel *barrel);
@@ -984,6 +1162,19 @@ bow_free (void *ptr)
 
 /* Conveniences for writing and reading. */
 
+/* Version number of file format used to write binary data. */
+extern int bow_file_format_version;
+
+/* The default, initial value of above variable.  The above variable will
+   take on a different value when reading from binary data archived with 
+   a different format version. */
+#define BOW_DEFAULT_FILE_FORMAT_VERSION 5
+
+/* Functions for conveniently recording and finding out the format
+   version used to write binary data to disk. */
+void bow_write_format_version_to_file (const char *filename);
+void bow_read_format_version_from_file (const char *filename);
+
 /* Open a file using fopen(), with the same parameters.  Check the
    return value, and raise an error if the open failed.  The caller
    should close the returned file-pointer with fclose(). */
@@ -1063,7 +1254,7 @@ bow_fread_short (short *np, FILE *fp)
 _BOW_IO_INLINE_EXTERN int
 bow_fwrite_string (const char *s, FILE *fp)
 {
-  int len;
+  short len;
   int ret;
 
   if (s)
@@ -1073,7 +1264,7 @@ bow_fwrite_string (const char *s, FILE *fp)
   ret = bow_fwrite_short (len, fp);
   if (len)
     ret += fwrite (s, sizeof (char), len, fp);
-  assert (ret == sizeof (short) + len);
+  assert (ret == (int)sizeof (short) + len);
   return ret;
 }
 
@@ -1086,6 +1277,7 @@ bow_fread_string (char **s, FILE *fp)
   int ret;
 
   ret = bow_fread_short (&len, fp);
+  assert (ret >= 0);
   *s = bow_malloc (len+1);
   if (len)
     ret += fread (*s, sizeof (char), len, fp);
@@ -1161,51 +1353,20 @@ typedef struct _bow_class {
   float length;
 } bow_class;
 
-
-/* Finding documents that best match a query. */
-
-/* An array of these is filled in by bow_get_best_matches(). */
-typedef struct _bow_doc_score {
-  int di;			/* The "document index" for this document */
-  float weight;			/* Its score */
-} bow_doc_score;
-
-/* Search the corpus map WI2DVF to find the closest matches to the
-   "word vector" WV.  Fill the array SCORES with SCORES_LEN number of
-   results, which will be sorted in decreasing order of their score.
-   There may not be optimal results if, during the search, we need
-   more space to hold same-scoring documents as the final document in
-   this list.  The number of elements placed in the SCORES array is
-   returned. */
-int
-bow_get_best_matches (bow_barrel *barrel,
-		      bow_wv *wv, bow_doc_score *scores, int best);
+/* If non-zero, print to stdout the contribution of each word to
+   each class.  Currently implemented only for PrInd. */
+extern int bow_print_word_scores;
 
 
 /* Assigning weights to documents and calculating vector lengths */
 
-/* Assign TFIDF weights to each element of each document vector. If the
-   third argument is NULL, then all the documents are used
-   for calculating weights. Otherwise the function should be passed a 
-   bow_array of bow_cdoc entries. The function will then only use the
-   documents whose type field is 'model' to calculate the weights. */ 
-void bow_barrel_set_weights (bow_barrel *barrel);
+/* Normalize the weight-vector for each class (or document) such that
+   all vectors have Euclidean length 1. */
+void bow_barrel_normalize_weights_by_vector_length (bow_barrel *barrel);
 
-/* Calculate the length of each word vector. Ideally, we can store
-   this length in the document info and not have to scale all the
-   elements by it (which would have neccessitated going through the
-   whole structure twice). */
-void bow_barrel_set_weight_normalizers (bow_barrel *barrel);
-
-/* Assign the values of the "word vector entry's" WEIGHT field,
-   according to the COUNT. */
-void bow_wv_set_weights (bow_wv *wv, bow_method method);
-
-/* Assign a value to the "word vector's" NORMALIZER field, according
-   to the counts of all words.  Return the value of the NORMALIZER
-   field. */
-void bow_wv_set_weight_normalizer (bow_wv *wv, bow_method method);
-
+/* Normalize the weight-vector for each class (or document) such that
+   in all vectors, the elements of the vector sum to 1. */
+void bow_barrel_normalize_weights_by_summing (bow_barrel *barrel);
 
 
 /* Creating and working with test sets. */
@@ -1229,12 +1390,17 @@ typedef struct _bow_test_wv {
    is returned and *wv == NULL. This can't really deal with
    vectors which are all zero, since they are not represented explicitly
    in our data structure. Not sure what we should/can do. */
-int
-bow_test_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
+int bow_test_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
+
+/* Like BOW_TEST_NEXT_WV, but for type!=test instead of type==test */
+int bow_nontest_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
+
+/* Like bow_test_next_wv, but for type==model instead of type==test */
+int bow_model_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
 
 
 
-/* Functions for information gain */
+/* Functions for information gain and Foilgain */
 
 /* Return a malloc()'ed array containing an infomation-gain score for
    each word index; it is the caller's responsibility to free this
@@ -1244,15 +1410,25 @@ bow_test_next_wv (bow_dv_heap *heap, bow_barrel *barrel, bow_wv **wv);
 float *bow_infogain_per_wi_new (bow_barrel *barrel, int num_classes, 
 				int *size);
 
+/* Return a malloc()'ed array containing an infomation-gain score for
+   each word index, but the infogain scores are computing from
+   co-occurance of word pairs. */
+float *bow_infogain_per_wi_new_using_pairs (bow_barrel *barrel, 
+					    int num_classes, int *size);
+
+/* Return a malloc()'ed array containing an Foil-gain score for
+   each ``word-index / class pair''.  BARREL must be a `doc_barrel' */
+float **bow_foilgain_per_wi_ci_new (bow_barrel *barrel, 
+				    int num_classes, int *size);
+
+/* Free the memory allocated in the return value of the function
+   bow_foilgain_per_wi_ci_new() */
+void bow_foilgain_free (float **fig_per_wi_ci, int num_wi);
+
 /* Print to stdout the sorted results of bow_infogain_per_wi_new().
    It will print the NUM_TO_PRINT words with the highest infogain. */
-void bow_infogain_per_wi_print (bow_barrel *barrel, int num_classes, 
+void bow_infogain_per_wi_print (FILE *fp, bow_barrel *barrel, int num_classes, 
 				int num_to_print);
-
-/* Function to calculate the information gain for each word in the corpus
-   (looking only at documents in the model) and multiply each weight by the
-   gain. */
-void bow_barrel_scale_by_info_gain (bow_barrel *barrel, int no_classes);
 
 /* Modify the int/word mapping by removing all words except the
    NUM_WORDS_TO_KEEP number of words that have the top information
@@ -1274,6 +1450,45 @@ bow_sarray *bow_parse_news_headers (FILE *fp);
    corresponding to the newsgroups. */
 bow_array *
 bow_headers2newsgroups(bow_sarray *headers);
-bow_sarray *bow_parse_news_headers (FILE *fp);
 
-#endif /* __bow_h_INCLUDE */
+
+
+/* argp command-line processing for libbow */
+
+extern struct argp_child bow_argp_children[];
+
+/* Global variables whose value is set by bow_argp functions, but
+   which must be examined by some other function (called later) in
+   order to have any effect. */
+
+/* N for removing all but the top N words by selecting words with
+   highest information gain */
+extern int bow_prune_vocab_by_infogain_n;
+
+/* N for removing words that occur less than N times */
+extern int bow_prune_vocab_by_occur_count_n;
+
+/* The weight-setting and scoring method */
+extern bow_method *bow_argp_method;
+
+/* The directory in which we'll store word-vector data. */
+extern const char *bow_data_dirname;
+
+/* If non-zero, use equal prior probabilities on classes when setting
+   weights, calculating infogain and scoring */
+extern int bow_uniform_class_priors;
+
+/* If non-zero, use binary occurrence counts for words. */
+extern int bow_binary_word_counts;
+
+/* Don't lex any files with names matching this. */
+extern const char *bow_exclude_filename;
+
+/* Pipe the files through this shell command before lexing. */
+extern const char *bow_lex_pipe_command;
+
+/* If non-zero, check for eencoding blocks before istext() says that
+   the file is text. */
+extern int bow_istext_avoid_uuencode;
+
+#endif /* __libbow_h_INCLUDE */

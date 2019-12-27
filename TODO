@@ -1,0 +1,22 @@
+Bag-Of-Words Library ToDo's
+===========================
+
+* Write bow_barrel_new_from_file(), so we don't get so confused about
+  NOT closing the FP.
+* Make new versions of structure-file-saving code that take a filename
+  and a directory name.  It will be easier to use them.
+
+* Encapsulate the mechanism for looping through documents (with
+  words matching a WV).  Ala bow_test_text_wv.
+
+* Rename `bow_cdoc->length' to `bow_cdoc->norm'
+* Rename `bow_cdoc->filename' to `bow_cdoc->name'
+* Make `bow_cdoc->class' be a vector of floats.
+* Rename `bow_wi2dvf_dv()' to `bow_wi2dvf_dv_at_wi()'
+* Standardize on use of either `entry' or `entries'.
+* Rename all `2' to `_to_'.
+* Rename all bow_dv_heap* to bow_dvheap*.
+* Rename bow_dv_heap_update() to bow_dvheap_next().
+
+
+* Split method header information into separate .h files.

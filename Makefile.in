@@ -1,7 +1,7 @@
 #   @configure_input@
 #
 #   Makefile for the "Bag Of Words Library", libbow.
-#   Copyright (C) 1996, 1997 Free Software Foundation, Inc.
+#   Copyright (C) 1996, 1997 Andrew McCallum
 #
 #   Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 #   Date: September 1996
@@ -45,8 +45,8 @@ LIBS = @LIBS@
      
 # All these are optional.  You can redifine CFLAGS, CPPFLAGS,
 # INCLUDEFLAGS and LDFLAGS on the command line however you like.
-CFLAGS = -g -Wall
-CPPFLAGS = 
+CFLAGS = @CFLAGS@
+CPPFLAGS = @CPPFLAGS@
 INCLUDEFLAGS =
 LDFLAGS =
 
@@ -56,33 +56,32 @@ exec_prefix = @exec_prefix@
 # Installation locations
 bindir = $(exec_prefix)/bin
 libdir = $(exec_prefix)/lib
-includedir = $(prefix)/include
+includedir = $(prefix)/include/bow
 infodir = $(prefix)/info
-scmdir = $(prefix)/lib/scm
 
 #### End of system configuration section. ####
 
 include $(srcdir)/Version
 
-ALL_LIBS = $(LIBS) -L. -lbow -lm
-ALL_INCLUDE_FLAGS = $(GUILE_INCLUDES) $(GNUSTEP_BASE_INCLUDES)
-ALL_CPPFLAGS = $(CPP_FLAGS) $(ALL_INCLUDE_FLAGS)
-ALL_CFLAGS = $(CFLAGS)
-ALL_LDFLAGS = $(LDFLAGS) $(ALL_LIBS)
-
 LIBBOW_H_FILES = \
-libbow.h
+bow/libbow.h \
+bow/kl.h \
+bow/naivebayes.h \
+bow/prind.h \
+bow/tfidf.h
 
 LIBBOW_C_FILES = \
 array.c \
 barrel.c \
 bitvec.c \
 bmalloc.c \
-defparser.c \
+deflexer.c \
 dv.c \
 docnames.c \
 email.c \
 error.c \
+evi.c \
+foilgain.c \
 heap.c \
 info_gain.c \
 int4docn.c \
@@ -90,36 +89,46 @@ int4str.c \
 int4word.c \
 io.c \
 istext.c \
+kl.c \
+lex-email.c \
 lex-gram.c \
 lex-html.c \
 lex-indirect.c \
 lex-simple.c \
+methods.c \
 naivebayes.c \
+normalize.c \
+opts.c \
 primes.c \
 prind.c \
 sarray.c \
+scale.c \
 scan.c \
-score.c \
 split.c \
 stem.c \
 stoplist.c \
 stopwords.c \
+tfidf.c \
 vpc.c \
-weight.c \
 wi2dvf.c \
 wv.c
+
+$(LIBBOW_C_FILES): $(LIBBOW_H_FILES)
 
 LIBBOW_O_FILES = $(LIBBOW_C_FILES:.c=.o)
 
 # Other name ideas: longbow, archer, shoelace,...
 DEMO_C_FILES = \
 rainbow.c \
-arrow.c
+arrow.c \
+crossbow.c
 
 DEMO_O_FILES = $(DEMO_C_FILES:.c=.o)
 DEMO_EXECUTABLES = $(DEMO_C_FILES:.c=)
 
 PERL_FILES = \
+rainbow-ac.pl \
+rainbow-pr.pl \
 rainbow-stats.pl
 
 PERL_RUNNABLE_FILES = $(PERL_FILES:.pl=)
@@ -148,13 +157,20 @@ ChangeLog \
 HACKING \
 INSTALL \
 Makefile.in \
+NEWS \
 README \
+TODO \
 Version \
 configure \
 configure.in \
 install-sh \
-mkinstalldirs \
-p.inc
+mkinstalldirs
+
+# Pattern rule
+ALL_CPPFLAGS = $(CPPFLAGS) $(INCLUDEFLAGS) -I$(srcdir) -I$(srcdir)/argp $(DEFS)
+ALL_CFLAGS = $(CFLAGS)
+%.o: %.c
+	$(CC) -c $(ALL_CPPFLAGS) $(ALL_CFLAGS) -o $@ $<
 
 # Rules
 
@@ -168,21 +184,29 @@ libbow.a: $(LIBBOW_O_FILES)
 	$(AR) rc $@ $^
 	$(RANLIB) $@
 
-# xxx Each one doesn't actually depend on *all* DEMO_O_FILES.  Fix this.
-$(DEMO_EXECUTABLES): libbow.a $(DEMO_O_FILES)
-	$(CC) $(CFLAGS) $@.o -o $@ $(ALL_LDFLAGS)
+argp/libargp.a:
+	cd argp ; $(MAKE) libargp.a
 
-$(PERL_RUNNABLE_FILES): $(PERL_FILES)
+ALL_LIBS = $(LIBS) -L. -lbow -L./argp -largp -lm
+
+$(DEMO_EXECUTABLES): %: libbow.a argp/libargp.a %.o
+	$(CC) $(CFLAGS) $@.o -o $@ $(LDFLAGS) $(ALL_LIBS)
+
+# A special executable for loading into Lisp (for Kamal)
+rainbow-lisp.o: rainbow.c
+	$(CC) $(ALL_CPPFLAGS) $(ALL_CFLAGS) -c -DNDEBUG -DRAINBOW_LISP $< -o $@
+
+$(PERL_RUNNABLE_FILES): %: %.pl
 	rm -f $@
-	cat $@.pl | sed -e 's,/usr/bin/perl,${PERL},' > $@
+	cat $< | sed -e 's,/usr/bin/perl,${PERL},' > $@
 	chmod a+x $@
 
 # Compiling documentation
 
 MAKEINFO_FLAGS = -I $(srcdir)
-%.dvi: $*.texi version.texi
+%.dvi: %.texi version.texi
 	$(TEXI2DVI) $(srcdir)/$*.texi
-%.info: $*.texi version.texi
+%.info: %.texi version.texi
 	$(MAKEINFO) $(MAKEINFO_FLAGS) $(srcdir)/$*.texi
 INSTALL: install.texi version.texi
 	$(MAKEINFO) $(MAKEINFO_FLAGS) -o INSTALL -D INSTALL_ONLY \
@@ -193,7 +217,7 @@ README: readme.texi version.texi
 
 version.texi: $(srcdir)/Version
 	rm -f version.texi
-	echo '@set BOW_VERSION' $(BOW_VERSION) \
+	echo '@set BOWVERSION' $(BOW_VERSION) \
 		> version.texi
 	if [ $(BOW_FTP_MACHINE) ]; then \
 		echo '@set BOW_FTP_MACHINE $(BOW_FTP_MACHINE)' \
@@ -204,41 +228,40 @@ version.texi: $(srcdir)/Version
 
 # libbow.h has macros that indicate the libbow's version number; these
 # must be kept up-to-date.
-libbow.h: Version
-	rm -f libbow-tmp.h~
-	mv libbow.h libbow-tmp.h~
-	cat libbow-tmp.h~ | sed -e \
+bow/libbow.h: Version
+	rm -f bow/libbow-tmp.h~
+	mv bow/libbow.h bow/libbow-tmp.h~
+	cat bow/libbow-tmp.h~ | sed -e \
 	's/e BOW_MAJOR_VERSION .*/e BOW_MAJOR_VERSION $(BOW_MAJOR_VERSION)/' \
 	| sed -e \
 	's/e BOW_MINOR_VERSION .*/e BOW_MINOR_VERSION $(BOW_MINOR_VERSION)/' \
-	> libbow.h
+	> $@
 
 # The compiled functions in these files are defined entirely by libbow.h.
-io.o bmalloc.o: libbow.h
-
-# The compiled functions in these files are defined entired by p.inc.
-p-alpha.o p-alonly.o p-white.o: p.inc
+io.o bmalloc.o: bow/libbow.h
 
 # Compiling the Makefile
 
 Makefile: Makefile.in config.status
 	$(SHELL) config.status
-config.status: configure
+config.status: $(srcdir)/configure
 	$(SHELL) $(srcdir)/configure --no-create
-configure: configure.in
+$(srcdir)/configure: configure.in
 	cd $(srcdir); autoconf
 
 # Installing
 
 installdirs:
 	$(srcdir)/mkinstalldirs $(bindir) $(includedir) $(libdir)
-INSTALL_FILES = libbow.a libbow.h $(DEMO_EXECUTABLES) $(PERL_RUNNABLE_FILES)
+INSTALL_FILES = libbow.a bow/libbow.h \
+	 $(DEMO_EXECUTABLES) $(PERL_RUNNABLE_FILES)
 install: $(INSTALL_FILES) installdirs
+	cd argp ; $(MAKE) install
 	rm -f $(libdir)/libbow.a
 	cp libbow.a $(libdir)
 	$(RANLIB) $(libdir)/libbow.a
 	rm -f $(includedir)/libbow.h
-	cp libbow.h $(includedir)
+	cp bow/libbow.h $(includedir)
 	cd $(bindir) ; rm -f $(DEMO_EXECUTABLES) $(PERL_RUNNABLE_FILES)
 	$(INSTALL) $(DEMO_EXECUTABLES) $(bindir)
 	$(INSTALL) $(PERL_RUNNABLE_FILES) $(bindir)
@@ -247,21 +270,29 @@ install: $(INSTALL_FILES) installdirs
 
 mostlyclean:
 	rm -f core *~
+	cd argp ; $(MAKE) mostlyclean
 clean: mostlyclean
 	rm -f *.o libbow.a $(DEMO_EXECUTABLES) *.info *.dvi
+	cd argp ; $(MAKE) clean
 maintainer-clean: clean
-	rm -f $(PERL_RUNNABLE_FILES) configure README INSTALL
+	rm -f $(PERL_RUNNABLE_FILES) README INSTALL
+	rm -f configure config.log config.cache config.status
+	cd argp ; $(MAKE) maintainer-clean
 
 # Making a distribution .tar.gz file
 
+bow-$(BOW_VERSION).tar.gz: dist
 dist: $(DIST_FILES)
-	cvs rtag -F release-`tr . - $(BOW_VERSION)` bow
+	cvs rtag -F release-`echo $(BOW_VERSION) | tr . -` bow
 	echo bow-$(BOW_VERSION) > .fname
 	rm -rf `cat .fname`
 	mkdir `cat .fname`
+	mkdir `cat .fname`/bow
 	for file in $(DIST_FILES); do \
 	  ln $$file `cat .fname`/$$file ; \
 	done
+	mkdir `cat .fname`/argp
+	cd argp ; SNAP=../`cat ../.fname`/argp $(MAKE) snap
 	tar -chvf `cat .fname`.tar `cat .fname`
 	rm -f `cat .fname`.tar.gz
 	gzip -9 `cat .fname`.tar
@@ -288,10 +319,18 @@ snapshot: $(DIST_FILES)
 	cvs rtag -F snapshot-`cat .fname` bow
 	rm -rf `cat .fname`
 	mkdir `cat .fname`
+	mkdir `cat .fname`/bow
 	for file in $(DIST_FILES); do \
 	  ln $$file `cat .fname`/$$file ; \
 	done
+	mkdir `cat .fname`/argp
+	cd argp ; SNAP=../`cat ../.fname`/argp $(MAKE) snap
 	tar -chvf `cat .fname`.tar `cat .fname`
 	rm -f `cat .fname`.tar.gz
 	gzip -9 `cat .fname`.tar
 	rm -rf `cat .fname` .fname
+
+dist-cmu: bow-$(BOW_VERSION).tar.gz
+	cp -f $< /afs/cs/project/theo-11/www/naive-bayes
+
+-include Makefile.local

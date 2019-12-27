@@ -1,0 +1,16 @@
+* New since version libbow version 0.6.
+
+The library and its front-ends now take GNU-style long-options.  For
+example, to see the new rainbow options, execute "./rainbow --help".
+
+NOTE: Several of the options have changed.  For example, `-R' should
+be replaced with `-O'.  
+
+WARNING: One of the options as reversed meaning!  Pre-version-0.7,
+stemming was on by default; `-S' turned it off; now, stemming is
+turned off by default; `-S' will turn it on.
+
+WARNING: The data file format for models have changed.  You will have
+to re-build any rainbow or arrow models you created with libbow
+version 0.6.  Otherwise rainbow or arrow will crash when reading in
+the old models.

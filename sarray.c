@@ -1,7 +1,26 @@
 /* Arrays of C struct's that can grow.  Entries can be retrieved
    either by integer index, or by string key. */
+/* Copyright (C) 1997 Andrew McCallum
 
-#include "libbow.h"
+   Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
+
+   This file is part of the Bag-Of-Words Library, `libbow'.
+
+   This library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Library General Public License
+   as published by the Free Software Foundation, version 2.
+   
+   This library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Library General Public License for more details.
+
+   You should have received a copy of the GNU Library General Public
+   License along with this library; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
+
+
+#include <bow/libbow.h>
 #include <assert.h>
 
 int bow_sarray_default_capacity = 1024;
@@ -56,7 +75,9 @@ void *
 bow_sarray_entry_at_keystr (bow_sarray *sa, const char *keystr)
 {
   int index;
-  index = bow_str2int (sa->i4k, keystr);
+  index = bow_str2int_no_add (sa->i4k, keystr);
+  if (index < 0)
+    bow_error ("No entry for key string `%s'", keystr);
   return bow_array_entry_at_index (sa->array, index);
 }
 

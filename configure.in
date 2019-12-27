@@ -1,7 +1,14 @@
-AC_INIT(libbow.h)
+AC_INIT(int4str.c)
 
 # configure.in for "libbow".
 # Process this file with autoconf to produce a configure script.
+
+# Let the user set CPPFLAGS and CFLAGS on the ./configure command-line
+AC_SUBST(CPPFLAGS)
+if test -z "$CFLAGS" ; then
+  CFLAGS="-g -O -Wall -Wno-implicit"  #provide a default for CFLAGS
+fi
+AC_SUBST(CFLAGS)
 
 # Find the compiler
 AC_PROG_CC
@@ -15,12 +22,43 @@ AC_PROG_RANLIB
 AC_CHECK_FUNCS(log2f)
 AC_CHECK_FUNCS(sqrtf)
 
-# Find out if we have getopt.h
-AC_CHECK_HEADERS(getopt.h)
-
 # Find location of the perl interpreter executable
-AC_PATH_PROG(PERL, perl)
+#  first look for `perl5'
+AC_PATH_PROG(PERL, perl5)
+#  if it isn't found, look for `perl'
+if test -z "$PERL" ; then
+  AC_PATH_PROG(PERL, perl)
+fi
 AC_SUBST(PERL)
+
+# Find out if `__attribute__ ((constructor))' works.  If it doesn't,
+# define CONSTRUCTOR_FAILS.
+AC_MSG_CHECKING(if __attribute__((constructor)) works)
+AC_TRY_RUN(
+	int did_foo = 0;
+	void foo () __attribute__ ((constructor));
+	void foo () {
+	  did_foo = 1;
+	}
+	main() {
+	  if (did_foo)
+	    exit (0);
+	  exit (-1);
+	},
+CONSTRUCTOR_FAILS=0
+  AC_MSG_RESULT(yes),
+CONSTRUCTOR_FAILS=1; AC_DEFINE(CONSTRUCTOR_FAILS)
+  AC_MSG_RESULT(no),
+CONSTRUCTOR_FAILS=1; AC_DEFINE(CONSTRUCTOR_FAILS)
+  AC_MSG_RESULT(cross-compiling; guessing no)
+)
+	  
+# Look for MSWindows winsock library
+AC_CHECK_LIB(wsock32, main)
+
+# Make AC_OUTPUT call configure in these subdirectories
+AC_CONFIG_SUBDIRS(argp)
 
 # Write the Makefiles
 AC_OUTPUT(Makefile)
+

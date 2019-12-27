@@ -1,6 +1,25 @@
 /* Implementation of a one-to-one mapping of string->int, and int->string. */
 
-#include "libbow.h"
+/* Copyright (C) 1997 Andrew McCallum
+
+   Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
+
+   This file is part of the Bag-Of-Words Library, `libbow'.
+
+   This library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Library General Public License
+   as published by the Free Software Foundation, version 2.
+   
+   This library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Library General Public License for more details.
+
+   You should have received a copy of the GNU Library General Public
+   License along with this library; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
+
+#include <bow/libbow.h>
 #include <string.h>
 #include <assert.h>
 
@@ -23,7 +42,6 @@
 
 /* This function is defined in bow/primes.c. */
 extern int _bow_nextprime (unsigned n);
-
 
 /* Initialize the string->int and int->string map.  The parameter
    CAPACITY is used as a hint about the number of words to expect; if
@@ -76,6 +94,10 @@ _str2id (const char *s)
 
   while (*s != '\0')
     h ^= *(s++) << (c++);
+  h = (h < 0) ? -h : h;
+  /* If return value is too big then REHASH() can make it go negative,
+     so here we use modulo to keep it a little small. */
+  h = h % (INT_MAX / 4);
   return (h < 0) ? -h : h;
 }
 
@@ -92,6 +114,8 @@ _str_hash_lookup (bow_int4str *map, const char *string, int id, int *strdiffp)
   int h;
   int firsth = -1;		/* the first value of H */
 
+  assert (id >= 0);
+  assert (map->str_hash[0] >= -1);
   assert (id == _str2id (string));
   /* Keep looking at STR_HASH locations until we either (1) find the
      string, or (2) find an empty spot, or (3) "modulo-loop" around to
@@ -105,6 +129,7 @@ _str_hash_lookup (bow_int4str *map, const char *string, int id, int *strdiffp)
 	 && (*strdiffp = strcmp (string, map->str_array[map->str_hash[h]]));
        h = REHASH(map, id, h))
     {
+      assert (h >= 0);
       if (firsth == -1)
 	firsth = h;
     }
@@ -134,6 +159,8 @@ static void
 _str_hash_add (bow_int4str *map, 
 	       const char *string, int id, int h, int str_array_index)
 {
+  assert (h >= 0);
+  assert (str_array_index >= 0 && str_array_index < map->str_array_length);
   if (map->str_hash[h] == HASH_EMPTY)
     {
       /* str_hash doesn't have to grow; just drop it in place.
@@ -219,12 +246,59 @@ bow_str2int (bow_int4str *map, const char *string)
     }
   map->str_array[map->str_array_length] = string;
 
-  /* Add it to str_hash. */
-  _str_hash_add (map, string, id, h, map->str_array_length);
+  /* The STR_ARRAY has one more element in it now, so increment its length. */
+  map->str_array_length++;
 
-  /* Return the index at which it was added.  Also, the STR_ARRAY has
-     one more element in it now, so increment its length. */
-  return (map->str_array_length)++;
+  /* Add it to str_hash. */
+  _str_hash_add (map, string, id, h, (map->str_array_length)-1);
+
+  /* Return the index at which it was added.  */
+  return (map->str_array_length)-1;
+}
+
+/* Create a new int-str mapping by lexing words from FILE. */
+bow_int4str *
+bow_int4str_new_from_text_file (const char *filename)
+{
+  bow_int4str *map;
+  FILE *fp;
+  int text_document_count;
+  char word[BOW_MAX_WORD_LENGTH];
+  int wi;
+  bow_lex *lex;
+
+  map = bow_int4str_new (0);
+  text_document_count = 0;
+  
+  fp = bow_fopen (filename, "r");
+  if (bow_fp_is_text (fp))
+    {
+      /* Loop once for each document in this file. */
+      while ((lex = bow_default_lexer->open_text_fp
+	      (bow_default_lexer, fp)))
+	{
+	  /* Loop once for each lexical token in this document. */
+	  while (bow_default_lexer->get_word (bow_default_lexer, 
+					      lex, word, 
+					      BOW_MAX_WORD_LENGTH))
+	    {
+	      /* Increment the word's occurrence count. */
+	      wi = bow_str2int (map, word);
+	      if (wi >= 0)
+		{
+		  /* Show total word count */
+		  bow_verbosify (bow_progress,
+				 "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
+				 "%6d : %6d", 
+				 text_document_count, wi);
+		}
+	    }
+	  bow_default_lexer->close (bow_default_lexer, lex);
+	  text_document_count++;
+	}
+    }
+  fclose (fp);
+  return map;
 }
 
 

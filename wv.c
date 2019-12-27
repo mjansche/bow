@@ -1,4 +1,25 @@
-#include "libbow.h"
+/* Word vectors. */
+
+/* Copyright (C) 1997 Andrew McCallum
+
+   Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
+
+   This file is part of the Bag-Of-Words Library, `libbow'.
+
+   This library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Library General Public License
+   as published by the Free Software Foundation, version 2.
+   
+   This library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Library General Public License for more details.
+
+   You should have received a copy of the GNU Library General Public
+   License along with this library; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
+
+#include <bow/libbow.h>
 #include <stdlib.h>		/* for qsort() */
 
 static int
@@ -116,6 +137,27 @@ bow_wv_new_from_text_fp (FILE *fp)
   return ret;
 }
 
+bow_wv *
+bow_wv_new_from_text_string (char *the_string)
+{
+  bow_wv *ret;	 /* the word vector this function will return */
+  bow_lex *lex;
+  
+  if(!the_string || !*the_string)
+    return NULL;
+  lex = (bow_lex *) bow_malloc (sizeof (bow_lex));
+  if (lex == NULL)
+    return NULL;
+  lex->document = strdup (the_string);
+  assert (lex->document);
+  lex->document_length = strlen (the_string);
+  lex->document_position = 0;
+  ret = bow_wv_new_from_lex (lex);
+  free (lex->document);
+  free (lex);
+  return ret;
+}
+
 /* Return a pointer to the "word entry" with index WI in "word vector WV */
 bow_we *
 bow_wv_entry_for_wi (bow_wv *wv, int wi)
@@ -226,3 +268,105 @@ bow_wv_fprintf (FILE *fp, bow_wv *wv)
 	     wv->entry[i].count);
 }
 
+/* 
+   Print "word vector" WV to a string in human readable format.
+   Set max_size_for_string to 0 if you don't want to
+   limit it.
+*/
+char *
+bow_wv_sprintf (bow_wv *wv, unsigned int max_size_for_string)
+{
+  int i;
+  int wami=0;
+  char *ret_string = NULL, *tmp_string=NULL;
+  unsigned int nentries=0;
+  if(!wv)
+    return NULL;
+  assert((max_size_for_string >= 10) /* || 
+	 (max_size_for_string == 0)  */ );
+  nentries = wv->num_entries;
+  ret_string = malloc(max_size_for_string+1);
+  assert(ret_string);
+  tmp_string = ret_string;
+  for (i = 0; i < nentries; i++)
+  {
+    sprintf (tmp_string, "%d %d %n",
+	     wv->entry[i].wi, wv->entry[i].count, &wami);
+    tmp_string += wami;
+    /* Ensure we haven't stepped off the end of the output string.
+       Allow for some slop at the end. */
+    if (tmp_string - ret_string > max_size_for_string - 20)
+	break;
+  }
+  return ret_string;
+}
+
+/* 
+   Print "word vector" WV to a string in human readable format.
+   Set max_size_for_string to 0 if you don't want to
+   limit it.
+*/
+char *
+bow_wv_sprintf_words (bow_wv *wv, unsigned int max_size_for_string)
+{
+  int i;
+  int wami=0;
+  char *ret_string = NULL, *tmp_string=NULL;
+  unsigned int nentries=0;
+  if(!wv)
+    return NULL;
+  assert((max_size_for_string >= 10) /* || 
+	 (max_size_for_string == 0) */ );
+  nentries = wv->num_entries;
+  ret_string = malloc(max_size_for_string+1);
+  assert(ret_string);
+  tmp_string = ret_string;
+  for (i = 0; i < nentries; i++)
+  {
+    sprintf (tmp_string, "%s %d %n",
+	     bow_int2word(wv->entry[i].wi), wv->entry[i].count, &wami);
+    tmp_string += wami;
+    /* Ensure we haven't stepped off the end of the output string.
+       Allow for some slop at the end. */
+    if (tmp_string - ret_string > max_size_for_string - 20)
+	break;
+  }
+  return ret_string;
+}
+
+/* Assign the values of the "word vector entry's" WEIGHT field
+   equal to the COUNT. */
+void
+bow_wv_set_weights_to_count (bow_wv *wv)
+{
+  int wvi;
+
+  for (wvi = 0; wvi < wv->num_entries; wvi++)
+    wv->entry[wvi].weight = wv->entry[wvi].count;
+}
+
+/* Assign the values of the "word vector entry's" WEIGHT field
+   equal to the COUNT times the word's IDF, taken from the BARREL. */
+void
+bow_wv_set_weights_to_count_times_idf (bow_wv *wv, bow_barrel *barrel)
+{
+  int wvi;
+  int wi;
+  bow_dv *dv;
+
+  for (wvi = 0; wvi < wv->num_entries; wvi++)
+    {
+      wi = wv->entry[wvi].wi;
+      dv = bow_wi2dvf_dv (barrel->wi2dvf, wi);
+      if (dv)
+	{
+	  wv->entry[wvi].weight = 
+	    (wv->entry[wvi].count * dv->idf);
+	}
+      else
+	{
+	  /* This word was not part of the model at all. */
+	  wv->entry[wvi].weight = 0;
+	}
+    }
+}

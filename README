@@ -1,5 +1,92 @@
 Bag Of Words Library README
 ***************************
 
-The Bag-Of-Words Library is....
+`libbow', version 0.8.
+
+   `Libbow' is a library of C code intended for writing statistical
+text-processing programs.  This distribution includes the library, as
+well as a text classification front-end, and a document retrieval
+front-end.
+
+The library provides facilities for:
+        Recursively descending directories, finding text files.
+        Finding `document' boundaries when there are multiple docs per file.
+        Tokenizing a text file, according to several different methods.
+        Including N-grams among the tokens.
+        Mapping strings to integers and back again, very efficiently.
+        Building a sparse matrix of document/token counts.
+        Pruning vocabulary by occurrence counts or by information gain.
+        Building and manipulating word vectors.
+        Setting word vector weights according to NaiveBayes, TFIDF, and a
+          simple form of Probabilistic Indexing.
+        Scoring queries for retrieval or classification.
+        Writing all data structures to disk in a machine-architecture-
+          independent format.
+        Reading the document/token matrix from disk in an efficient,
+          sparse fashion.
+        Performing test/train splits, and automatic classification tests.
+
+   It should compile on most UNIX systems, and WindowsNT (with a GNU
+build environment).
+
+   The code conforms to the GNU coding standards.  It is released under
+the Library GNU Public License.
+
+The library does not:
+        Have parsing facilities.
+        Do smoothing across N-gram models.
+        Claim to be finished.
+        Have good documentation.
+        Claim to be bug-free.
+        ...many other things.
+
+Rainbow
+=======
+
+   `Rainbow' is a standalone program that does document classification.
+Here are some examples:
+
+   *      rainbow -i ./training/positive ./training/negative
+
+     Using the text files found under the directories `./positive' and
+     `./negative', tokenize, build word vectors, and write the
+     resulting data structures to disk.
+
+   *      rainbow -q ./testing/254
+
+     Tokenize the text document `./testing/254', and classify it,
+     producing output like:
+
+          /home/mccallum/training/positive 0.72
+          /home/mccallum/training/negative 0.28
+
+   *      rainbow -t 5
+
+     Perform 5 trials, each consisting of a test/train split, a
+     resetting of weights according to the new split, and outputs of
+     the classification of the test documents.
+
+   Typing `rainbow --help' will give list of all rainbow options.
+
+   After you have compiled `libbow' and `rainbow', you can run the
+shell script `./demo/script' to see an annotated demonstration of the
+classifier in action.
+
+   The web page
+http://www.cs.cmu.edu/afs/cs.cmu.edu/project/theo-11/www/naive-bayes.html
+has a pointer to a "Gentle Introduction to Rainbow", as well as some
+sample UseNet text data.
+
+Rainbow improvements coming soon:
+   Better documentation.
+   Better modularily of command-line options for changing parameters
+     of weight-setting methods.
+   Incremental model training.
+   Better smoothing.  Good-Turing estimates, etc.
+
+Arrow
+=====
+
+   `Arrow' is a standalone program that does document retrieval.
+Sorry, there is no documentation yet.
 

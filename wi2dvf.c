@@ -1,4 +1,25 @@
-#include "libbow.h"
+/* Word-index to document-vector-file */
+
+/* Copyright (C) 1997 Andrew McCallum
+
+   Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
+
+   This file is part of the Bag-Of-Words Library, `libbow'.
+
+   This library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Library General Public License
+   as published by the Free Software Foundation, version 2.
+   
+   This library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Library General Public License for more details.
+
+   You should have received a copy of the GNU Library General Public
+   License along with this library; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
+
+#include <bow/libbow.h>
 #include <netinet/in.h>		/* for machine-independent byte-order */
 #include <assert.h>
 
@@ -16,6 +37,7 @@ bow_wi2dvf_new (int capacity)
     capacity = bow_wi2dvf_default_capacity;
   ret = bow_malloc (sizeof (bow_wi2dvf) + (sizeof (bow_dvf) * capacity));
   ret->size = capacity;
+  ret->num_words = 0;
   ret->fp = NULL;
   for (i = 0; i < capacity; i++)
     INIT_BOW_DVF(ret->entry[i]);
@@ -54,14 +76,19 @@ bow_wi2dvf_add_di_wv (bow_wi2dvf **wi2dvf, int di, bow_wv *wv)
   for (i = 0; i < wv->num_entries; i++)
     {
       wi = wv->entry[i].wi;
+      assert ((*wi2dvf)->size > wi);
       if ((*wi2dvf)->entry[wi].dv == NULL)
 	{
 	  /* There is not yet a "document vector" for "word index" WI,
 	     so create one. */
 	  (*wi2dvf)->entry[wi].dv = bow_dv_new (0);
+	  /* This 2 is a flag to the hide/unhide code that this DV exists. */
+	  (*wi2dvf)->entry[wi].seek_start = 2;
+	  ((*wi2dvf)->num_words)++;
 	}
       /* Add the "document index" DI and the count associated with
          word index WI to the WI'th "document vector". */
+      /* xxx Should we be adding WV->ENTRY[i].WEIGHT also? */
       bow_dv_add_di_count_weight (&((*wi2dvf)->entry[wi].dv), di,
 				  wv->entry[i].count, 0);
     }
@@ -121,10 +148,25 @@ bow_wi2dvf_add_wi_di_count_weight (bow_wi2dvf **wi2dvf, int wi,
       /* There is not yet a "document vector" for "word index" WI,
 	 so create one. */
       (*wi2dvf)->entry[wi].dv = bow_dv_new (0);
+      /* This 2 is a flag to the hide/unhide code that this DV exists. */
+      (*wi2dvf)->entry[wi].seek_start = 2;
+      ((*wi2dvf)->num_words)++;
     }
   /* Add the "document index" DI and the count associated with
      word index WI to the WI'th "document vector". */
   bow_dv_add_di_count_weight (&((*wi2dvf)->entry[wi].dv), di, count, weight);
+}
+
+/* Return a pointer to the BOW_DE for a particular word/document pair, 
+   or return NULL if there is no entry for that pair. */
+bow_de *
+bow_wi2dvf_entry_at_wi_di (bow_wi2dvf *wi2dvf, int wi, int di)
+{
+  bow_dv *dv = bow_wi2dvf_dv (wi2dvf, wi);
+
+  if (!dv)
+    return NULL;
+  return bow_dv_entry_at_di (dv, di);
 }
 
 /* Remove the word with index WI from the vocabulary of the map WI2DVF */
@@ -133,8 +175,57 @@ bow_wi2dvf_remove_wi (bow_wi2dvf *wi2dvf, int wi)
 {
   assert (wi < wi2dvf->size);
   if (wi2dvf->entry[wi].dv)
-    bow_dv_free (wi2dvf->entry[wi].dv);
+    {
+      bow_dv_free (wi2dvf->entry[wi].dv);
+      (wi2dvf->num_words)--;
+    }
   INIT_BOW_DVF (wi2dvf->entry[wi]);
+}
+
+#define FREE_WHEN_HIDING_WI 0
+
+/* Temporarily hide the word with index WI from the vocabulary of the
+   map WI2DVF. The function BOW_WI2DVF_DV() will no longer see the entry
+   for this WI, but */
+void
+bow_wi2dvf_hide_wi (bow_wi2dvf *wi2dvf, int wi)
+{
+  assert (wi < wi2dvf->size);
+#if FREE_WHEN_HIDING_WI
+  if (wi2dvf->entry[wi].dv)
+    {
+      bow_dv_free (wi2dvf->entry[wi].dv);
+      /* (wi2dvf->num_words)--; */
+    }
+  wi2dvf->entry[wi].dv = NULL;
+#endif
+
+  /* The token -1 is reserved to mean that the DV is uninitialized. */
+  assert (!(wi2dvf->entry[wi].dv && wi2dvf->entry[wi].seek_start == -1));
+
+  /* Make the SEEK_START negative so we won't use it in normal situations,
+     but will be able to remember it and get it back when we need it. */
+  if (wi2dvf->entry[wi].seek_start > 0)
+    {
+      wi2dvf->entry[wi].seek_start = - (wi2dvf->entry[wi].seek_start);
+      (wi2dvf->num_words)--;
+    }
+}
+
+/* Make visible all DVF's that were hidden with BOW_WI2DVF_HIDE_WI(). */
+void
+bow_wi2dvf_unhide_all_wi (bow_wi2dvf *wi2dvf)
+{
+  int wi;
+
+  for (wi = 0; wi < wi2dvf->size; wi++)
+    {
+      if (wi2dvf->entry[wi].seek_start < -1)
+	{
+	  wi2dvf->entry[wi].seek_start = - (wi2dvf->entry[wi].seek_start);
+	  (wi2dvf->num_words)++;
+	}
+    }
 }
 
 /* Write WI2DVF to file-pointer FP, in a machine-independent format.
@@ -146,6 +237,8 @@ bow_wi2dvf_write (bow_wi2dvf *wi2dvf, FILE *fp)
   long seek_current;
   int wi;
 
+  bow_wi2dvf_unhide_all_wi (wi2dvf);
+
   /* Figure out how many bytes the WI2DVF (without the DV's) will
      take at the beginning the file. */
   seek_base = 
@@ -154,7 +247,7 @@ bow_wi2dvf_write (bow_wi2dvf *wi2dvf, FILE *fp)
 	+ (sizeof (int)		/* for each SEEK_START value */
 	   * wi2dvf->size)));	/* multiplied by the number of WI's */
 
-  /* Write the number of "word indices". */
+  /* Write the maximum "word index". */
   bow_fwrite_int (wi2dvf->size, fp);
 
   /* Figure out the correct SEEK_START values for all the DVF's,
@@ -234,6 +327,8 @@ bow_wi2dvf_new_from_data_fp (FILE *fp)
   for (wi = 0; wi < size; wi++)
     {
       bow_fread_int (&(ret->entry[wi].seek_start), fp);
+      if (ret->entry[wi].seek_start != -1)
+	(ret->num_words)++;
       ret->entry[wi].dv = NULL;
     }
 
@@ -279,30 +374,41 @@ bow_wi2dvf_free (bow_wi2dvf *wi2dvf)
 bow_dv *
 bow_wi2dvf_dv (bow_wi2dvf *wi2dvf, int wi)
 {
-  assert (wi < wi2dvf->size && wi < bow_num_words());
+  /* If the word-index is higher than anything we know about,
+     return NULL.  This could legitimately happen if the query
+     document has vocabulary that wasn't in the training data. */
+  if (wi >= wi2dvf->size)
+    return NULL;
 
   /* If the "document vector" is available (it has already been read
-     in, it is non-NULL), then simply return it. */
-  if (wi2dvf->entry[wi].dv)
+     in, it is non-NULL), and it is not hidden (it's SEEK_START is
+     greater than or equal to -1) then simply return it.  Note that
+     newly created WI2DVF's that haven't been saved (like those for
+     VPC_BARREL's) with have non-NULL dv's and SEEK_START's of -1. */
+  if (wi2dvf->entry[wi].dv && wi2dvf->entry[wi].seek_start >= -1)
     {
       assert (wi2dvf->entry[wi].dv->idf == wi2dvf->entry[wi].dv->idf);
       return wi2dvf->entry[wi].dv;
     }
 
   /* If the SEEK_START position of WI'th DVF is -1, then this was an
-     empty "document vector", so return NULL. */
-  if (wi2dvf->entry[wi].seek_start == -1)
+     empty "document vector", so return NULL.  If the SEEK_START
+     position of the WI'th DVF is less than -1, then this document
+     vector was hidden by BOW_WI2DVF_HIDE_WI(), so return NULL. */
+  if (wi2dvf->entry[wi].seek_start <= -1)
     return NULL;
 
-  /* We want to read it in, but if this WI2DVF isn't backed by a
+  /* If we want to read it in, but if this WI2DVF isn't backed by a
      data file (for example, it's being built from a directory of
      text files), then just return NULL. */
   if (wi2dvf->fp == NULL)
     return NULL;
 
   /* Read in the document vector. */
+  assert (wi2dvf->entry[wi].seek_start > 2);
   fseek (wi2dvf->fp, wi2dvf->entry[wi].seek_start, SEEK_SET);
   wi2dvf->entry[wi].dv = bow_dv_new_from_data_fp (wi2dvf->fp);
+  /* Check for NaN. */
   assert (wi2dvf->entry[wi].dv->idf == wi2dvf->entry[wi].dv->idf);
 
   assert (wi == wi2dvf->size - 1
@@ -376,7 +482,8 @@ bow_wi2dvf_print_stats (bow_wi2dvf *map)
   int de_used_count, de_unused_count;
 
   wi_max = bow_num_words ();
-  printf ("%8d unique words\n", wi_max);
+  printf ("%8d libbow's num words\n", wi_max);
+  printf ("%8d num words in wi2dvf\n", map->num_words);
   /* printf ("%8d unique documents\n", bow_num_docnames ()); */
 
   /* Get stats on "document vector" length. */

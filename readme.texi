@@ -1,7 +1,80 @@
 @chapter Bag Of Words Library README
 
-@c set the vars LIBBOW_VERSION
+@c set the vars BOW_VERSION
 @include version.texi
+
+@samp{libbow}, version @value{BOWVERSION}.
 
 @include libbow-desc.texi
 
+
+@section Rainbow
+
+@samp{Rainbow} is a standalone program that does document
+classification.  Here are some examples:
+
+@itemize @bullet
+
+@item
+
+@example
+rainbow -i ./training/positive ./training/negative
+@end example
+
+Using the text files found under the directories
+@file{./positive} and @file{./negative},
+tokenize, build word vectors, and write the resulting data structures
+to disk.
+
+@item
+
+@example
+rainbow -q ./testing/254
+@end example
+
+Tokenize the text document @file{./testing/254}, and classify it,
+producing output like:
+
+@example
+/home/mccallum/training/positive 0.72
+/home/mccallum/training/negative 0.28
+@end example
+
+@item
+
+@example
+rainbow -t 5
+@end example
+
+Perform 5 trials, each consisting of a test/train split, a resetting of
+weights according to the new split, and outputs of the classification of
+the test documents.
+
+@end itemize
+
+Typing @samp{rainbow --help} will give list of all rainbow options.
+
+After you have compiled @samp{libbow} and @samp{rainbow}, you can run
+the shell script @file{./demo/script} to see an annotated demonstration
+of the classifier in action.
+
+The web page
+http://www.cs.cmu.edu/afs/cs.cmu.edu/project/theo-11/www/naive-bayes.html
+has a pointer to a ``Gentle Introduction to Rainbow'', as well as some
+sample UseNet text data.
+
+@format
+Rainbow improvements coming soon:
+   Better documentation.
+   Better modularily of command-line options for changing parameters
+     of weight-setting methods.
+   Incremental model training.
+   Better smoothing.  Good-Turing estimates, etc.
+@end format
+
+
+
+@section Arrow
+
+@samp{Arrow} is a standalone program that does document retrieval.
+Sorry, there is no documentation yet.

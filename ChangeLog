@@ -1,6 +1,2020 @@
+Thu Sep 25 17:35:01 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* Makefile.in (LIBBOW_H_FILES): Added bow/kl.h.
+
+Wed Sep 17 14:51:33 1997  Karl Kleinpaste  <karl@jprc.com>
+
+	* rainbow-h.c (top): Add socket #includes.
+	(rainbowh_options): Add --query-server and -n options.  Also,
+ 	remove #define of PRINT_TREE_SCORES, in favor of runtime -n.
+  	(rainbowh_arg_state): Add rainbowh_query_serving to what_doing,
+ 	plus server_port_num, for --query-server, and print_tree_scores,
+	for -n.
+  	(rainbowh_parse_opt): Add --query-server and -n detection.
+  	(_hier_barrel_set_node_scores): Properly conditionalize tree score
+ 	printing.
+	(hier_barrel_print_scores_recurse): Add FILE *out.
+  	(hier_barrel_print_scores): Add FILE *out.
+	(rainbowh_query): New routine, stripped from the mainline `if'.
+  	(rainbowh_socket_init): Add for --query-server capability.
+  	(rainbowh_serve): Add for --query-server capability.
+	(main): Init print_tree_scores; init lexer end pattern; insert
+ 	conditional call to service --query-server; slice out mainline for
+ 	rainbowh_query().
+
+Wed Sep 17 14:22:18 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* split.c (bow_test_split): Remove the assertion that we use at
+ 	least 90% of the documents as training data.
+
+Tue Sep  9 10:55:31 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c: Change default method from prind to naivebayes.
+	(_hier_barrel_cdoc_write): Handle bow_file_format_version 5.
+	(_hier_barrel_cdoc_read): Likewise.
+	(hier_barrel_set_local_class_model): Call vpc function with new
+	argument.
+	(hier_barrel_set_vpc_with_weights): Likewise.
+	(hier_barrel_add_document): Set HBARREL->DOC_BARREL->METHOD to
+	HIER_DEFAULT_METHOD.
+	(hier_barrel_set_vpc_and_populate_lower_branches): Only recursively
+	set vpc in children branches if there are documents there.
+	(hier_barrel_prob_wi_in_ci): Assert that the CDOC->NORMALIZER has been
+	set.  Set M_EST_M according to CDOC->NORMALIZER, which is number
+ 	of unique words.
+	(_hier_barrel_local_score): Clean up a little.
+	(main): Call hier_set_method() if BOW_ARGP_METHOD.
+
+Sat Aug 30 19:03:17 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* kl.c (bow_kl_score): Initialize scores to class prior divided by
+ 	query document length, not just class prior.  This way our
+ 	classifications match Naive Bayes, as they should.
+
+Fri Aug 29 09:12:05 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* barrel.c (bow_barrel_add_from_text_dir): Add newline before
+ 	warning about a file being skipped because it is not text.
+
+	Before the following change we were overflowing DV->ENTRY[i].DI in
+ 	document barrel's when there were more than 32767 documents.
+  	Karl's Yahoo experiments were trying to build models with about
+ 	60000 documents.  We would get an error in vpc.c at the assertion
+ 	that "ci < num_classes".
+	* dv.c (bow_dv_add_di_count_weight): Warn if we overflow int,
+ 	not short.
+	(bow_dv_write_size): Adjust for change of COUNT and DI from
+	short to int.
+	(bow_dv_write): Likewise.
+	(bow_dv_new_from_data_fp): Likewise.
+	* bow/libbow.h (bow_cdoc): Change member CLASS from short to int.
+	(bow_de): Change members DI and COUNT from short to int.
+	* barrel.c (_bow_barrel_cdoc_write): If BOW_FILE_FORMAT_VERSION is
+ 	5 or greater, change CDOC->CLASS from short to int.
+	(_bow_barrel_cdoc_read): Likewise.
+	* bow/libbow.h (BOW_DEFAULT_FILE_FORMAT_VERSION): Changed from 4 to 5.
+	* io.c: Add comment about bow_file_format_version history.
+
+Thu Aug 28 22:36:55 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* kl.c (bow_kl_score): Add class prior probabilities.
+
+	* lex-simple.c (bow_lexer_simple_get_raw_word): When we find the
+ 	NULL at the end of the document, and before we find the beginning
+ 	of a word, back up DOCUMENT_POSITION (even though will return 0
+ 	this time already).  Add some assertions about DOCUMENT_POSITION.
+
+	* lex-html.c (bow_lexer_html_get_raw_word): When we find the NULL
+ 	at the end of the document, back up DOCUMENT_POSITION so we will
+ 	return 0 next time we are called.  Add some assertions about
+ 	DOCUMENT_LENGTH.
+
+Wed Aug 27 11:23:34 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* bow/libbow.h: Include <unistd.h>.
+
+	* rainbow.c (rainbow_parse_opt): Fix typo.
+
+	* rainbow.c (rainbow_parse_opt) [SERVER_KEY]: Set
+ 	DOCUMENT_END_PATTERN to a single dot on a line.
+	(main): Don't set DOCUMENT_END_PATTERN here for server mode.
+
+	* lex-simple.c (bow_lexer_simple_open_text_fp): Explicitly seek
+ 	the PRE_PIPE_FP to the end of the file!  Otherwise, we can
+ 	sometimes read the same file over and over again in the many
+ 	`while(open_text_fp())' loops throughout the library.
+
+	* rainbow.c (rainbow_print_weight_vector): Change the test for
+ 	deciding when we need to multiply by CDOC->NORMALIZER before
+ 	printing the weight. Instead of looking specifically for
+ 	"naivebayes", look for a METHOD->NORMALIZE_WEIGHTS function
+ 	pointer that is NULL.  Now this works properly for the "kl" method
+ 	too.
+
+	* kl.c (bow_kl_set_weights): Calculate the total number of
+ 	occurrences of each word; store this in DV->IDF.  The the DV
+ 	weights to the weighted log odds ratio P(w|C)*log(P(w|C)/P(w|~C)).
+
+	* rainbow.c (rainbow_lisp_setup): Update for new default
+ 	arguments.
+	(rainbow_lisp_query): Add LOO_CV argument to bow_barrel_score().
+
+	* kl.c (bow_kl_score): Move declaration of SCORES_SUM.
+
+Tue Aug 26 11:12:00 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* vpc.c (bow_barrel_set_vpc_priors_by_counting): Add assertion
+ 	about the PRIOR.
+
+Mon Aug 25 14:03:58 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-ac.pl: As a diagnostic, print the number of predictions
+ 	found in the file.
+
+	* naivebayes.c (bow_naivebayes_set_weights): Set CDOC->NORMALIZER
+ 	to the number of unique terms in each class.  (This is now used by
+ 	rainbow-h.)
+
+	* kl.c (bow_kl_set_weights): Add assertion about CDOC->NORMALIZER.
+
+	* foilgain.c (bow_foilgain_ci_per_wi_new): New function.
+
+	* bow/libbow.h (bow_default_method_name): New macro.
+	* barrel.c (bow_barrel_new): Use new macro
+ 	`bow_default_method_name' instead of "naivebayes".
+
+Tue Aug 19 09:50:16 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* int4word.c (bow_words_set_map): Be sure to initialize the
+ 	map/counts if they haven't been initialized yet.  Otherwise,
+ 	WORD_MAP_COUNTS will point nowhere an we can tromp on memory.  I
+ 	was getting malloc() errors before this was fixed.
+	(bow_words_keep_top_by_infogain): Change so that word indices are
+	ordered by information gain, even when NUM_WORDS_TO_KEEP is less
+ 	than the number of words returned by bow_infogain_per_wi_new().
+
+	* wi2dvf.c (bow_wi2dvf_entry_at_wi_di): New function.
+	* dv.c (bow_dv_entry_at_di): New function.
+	* bow/libbow.h: Declare new functions.
+
+	* barrel.c (bow_barrel_add_from_text_dir): Add verbosity when a
+ 	file is skipped because istext() fails.
+	(bow_new_slow_barrel_printf): New function.
+
+	* vpc.c (bow_barrel_new_vpc): New argument, NUM_CLASSES.  Use it
+ 	to initialize an array that is filled with counts of the number of
+ 	documents per class.  Initialize CDOC->NUM_WORDS to be the number
+ 	of documents per class.  This can then be used in "event=document"
+ 	models.
+	(bow_barrel_new_vpc_merge_then_weight): New argument, NUM_CLASSES.
+	(bow_barrel_new_vpc_weight_then_merge): Likewise.
+
+	* rainbow.c (rainbow_index): Use macro
+ 	bow_barrel_new_vpc_with_weights(), with new `num_classes'
+ 	argument.
+	(rainbow_query): Likewise.
+	(rainbow_test): Likewise.
+	(main): Likewise.
+	(rainbow_test_files): Likewise.  If QUERY_WV is NULL, verbosify a
+	warning.
+
+	* bow/libbow.h (bow_method): Add NUM_CLASSES argument to
+ 	VPC_WITH_WEIGHTS.
+	(bow_barrel_new_vpc_with_weights): Add NUM_CLASSES argument.
+	(bow_barrel_new_vpc): Likewise.
+	(bow_barrel_new_vpc_merge_then_weight): Likewise.
+	(bow_barrel_new_vpc_weight_then_merge): Likewise.
+
+	* bow/naivebayes.h (bow_params_naivebayes): Remove
+ 	SCORE_WITH_LOG_PROBABILITIES.
+
+	* kl.c (bow_kl_score): Reformat error message.
+
+	* naivebayes.c (bow_naivebayes_set_weights): Only set
+ 	CDOC->WORD_COUNT if not doing BOW_BINARY_WORD_COUNTS, otherwise
+ 	leave them as the "document counts" as they were initialized in
+ 	vpc.c.
+
+Thu Aug 14 11:46:46 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* naivebayes.c: Remove all references and code for
+ 	SCORE_WITH_LOG_PROBABILITIES.  Use KL method instead.
+	(bow_method_crossentropy): Removed, and all related structures and
+	functions.
+	* opts.c (bow_options): Remove "naivebayes-score-with-log-probs"
+ 	option.
+	(parse_bow_opt): Don't handle it anymore.
+
+	* naivebayes.c: Add a naivebayes-specific command-line option by
+ 	using "argp child".
+	(naivebayes_argp_m_est_m): New static variable.
+	(naivebayes_options): New argp structure.  New command-line option
+	"naivebayes-m-est-m".
+	(naivebayes_parse_opt): New function.
+	(naivebayes_argp: New structure.
+	(naivebayes_argp_child): New structure.
+	(_register_method_naivebayes): Add the argp child.
+	(bow_naivebayes_score): Comment out assertion that (loo_class == -1)
+	because it trips up rainbow-h.
+
+	These changes were made a while ago.
+	* rainbow-h.c (hier_recursive_set_rankings): Pass new LOO argument
+ 	to bow_barrel_score.
+	(classify_single_doc): Likewise.
+	(hier_barrel_set_vpc_and_populate_lower_branches): Likewise.
+	(hier_barrel_prob_wi_in_ci): Add two new pass-by-ref arguments that
+	return certain counts.  Pass new arguments.
+	(check_prob_wi_in_ci): Pass new arguments.
+	(_hier_barrel_local_score): Call above function with new arguments,
+	and print them out.
+	(main): Switch back to using POPULATE_BY_SCORING and HIER_NIECE
+	options by default.
+
+Wed Aug 13 16:44:07 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* lex-simple.c (bow_lexer_simple_open_text_fp): Print error
+ 	message if popen() call failed.
+
+	* opts.c (bow_argp_add_child): Change asssertion.  Add call to
+ 	memset(), which should be unnecessary.
+
+	Before this code was added, some inlinks WebKB files were being
+	declared as "nontext" and skipped because many lines had the same
+	length.
+	
+	* istext.c (bow_fp_is_text): Pay attention to
+ 	BOW_ISTEXT_AVOID_UUENCODE.
+	* opts.c (bow_istext_avoid_uuencode): Declare new global variable.
+	(bow_options): New option "istext-avoid-uuencode".
+	(parse_bow_opt): Handle it.
+	* bow/libbow.h (bow_istext_avoid_uuencode): New global variable
+ 	set by command-line option.
+	(bow_lex_pipe_command): Make it extern!
+
+	* kl.c (bow_kl_score): Give more detailed error message for LOO
+ 	negative probabilities.
+
+	Before this code was added, some WebKB files were being skipped
+	because the non-MIME-header part was already buffered in STDIO.
+
+	* lex-simple.c (bow_lexer_simple_open_text_fp): When using
+ 	BOW_LEX_PIPE_COMMAND, make sure that the file descriptor file
+ 	position matches the stdio FP position, otherwise we can get a
+ 	premature EOF because the stdio has already read much of the file
+ 	for buffering.
+
+Mon Aug 11 11:51:11 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* info_gain.c (bow_infogain_per_wi_print): If NUM_TO_PRINT is 0,
+ 	then print infogain of all words, not zero words.
+
+	* bow/libbow.h (bow_model_next_wv): Declare new split function.
+
+Mon Jul 14 11:09:04 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-stats.pl (overall_accuracy): Shorten the label before
+ 	the numbers.
+
+	* istext.c (bow_fp_is_text): Initialize
+ 	MAX_LINE_LENGTH_HISTOGRAM_LENGTH to avoid warning.
+
+	* istext.c (bow_fp_is_text): Re-enable the uuencode-block
+ 	detection.  Now, in order to reject the file, insist that the
+ 	length of the lines with the most common length be greater than
+ 	or equal to 50.  Hopefully this will not falsely reject HTML files
+	as it did before.
+
+Tue Jul  1 08:39:25 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* kl.c (bow_kl_score): Remove assertion that SCORE_INCREMENT be
+ 	non-zero.  It can be zero when PR_W_C == PR_W_D, then
+ 	LOG(PR_W_C/PR_W_D) will be zero, and SCORE_INCREMENT will be zero.
+
+Mon Jun 30 17:41:06 1997  Karl Kleinpaste  <karl@jprc.com>
+
+	* rainbow.c (rainbow_serve): Added.
+	(rainbow_socket_init): Added.
+  	(rainbow_parse_opt): Added SERVER_KEY case.
+	(rainbow_query): Modified FILE * handling for use of other than
+	stdin/stdout.
+  	(main): Added query-server handling.
+
+Sat Jun 28 12:22:30 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (rainbow_test_files): Temporarilty comment out code
+ 	that removes some of the training documents from training until we
+ 	add a scheme that really makes the default test percentage 0.
+	(main): Put the call of rainbow_test_files after doing things
+	necessary to update the class/word weights for the command-line
+ 	options.  Temporarily, ALWAYS rebuild the VPC model, even if non
+ 	of the parameters change because the weights read from disk were
+ 	bad; find out why eventually!
+
+	* prind.c (bow_prind_score): When BOW_PRINT_WORD_SCORES, also
+ 	print PR_W_C.
+
+	* prind.c (bow_prind_score): When all pre-normalized scores are
+ 	zero, set normalized scores to -1.0/#classes, don't leave them as
+ 	zero.  [Perhaps we should set the scores to the class priors?
+  	Althought this does not fall our of the PrInd derivation.]
+
+	* kl.c (bow_kl_score): When all pre-normalized scores are zero,
+ 	set normalized scores to -1.0/#classes, not -9999.
+
+	* arrow.c (arrow_query): Pass LOO_CV argument to score.
+
+Thu Jun 26 14:48:28 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* lex-simple.c (bow_lexer_simple_open_text_fp): Attend to
+ 	BOW_LEX_PIPE_COMMAND and implement it.
+	* opts.c (bow_lex_pipe_command): New global variable.
+	(bow_options): New command-line option "lex-pipe-command".
+	(parse_bow_opt): Handle it.
+	* bow/libbow.h: Declare new global variable.
+
+	* istext.c (bow_fp_is_text): Move local variables to avoid GCC
+ 	warning.
+
+	--test-files-loo should now work.
+	* prind.c: Convert scoring function to take LOO_CLASS arguement.
+	* kl.c: Likewise.
+	* naivebayes.c: Likewise.
+	* tfidf.c: Likewise.
+	* evi.c: Likewise.
+	* rainbow.c: Call scoring function with LOO_CLASS argument.
+
+	* bow/libbow.h (bow_barrel_score): Add extra LOO_CLASS argument.
+	(bow_method): Likewise to (*score) member.
+
+	* rainbow-ac.pl: Make sure last confidence number gets printed
+ 	properly.  Before it was always just zero.
+
+	* rainbow.c (rainbow_options): Added "test-files-loo" for
+ 	Leave-One-Out testing.  Not implemented yet, however.
+	(struct rainbow_arg_state): New member LOO_CV.
+	(rainbow_query): Do proper checks before using lisp score truncation.
+	(rainbow_test): Likewise.  Also, add (commented out) code to print
+	more stats.
+	(main): Call _register_method_evi() to make sure it gets linked in.
+
+	* Makefile.in (LIBBOW_C_FILES): Added evi.c.
+	* evi.c: New file.
+
+	* naivebayes.c (bow_naivebayes_set_weights): Add checks that make
+ 	sure that Sum_w Pr(w|c) is 1 for all classes.
+
+	* kl.c (bow_kl_score_loo): Implement normalized KL scores, with
+ 	Witten-Bell discounting.  (NOTE: NaiveBayes does not yet have
+	Witten-Bell implemeted.  Thus the accuracy of Witten-Bell can be
+	easily compared with Laplace by comparing "kl" with "naivebayes".)
+
+	* rainbow-stats.pl (confusion): Initialize $MAX_CLASSNAME_LENGTH
+ 	to the length of "classname", so that we still get proper
+ 	formatting with very short classnames.
+
+	* istext.c (bow_fp_is_text): Temporarily comment out the code that
+ 	tries to avoid files with uuencoded blocks, because the current
+ 	scheme also seems to avoid many HTML files.  (Reported by Sean
+ 	Slattery.)  Warning, trying to index the 20_newsgroups data in
+ 	this state will give bad results.
+
+Mon Jun 23 11:59:50 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* prind.c (bow_prind_score): Comment fixes.  Describe the
+ 	smoothing situation accurately.
+
+	* int4word.c (bow_words_keep_top_by_infogain): Don't try to "keep"
+ 	more words than are available in the BARREL!  (Bug reported by
+ 	Daniel A Dipasquo <greenface+@CMU.EDU>.)  If NUM_WORDS_TO_KEEP is
+ 	greater than or equal to the number of words in the BARREL, put
+ 	all these words in the new vocabulary.
+
+Wed Jun 11 16:40:14 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (rainbow_test): Don't do CommonLisp score truncation
+ 	if the score is negative.  (This change should be made to other
+ 	score-printing functions too.)
+	(main): Gratuitously call _register_method_kl(), so that kl.c gets
+	linked in with the rainbow executable.
+
+	* kl.c (_register_method_kl): Make sure we can't register the
+ 	method twice, even if this function is called twice.
+
+	* naivebayes.c (bow_naivebayes_score_loo): When using uniform
+ 	class priors, set SCORES[CI] based on log of uniform distribution
+ 	of classes, not to 1.  When setting log_pr_tf, instead of using
+ 	pow() before taking the log(), just multiply after using log().
+
+	* Makefile.in (LIBBOW_C_FILES): Added kl.c.
+
+Fri Jun  6 09:48:06 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (NO_LISP_SCORE_TRUNCATION_KEY): New macro.
+	(rainbow_options): New option "no-lisp-score-truncation".
+	(rainbow_parse_opt): Handle it.
+	(struct rainbow_arg_state): New member USE_LISP_SCORE_TRUNCATION.
+	(rainbow_query): Obey it.
+	(rainbow_test): Likewise.
+	(main): Make its default value 1.
+
+Tue Jun  3 10:31:10 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* readme.texi: Use BOWVERSION, not BOW_VERSION to match
+ 	version.texi.
+
+Thu May 29 15:25:06 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* Version (BOW_MINOR_VERSION): Version 0.8.
+	* bow/libbow.h (BOW_MINOR_VERSION): Version 0.8.
+
+	* docnames.c (bow_map_filenames_from_dir): Remove local variables
+ 	no longer used.
+
+Mon May 26 12:59:50 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (main): New commented-out code for computing the
+ 	number of word co-occurrences.
+
+Fri May 23 11:34:05 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (USE_VOCAB_IN_FILE_KEY): New macro.
+	(rainbow_options): New option "use-vocab-in-file".
+	(rainbow_parse_opt): Handle it.
+	(struct rainbow_arg_state): New member VOCAB_MAP.
+	(rainbow_query): Use it to remove words from the vocabulary.
+	(rainbow_test): Likewise.
+	(main): Likewise.
+
+	* rainbow-stats.pl (prune_from_classname): New global variable.  A
+ 	regular expression to be removed from the end of classnames before
+ 	gathering stats on them.  This allows us to gather stats on
+ 	performance in the middle of class hierarchies.
+	(read_trial): Use it.
+
+	* int4str.c (bow_int4str_new_from_text_file): Return MAP instead
+ 	of NULL!
+
+	* barrel.c (bow_barrel_prune_words_not_in_map): Define MAX_WI and
+ 	use it, so we don't ask for word indices larger than
+ 	bow_num_words().
+	(bow_barrel_print_word_count): Also print word probability according
+	to counts.
+
+	* rainbow-h.c (main) [printing_word_counts]: Print word that is
+ 	being counted.
+
+Wed May 21 15:01:51 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* barrel.c (bow_barrel_prune_words_not_in_map): Remove the words
+ 	instead of hiding them, so that future
+ 	bow_keep_top_words_by_infogain() calls won't unhide them.
+
+	This version got 46% on hier/yahoo-science (dataset with a 10
+	document-per-class threshold).
+
+	* rainbow-h.c (rainbowh_options): Added --use-vocab-in-file
+ 	command-line option.
+	(rainbowh_arg_state): Added PARENT and CI_IN_PARENT.  Added HIER_LEAF.
+	Removed printing of leaf- and intermediate-results.
+	(hier_barrel_prob_wi_in_ci): New function.
+	(check_prob_wi_in_ci): New function.
+	(_hier_barrel_local_score): New function.
+	(_hier_barrel_set_node_scores): Use it.
+	(hier_barrel_print_infogain): Print FULL_NAME with interspersed
+	spaces, so it won't get lexed by bow_int4str_new_from_text_file().
+	(main): Change defaults.  Before populate_by_scoring=1 and
+	hier_structure=hier_niece.  Populate branches first thing, and
+ 	check prob_wi_ci consistency.
+
+	* naivebayes.c (bow_naivebayes_score_loo): Comment change.
+
+	* int4str.c (bow_int4str_new_from_text_file): New function.
+
+	* bow/libbow.h: Declare new functions.
+
+Tue May 20 16:02:24 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* barrel.c (bow_barrel_prune_words_not_in_map): New function.
+
+Mon May 19 09:52:09 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-stats.pl (confusion): Calculate longest classname and
+ 	use it to fix indentation.
+
+	* wi2dvf.c (bow_wi2dvf_add_di_wv): Set SEEK_START to special flag
+ 	2.
+	(bow_wi2dvf_add_wi_di_count_weight): Likewise.
+	(bow_wi2dvf_hide_wi): Decrement WI2DVF->NUM_WORDS in the right place.
+	(bow_wi2dvf_unhide_all_wi): Increment WI2DVF->NUM_WORDS.
+	(bow_wi2dvf_write): Unhide all words first.
+	(bow_wi2dvf_dv): Change assertion to deal with special flag 2.
+
+	* rainbow.c (main): Pass new argument to
+ 	bow_infogain_per_wi_print().
+
+	* rainbow-h.c: Misc changes.  Print infogain during run.
+	(hier_barrel_set_local_class_model): Add IS_ROOT argument.  Unhide
+	vocabulary after pruning by infogain, so lower levels get all
+ 	words.
+
+	* naivebayes.c (M_EST_M): New macro.
+	(M_EST_P): New macro.
+	(bow_naivebayes_score_loo): Use them to implement M-estimates, instead
+	of old Laplace smoothing.
+
+	* info_gain.c (bow_infogain_per_wi_print): Add FP argument.
+	* bow/libbow.h: Add argument to infogain function.
+
+	* barrel.c: Fix the math for assigning CDOC->PRIOR, and add
+ 	assertion checks.
+
+Fri May 16 10:19:19 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	This was state of code on Thursday night.
+
+	* rainbow-h.c: Add options for changing population scheme and tree
+ 	structure.  Add ability to output intermediate and leaf results.
+
+	* naivebayes.c (WORD_PRIOR_COUNT): New macro.  Current value 1.0.
+	(bow_naivebayes_score_loo): Use it.
+
+Thu May 15 16:22:27 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (rainbow_test): Assert that the ACTUAL_NUM_HITS
+ 	returned by bow_barrel_score() is the same as the
+ 	NUM_HITS_TO_RETRIEVE requested.
+
+	* split.c (bow_test_split): Use rand() properly so that the number
+ 	of test documents in each class are not so biased.  Add special
+ 	code that *ensures* that the test documents are evenly distributed
+ 	across classes.
+
+	* rainbow.c (rainbow_print_weight_vector): Don't use
+ 	CDOC->NORMALIZER if the method is "naivebayes", because NaiveBayes
+ 	doesn't use it.  Previously the printed values were bogus.
+
+Wed May 14 11:02:44 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c: -q RAINBOWH_QUERYING now seems to work.
+
+	* naivebayes.c (bow_naivebayes_score_loo): Add assertion that
+ 	CDOC->PRIOR is greater than zero.  This restriction should be
+ 	relaxed!
+
+	* array.c (bow_array_free): Decrement length after testing for
+ 	non-zero-ness, not before.  Without this change, empty arrays
+ 	would call free() on un-malloc'ed() memory.
+
+Tue May 13 18:16:31 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c: Add code for doing selective population of lower
+ 	branches.  This population seems to be working.  Querying/scoring
+ 	does not yet work.
+
+	* wi2dvf.c (bow_wi2dvf_hide_wi): Change assertion to "if" so that
+ 	we won't crash if we try to hide words that are already hidden.
+
+	* split.c (bow_tmp_word_struct2): New type.
+	(bow_model_next_wv): New function.
+	(bow_nontest_next_wv): New function.
+
+	* rainbow.c (rainbow_options): Fix documentation for test-files.
+	(rainbow_test): Choose vocabulary by info gain *after* the test/train
+	split.  Add temporary code to test bow_naivebayes_score_loo().
+  	Remove this later!
+
+	* naivebayes.c (bow_naivebayes_score_loo): New function, copy of
+ 	bow_naivebayes_score_loo, with extra code to do leave-one-out
+ 	testing if argument LOO is non-negative.
+	(bow_naivebayes_score): Call above function with -1 for LOO.
+	(bow_method_naivebayes): Change NORMALIZE_WEIGHTS from
+	bow_barrel_normalize_weights_by_summing() to NULL.  The
+ 	normalizing function was not taking account of the Laplace
+ 	smoothing numbers, and was giving incorrect weights.
+	(bow_method_crossentropy): Likewise.
+
+	* istext.c (bow_fp_is_text): Increase NUM_LINE_LENGTHS to
+ 	NUM_TEST_CHARS to avoid potential crash.
+
+	* docnames.c (bow_map_filenames_from_dir): For directory names and
+ 	filenames, make it use names of soft links, not the directories
+ 	that the links point to.
+
+	* barrel.c (bow_barrel_add_document): New function.
+	* bow/libbow.h: Declare new function.
+
+	* docnames.c (bow_map_filenames_from_dir): Change commented-out
+ 	code so that, if uncommented, this function will work if you pass
+ 	it a filename instead of a directory name.
+
+Tue May  6 15:30:30 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* Makefile.local (rainbow-h): Make it depend on libbow.a.
+
+	* rainbow-h.c: May 5 changes from Andrew Ng.
+	(rainbowh_unarchive): Switch order of unarchiving for vocabulary
+	and hier_barrel.
+	(hier_barrel_new_from_file): Use bow_barrel_new_from_data_file()
+	instead of bow_barrel_new_from_fp(), so we close FILE*'s instead
+	of keeping them open.  Otherwise we run out of UNIX's available
+	open file descriptor's.
+
+	* wi2dvf.c (FREE_WHEN_HIDING_WI): New macro.
+	(bow_wi2dvf_hide_wi): Heed it.
+	(bow_wi2dvf_dv): Don't check to make sure that WI is less than
+	bow_num_words().  Check SEEK_START before returning a non-NULL DV,
+ 	because if SEEK_START is less than -1, the DV should be considered
+ 	`hidden'.
+
+	* opts.c (bow_exclude_filename): New global variable.
+	(bow_options): New option "exclude-filename".
+	(parse_bow_opt): Handle it.
+
+	* docnames.c (bow_map_filenames_from_dir): Make sure
+ 	BOW_EXCLUDE_FILENAME is non-NULL before passing it to strcmp().
+
+	* bow/libbow.h (bow_exclude_filename): Declare new global
+ 	variable.
+
+	* barrel.c (bow_barrel_set_cdoc_priors_to_class_uniform): Use
+ 	bow_malloc() instead of alloca(), so that bow_realloc() will work.
+  	free() it at the end.
+	(bow_barrel_new_from_data_file): New function.
+
+Mon May  5 21:08:34 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c: Changes by Andrew Ng, before Andrew McCallum's
+ 	changes to close barrel FP's.
+
+Fri May  2 09:53:12 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c: Additions by Andrew Ng to implement cousin scheme.
+
+Wed Apr 30 10:48:30 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* Makefile.in: Include Makefile.local, avoiding error if it isn't
+ 	present.
+
+	* barrel.c (bow_barrel_keep_top_words_by_infogain): Unhide and
+ 	hide the DVF's instead of removing them, so that we can call this
+ 	function mulitple times with increasing NUM_WORDS_TO_KEEP.
+
+	* wi2dvf.c (bow_wi2dvf_hide_wi): New function.
+	(bow_wi2dvf_unhide_all_wi): New function.
+	(bow_wi2dvf_dv): Handle new negative values of SEEK_START set by
+	BOW_WI2DVF_HIDE_WI().
+	* bow/libbow.h: Declare new functions.
+	(bow_doc_type): Add ignored_model, for rainbow-h.c.
+
+Thu Apr 24 09:03:10 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* vpc.c (bow_barrel_set_vpc_priors_by_counting): Fix crash that
+ 	occurs if limited vocabulary causes all files in a class to be
+ 	empty.
+
+	* stoplist.c (bow_stoplist_add_word): New function.
+
+	* rainbow-stats.pl (confusion): Print percentage correct for each
+ 	category.
+
+	* istext.c (bow_fp_is_text): Also return 0 for files that have
+ 	more than 30% of their lines of the same length.  This way we
+ 	avoid files containing uuencoded blocks.
+
+	* bow/libbow.h: Declare new function.
+
+Tue Apr 22 11:19:03 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* deflexer.c (bow_default_lexer): Add cast to initialization to
+ 	avoid warning.
+
+	Add a uniform, global way of keeping track of binary file format
+	versions.
+	* io.c (bow_file_format_version): New global variable.
+	(bow_write_format_version_to_file): New function.
+	(bow_read_format_version_from_file): New function.
+	* bow/libbow.h (bow_file_format_version): Declare new global
+ 	variable.
+	(BOW_DEFAULT_FILE_FORMAT_VERSION): New macro.
+	(bow_write_format_version_to_file): New function declaration.
+	(bow_read_format_version_from_file): New function declaration.
+	* rainbow.c (FORMAT_VERSION_FILENAME): New macro.
+	(rainbow_archive): Write format version to disk.
+	(rainbow_unarchive): Read it from disk if the file exists, otherwise
+	set it to 3, which is the format version number of data before
+ 	BOW_FILE_FORMAT_VERSION was added to the library.
+
+	* rainbow.c (rainbow_options): New option "print-word-counts",
+ 	alias for "print-counts-for-words".  Hide the later option from
+ 	the --help text.
+
+	* rainbow-stats.pl (confusion): Print confusion matrix in a more
+ 	readable format.
+
+	Add new command-line option to rainbow for using only 0 or 1 word
+	counts. 
+	* opts.c (bow_binary_word_counts): New global variable.
+	(bow_options): New option "binary-word-counts".
+	(parse_bow_opt): Handle it.
+	* bow/libbow.h: Declare new global variable.
+	* dv.c (bow_dv_add_di_count_weight): When BOW_BINARY_WORD_COUNTS
+ 	is true, insist on keeping DV's entry count below 2, i.e. 0 or 1.
+	
+Fri Apr 18 16:09:06 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* configure.in: Add -Wno-implicit to default CFLAGS.
+
+	* rainbow.c (rainbow_lisp_query): Return if QUERY_WV is emtpy.
+  	(Previously would have crashed.)
+
+	* tfidf.c (TFIDF_METHOD): Fix typo that defined
+ 	_register_method_tfidf_.. functions without the last underscore.
+	(Reported by Kamal Nigam.)
+	
+	* split.c (bow_test_split): When selecting documents for test set,
+ 	and randomly pick a document that was already in the test set,
+ 	don't just scan sequentially for the next non-test document, pick
+ 	a new random number.  This will avoid long contiguous stretches of
+ 	test documents.
+
+	* naivebayes.c (bow_naivebayes_score): Move the handling of
+ 	SCORE_WITH_LOG_PROBABILITIES.
+
+	* barrel.c (bow_barrel_set_cdoc_priors_to_class_uniform): Assert
+ 	that CDOC->PRIOR must be greater or equal, not just greater.
+
+Thu Apr 10 14:54:08 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c: Fix the `compile-command'.
+	(PRINT_TREE_SCORES): New macro.
+	(hier_set_method): New function.
+	(main): Call it if BOW_ARGP_METHOD is non-NULL.
+
+	* deflexer.c (bow_default_lexer): Initialize it to -1, so that
+ 	deflexer.o will get linked in under SunOS.  Ug.  See comment.
+
+	* bow/libbow.h (bow_methods): Declare extern!
+
+Wed Apr  9 11:14:13 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* lex-html.c (bow_lexer_html_get_raw_word): Return last word in
+ 	document, even if it is not followed by a non-word character!
+	* lex-simple.c (bow_lexer_simple_get_raw_word): Likewise.
+
+	* rainbow.c (rainbow_lisp_setup): Call all
+ 	__attribute__((constructor)) functions here since this will be
+ 	dynamically loaded and the contructor functions won't be called
+ 	then.
+	* opts.c (parse_bow_opt): Remove call to
+ 	_bow_default_lexer_init(); moved to rainbow.c.
+
+	Fix a bug whereby --skip-html was a no-op.
+	* deflexer.c (bow_default_lexer_simple,
+ 	bow_default_lexer_indirect, bow_default_lexer_gram,
+ 	bow_default_lexer_html, bow_default_lexer_email): Change global
+ 	variable from struct's to pointers to structs.
+	(_bow_default_lexer_simple, _bow_default_lexer_gram,
+	_bow_default_lexer_html, _bow_default_lexer_email): New static
+ 	variables.
+	(_bow_default_lexer_init): Set BOW_DEFAULT_LEXER_INDIRECT to point
+	inside of BOW_DEFAULT_LEXER_GRAM, which is the BOW_DEFAULT_LEXER.
+	* opts.c: Now use all default lexers as pointers to struct's
+ 	instead of struct's.
+	* bow/libbow.h (bow_default_lexer_simple,
+ 	bow_default_lexer_indirect, bow_default_lexer_gram,
+ 	bow_default_lexer_html, bow_default_lexer_email): Change global
+ 	variable from struct's to pointers to structs.
+
+	* vpc.c (bow_barrel_new_vpc_merge_then_weight): Assert the method
+ 	name.
+
+	* Makefile.in (dist-cmu, bow-$(BOW_VERSION).tar.gz): New targets.
+
+Tue Apr  8 08:00:00 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* Version (BOW_MINOR_VERSION): Version 0.7.
+	* bow/libbow.h (BOW_MINOR_VERSION): Likewise.
+	* rainbow.c (RAINBOW_MINOR_VERSION): Version 0.2.
+	* arrow.c (ARROW_MINOR_VERSION): Version 0.2.
+	* NEWS: Update for new version of library and rainbow.
+	* readme.texi: Likewise.
+	* Makefile.in (DIST_FILES): Add NEWS.
+
+	* Makefile.in (dist): Fix invocation of `tr' for cvs rtag.
+
+	* split.c (bow_test_next_wv): Initialize CURRENT_DI to avoid
+ 	warning.
+	* split.c (bow_test_split): Initialize DOC to avoid warning.
+	* int4word.c (bow_words_keep_top_by_infogain): Initialize
+ 	MAX_IG_WI to avoid warning.
+
+	* dv.c (bow_dv_add_di_count_weight): Only give "overflowed short"
+ 	message at BOW_VERBOSE level, not BOW_PROGRESS level.
+
+	* crossbow.c (main): Initialize NORMALIZER to zero.
+
+	* Makefile.in (dist): Create ./bow directory.  Fix invocation of
+ 	argp.
+	(snapshot): Likewise.
+
+	* configure.in: Add -O to the default CFLAGS.
+
+	* rainbow.c (rainbow_options): Improve some option help text.
+	(rainbow_parse_opt) [INFOGAIN_PAIR_VECTOR_KEY]: Handle it.
+	* opts.c (bow_options): Improve some option help text.
+
+	* Makefile.in (version.texi): Define BOWVERSION instead of
+ 	BOW_VERSION, so makeinfo can get the value.
+	(%.dvi, %.info): Fix typo.
+	* libbow.texi: Fix typos and begin preliminary documentation.
+
+	* rainbow.c (rainbow_options): New option "repeat"/'r'.
+	(rainbow_parse_opt): Handle it.
+	(rainbow_arg_state): New member REPEAT_QUERY.
+	(rainbow_query): Attend to REPEAT_QUERY.
+
+	* naivebayes.c (bow_naivebayes_set_weights): Fix assertion so it
+ 	works for both naivebayes and crossentropy.
+
+Mon Apr  7 11:00:06 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* sarray.c (bow_sarray_entry_at_keystr): If there is no index for
+ 	that KEYSTR, print an error message.  This way if user mistypes a
+ 	method name to rainbow's -m option, they get a message that makes
+ 	some sense.
+
+	* opts.c (_help_filter): New function to add the names of the
+ 	available methods to the help text.
+	(bow_argp): Put it in.
+
+	Use strings to identify methods instead of integers.  Separate
+	method declarations instead separate .h files.
+	* bow/tfidf.h, bow/naivebayes.h, bow/prind.h: New files.
+	* Makefile.in (LIBBOW_H_FILES): Add files bow/naivebayes.h,
+ 	bow/tfidf.h, bow/prind.h.
+	* naivebayes.c (bow_method_naivebayes, bow_method_crossentropy):
+ 	Use string method identifier instead of integer.
+	* prind.c (bow_method_prind): Likewise.
+	* tfidf.c (TFIDF_METHOD): Likewise.
+	* rainbow.c (rainbow_parse_opt) [G]: Step through methods
+ 	according to new BOW_METHODS bow_sarray, instead of old static
+ 	array.
+	* methods.c (bow_methods): Static array removed.
+	(bow_methods): Renamed from _bow_str4method, and made non-static.
+	* barrel.c (bow_method_id, _old_bow_methods): Put copies of what
+ 	used to be in libbow.h here, so we can unarchive old-format
+ 	barrel's.
+	(BOW_DEFAULT_BARREL_VERSION): Changed from 2 to 3.
+	(bow_barrel_new_from_data_fp): If VERSION_TAG is less than 3, read the
+	method id integer and use _OLD_BOW_METHOD, otherwise, read a
+ 	string and use new BOW_METHOD_AT_NAME().
+	(bow_barrel_write): Write the method as a string instead of as an
+	integer.
+
+	* Makefile.in (ALL_CPPFLAGS): -I$(srcdir) instead of
+ 	-I$(srcdir)/bow.
+	* All files: Include <bow/libbow.h> instead of "libbow.h".
+
+	* bow/libbow.h: Include <bow/tfidf.h>, <bow/naivebayes.h>,
+	<bow/prind.h>.
+	(bow_method_register_with_name,	bow_method_at_name): Declare functions.
+	(bow_method_id): Typedef removed.
+	(bow_str_to_method_id): Macro removed.
+	(bow_methods): Global variable removed.
+	(bow_method_tfidf_words, bow_method_tfidf_log_words,
+	bow_method_tfidf_log_occur, bow_params_tfidf): Removed.
+	(bow_method_prind, bow_params_prind): Removed.
+	(bow_method_naivebayes, bow_params_naivebayes): Removed.
+
+	* methods.c (bow_method_at_name): Comment function.
+	(bow_method_register_with_name): Likewise.
+
+	* opts.c (parse_bow_opt) [m]: Use bow_method_at_name().
+
+	* naivebayes.c: Use bow_method_register_with_name().  Add new
+ 	method "crossentropy".
+	(bow_naivebayes_score): Pay attention to SCORE_WITH_LOG_PROBABILITIES
+	when setting class priors.  When it is true, use inverse of
+ 	cross-entropy instead of negative!
+
+	* prind.c: Use bow_method_register_with_name().
+
+	* tfidf.c: Use bow_method_register_with_name().
+
+	* rainbow.c (main): Strip any trailing `/'s from classnames, so
+ 	FILENAME_TO_CLASSNAME() will find the classnames.  (Reported by
+ 	Jason Rennie <jr6b@syrinx.res.cmu.edu>.)
+
+	* rainbow-h.c (PRINT_COUNTS_FOR_WORD_KEY): New macro.
+	(rainbowh_options): New option "print-counts-for-words".
+	(rainbowh_parse_opt): Handle it.
+	(struct rainbowh_arg_state): New member PRINTING_WORD.
+	(hier_barrel_print_word_counts): New function.
+	(main): Handle new option.  Do the right think for `-O' if 
+	BOW_PRUNE_VOCAB_BY_OCCUR_COUNT_N.
+
+	* info_gain.c (LEAVE_OUT_LAST_CLASS): Macro defined once at top.
+  	Changed from 0 to 1.
+
+	* install.texi: Explain the results of --prefix.  Remove old
+ 	references to Objective C installation.
+
+Thu Apr  3 12:50:23 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (rainbow_test_files): Use macros for setting QUERY_WV
+ 	weights, so we can handle case in which the wv normalizer is NULL!
+	(main): Replace code for implementing word-count-printing with
+	call to new function.
+
+	* barrel.c (bow_barrel_set_cdoc_priors_to_class_uniform):
+ 	Initialize ci2dc entries to zero!
+	(bow_barrel_print_word_count): New function.
+
+	* opts.c (bow_options): Add new option
+ 	"naivebayes-score-with-log-probs".
+	(parse_bow_opt): Handle it.
+	* naivebayes.c (bow_naivebayes_score): Begin adding code to
+ 	support SCORE_WITH_LOG_PROBABILITIES parameter; not yet finished.
+	(bow_naivebayes_params): Add initializer for
+	SCORE_WITH_LOG_PROBABILITIES, initialize it BOW_NO.
+
+	* bow/libbow.h: Declare new function.
+	(bow_params_naivebayes): New entry SCORE_WITH_LOG_PROBABILITIES.
+
+Wed Apr  2 10:07:30 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* configure.in: Add a check to see if __attribute__((constructor))
+ 	works.  If it does not, define CONSTRUCTOR_FAILS.
+
+	* rainbow.c (rainbow_lisp_setup): Fix typo.
+
+	* Makefile.in ($(PERL_RUNNABLE_FILES)): Use % in pattern and $< in
+ 	rule so that we get the .pl file from the $(srcdir).
+
+	* rainbow-h.c (rainbowh_options): New option
+ 	"print-infogain-vector", 'I'.
+	(struct rainbowh_arg_state): Add state for it.
+	(rainbowh_parse_opt): Handle it.
+	(hier_barrel_write_to_file): Close the FP after writing a barrel.
+	(hier_barrel_set_vpc_with_weights): Construct and pass a CLASSNAMES
+	array.
+	(hier_barrel_set_cdoc_priors_to_class_uniform): New function.
+	(_hier_barrel_set_node_scores): Print a little header/separator if
+	BOW_PRINT_WORD_SCORES.
+	(hier_barrel_test): Initialize the QUERY_WV to NULL, so
+	BOW_TEST_NEXT_WV doesn't try to free unallocated memory.
+	(hier_barrel_print_infogain): New function.
+	(rainbowh_archive): New function.
+	(rainbowh_unarchive): New function.
+	(main): Use above two functions.  Deal with printing infogain.
+
+	* rainbow.c: Re-written for using libargp.  This should make it
+	work with the WebKB lisp crawler again.
+
+	* prind.c (bow_prind_score): Make sure CDOC->FILENAME is non-NULL
+ 	before trying to print it when BOW_PRINT_WORD_SCORES is true.
+
+	* opts.c (parse_bow_opt) [ARGP_KEY_INIT]: Call
+ 	_bow_default_lexer_init().
+
+	* deflexer.c (_bow_default_lexer_init): Don't make it static.  Use
+ 	static local variable to make sure we don't run through it twice.
+  	This is because we will call is explicitly in
+ 	opts.c:parse_bow_opt(), because __attribute__ ((constructor))
+ 	doesn't seem to work on SunOS.
+
+	* Makefile.in (PERL_FILES): Added rainbow-ac.pl and rainbow-pr.pl.
+	* (rainbow-ac.pl, rainbow-pr.pl): New files from
+	Dayne Freitag <dayne@cs.cmu.edu>.
+
+Tue Apr  1 10:11:03 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c (rainbowh_parse_opt): Implement option 'M' for
+ 	use_maximum_likelihood_path.
+	(hier_default_method): Renamed from METHOD; all uses changed.
+	(hier_barrel): New member NUM_NON_REST_CDOCS, to keep track of
+	DOC_BARREL->CDOCS->LENGTH *before* the `rest' documents start
+ 	getting added, so that we can implement
+ 	HIER_PARENT_DI_TO_CHILD_INDEX_AND_DI properly.
+	(hier_barrel_new): Initialize it to -1.
+	(hier_barrel_add_child): Set it.
+	(hier_barrel_new_from_text_dir_leaf): Set it.
+	(hier_barrel_write_to_file): Write it.
+	(hier_barrel_new_from_file): Read it.
+	(hier_parent_di_to_child_index_and_di): Use it.
+	(hier_barrel_print): Print it instead of DOC_BARREL->CDOCS->LENGTH.
+	(hier_barrel_add_stats): New function split out from
+	HIER_BARREL_ADD_CHILD.
+	(hier_barrel_add_child): Use it.
+	(hier_barrel_add_rest): New function.
+	(hier_barrel_new_from_text_dir): Call it to add `rest' documents.
+	(hier_barrel_test): Allocate space for 3 as many SCORES, to make room
+	for the `rest' classes.
+	(main): Set HIER_DEFAULT_METHOD from BOW_ARGP_METHOD, if non-NULL.
+
+	* scale.c (bow_barrel_scale_weights_by_given_infogain): Only
+ 	verbosify every 100 words.
+	(bow_barrel_scale_weights_by_given_foilgain): Likewise.
+
+	* vpc.c (bow_barrel_set_vpc_priors_by_counting): Fix indentation.
+
+	* rainbow-h.c: Converted to do command-line argument processing
+ 	with libargp.
+
+	* opts.c (bow_options): Remove "version" 'V' option.  libargp can
+ 	handle that automatically.
+	(_print_version): New function to print both program version and
+	library version.
+	(argp_program_version_hook): Set it to _PRINT_VERSION().
+
+	* rainbow.c (rainbow_print_usage): Function removed.  Libargp does
+ 	that now.
+
+Mon Mar 31 11:07:30 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* barrel.c (bow_barrel_set_cdoc_priors_to_class_uniform): Use
+ 	ALLOCA() instead of BOW_MALLOC() to avoid memory leak.
+
+	* Makefile.in (configure, config.status): Sprinkle with $(srcdir).
+
+	* configure.in: Move the setting of CFLAGS above AC_PROC_CC, so
+ 	that it will have an effect.
+
+	* install.texi: Mention how to set CPPFLAGS in the ./configure
+ 	line.
+
+	* vpc.c (bow_barrel_set_vpc_priors_by_counting): Properly set the
+ 	CDOC->PRIOR's.
+
+	* rainbow.c (INFOGAIN_PAIR_VECTOR_KEY): New macro.
+	(rainbow_options): New option "infogain-pair-vector".
+	(rainbow_parse_opt): Handle it.
+	(main): Likewise.  When RAINBOW_WORD_COUNT_PRINTING, also print the
+	total number of words in each class.
+
+	* prind.c (bow_prind_set_weights): Get MAX_WI from MIN of
+ 	WI2DVF->SIZE and BOW_NUM_WORDS(), not just BOW_NUM_WORDS().
+
+	* opts.c (bow_uniform_class_priors): New global variable.
+	(bow_options): New option "uniform-class-priors".
+	(parse_bow_opt): Handle it.
+
+	* naivebayes.c (bow_naivebayes_set_weights): Get MAX_WI from MIN
+ 	of WI2DVF->SIZE and BOW_NUM_WORDS(), not just BOW_NUM_WORDS().
+	(bow_naivebayes_score): Pay attention to BOW_UNIFORM_CLASS_PRIORS.
+	Don't sum in score of words that don't have a DV entry!
+  	Previously we were allowing words that `aren't in the vocabulary'
+ 	of the BARREL to contribute!  This was wrong.  They were
+ 	contributing according to the Laplace Estimators, and classes with
+ 	larger numbers of words were getting penalized.
+
+	* info_gain.c (bow_infogain_per_wi_new): Sum floating point
+ 	CDOC->PRIOR's instead of increment integer count of documents, so
+ 	that infogain can be calculated from documents with different
+ 	`weights'.
+	(bow_infogain_per_wi_new_using_pairs): New function.  For now it
+	prints its results instead of returning them.
+
+	* barrel.c (bow_barrel_set_cdoc_priors_to_class_uniform): New
+ 	function.
+
+	* bow/libbow.h: Declare new functions.
+
+Mon Mar 31 11:56:48 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* Makefile.in (CFLAGS, CPPFLAGS): Get values from configure.
+	* configure.in: Do AC_SUBST() for CPPFLAGS and CFLAGS.
+
+Fri Mar 28 10:28:26 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c: Fix spelling: "heir" -> "hier".  How embarrassing!
+
+	* dv.c (bow_dv_new_from_data_fp): Fix typo in feof() assertion.
+  	(Reported by Doreen Cheng <dcheng@PRPA.Philips.COM>.)
+
+	* rainbow.c (PRINT_COUNTS_FOR_WORD_KEY): New macro.
+	(rainbow_options): New option "print-counts-for-word".
+	(rainbow_parse_opt): Handle it.
+	(main): Implement it.
+
+	* bow/libbow.h: (bow_wi2dvf): Add new element to structure:
+	`num_words'.
+	(bow_barrel): Put `is_vpc' at end of structure instead of the
+	beginning. 
+
+	* wi2dvf.c (bow_wi2dvf_new): Initialize NUM_WORDS.
+	(bow_wi2dvf_add_di_wv): Increment it.
+	(bow_wi2dvf_add_wi_di_count_weight): Likewise.
+	(bow_wi2dvf_new_from_data_fp): Likewise.
+	(bow_wi2dvf_remove_wi): Decrement it.
+	(bow_wi2dvf_print_stats): Print it.
+
+	* prind.c (bow_prind_set_weights): Use BARREL->WI2DVF->SIZE and
+ 	BARREL->WI2DVF->NUM_WORDS instead of BOW_NUM_WORDS().  In
+ 	particular, this will allow us to set the Laplace estimators using
+ 	the correct number of words in the barrel, not the arbitrary
+ 	libbow-wide vocabulary size.  Properly use CDOC->WORD_COUNT
+ 	instead of overloading CDOC->NORMALIZER.
+	(bow_prind_score): Likewise use BARREL->WI2DVF->SIZE and
+	BARREL->WI2DVF->NUM_WORDS instead of BOW_NUM_WORDS().
+	(bow_print_word_scores): Removed to opts.c.
+
+	* opts.c (bow_print_word_scores): Global variable moved here from
+ 	prind.c.
+	(bow_options): New option "print-word-scores".
+	(parse_bow_opt): Handle it.
+
+	* naivebayes.c (bow_naivebayes_set_weights): Use
+ 	BARREL->WI2DVF->SIZE and BARREL->WI2DVF->NUM_WORDS instead of
+ 	BOW_NUM_WORDS().  In particular, this will allow us to set the
+ 	Laplace estimators using the correct number of words in the
+ 	barrel, not the arbitrary libbow-wide vocabulary size.
+	(bow_naivebayes_score): Likewise, and add code to print scores
+	contributions of each word with BOW_PRINT_WORD_SCORES is non-NULL.
+	(SCORE_WITH_LOG_PROBABILITIES): New macro.
+
+	* barrel.c (bow_barrel_printf): Comment out the code that would
+ 	skip over documents that are not of type `model'.
+
+Thu Mar 27 11:29:34 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-stats.pl: Make output labels more descriptive.  Say
+ 	`average percentage accuracy'.
+
+	* split.c (bow_test_split): Use the micro-seconds field from
+ 	gettimeofday() instead of time() to set the random number
+ 	generator seed.  Otherwise, if we re-call this function too
+ 	quickly we'll get exactly the same seed!  ...because time()
+ 	returns a number of seconds.
+
+	* demos/script: New shell script file that will demo rainbow,
+	with running commentary.
+	* demos/data: New directory containing 20 articles 2 newsgroups.
+	This is for use with demos/script.
+
+	* install.texi: Remove mention of `checks' and `examples'
+ 	directory; they don't exist.  (Reported by Doreen Cheng
+	<dcheng@PRPA.Philips.COM>.)
+
+Mon Mar 24 12:07:53 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* Makefile.in (rainbow-lisp.o): Use $(ALL_CPPFLAGS) and
+ 	$(ALL_CLFAGS) instead of non-ALL versions.
+
+	* rainbow.c (rainbow_lisp_setup): Rewrite for use with libargp.
+
+	* methods.c (bow_method_at_name): Fix typo.
+	(bow_method_at_index): Likewise.
+
+	* opts.c (parse_bow_opt): Use 'g' instead of 'N' for setting gram
+ 	size.
+
+	* rainbow.c (rainbow_lisp_query): Free the QUERY_WV before
+ 	returning!
+
+	* methods.c (bow_method_register_with_name): New function.
+	(bow_method_at_name): New function.
+
+	* arrow.c (PRINT_IDF_KEY): New macro.
+	(arrow_options): Add new option "print-idf".
+	(struct arrow_arg_state): New enum ARROW_PRINTING_IDF.
+	(arrow_index): Prune the vocabulary if
+	BOW_PRUNE_VOCAB_BY_OCCUR_COUNT_N is non-zero.
+	(main): Add code to print idf values.
+
+	* lex-simple.c (bow_alpha_lexer, bow_alpha_only_lexer,
+ 	bow_white_lexer): Initialize STEM_FUNC to 0 instead of
+ 	BOW_STEM_PORTER.
+
+	* tfidf.c (bow_tfidf_set_weights): Comment out code that sets
+ 	total_word_count.  Do the DF_TRANSFORM on DF, not on IDF!
+  	Otherwise we get negative IDF's.
+
+	* rainbow-h.c (use_maximum_likelihood_path): New global variable.
+	(_heir_barrel_set_node_scores): Use it.
+	(main): Set it when -M passed on command line.
+	(num_top_words): Moved from main-local variable to global.
+	(heir_barrel_test): Reduce vocab by infogain.
+
+Fri Mar 21 14:02:39 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* bow/libbow.h (bow_lexer_simple): Add entry
+ 	TOSS_WORDS_LONGER_THAN.
+	(bow_wv_set_weights_to_count_times_idf): Declare new function.
+
+	* wv.c (bow_wv_set_weights_to_count_times_idf): New function.
+
+	* tfidf.c (bow_tfidf_set_weights): Comment out code saying that
+ 	TFIDF is broken.  Rewrite the way IDF is calculated.
+	(bow_tfidf_score): Set and normalize the QUERY_WV weights here (even
+	though it is redundant) so that we can properly use the IDF from
+ 	the BARREL when normalizing weights.  Normalize the QUERY_WV
+ 	weight when incrementing CURRENT_SCORE.
+
+	* prind.c (bow_prind_set_weights): Skip a document if it does not
+ 	of type model, both when setting NORMALIZER and TOTAL_TERM_COUNT,
+ 	and when setting weights.
+	(bow_prind_score): Skip a document if it does not of type model.
+
+	* lex-simple.c (bow_lexer_simple_postprocess_word): Add code to
+ 	toss words longer than SELF->TOSS_WORDS_LONGER_THAN.  Set WORDLEN
+ 	at beginning.  It appeared that it was getting used uninitialized
+ 	before!
+	(bow_alpha_lexer, bow_alpha_only_lexer, bow_white_lexer): Add value
+	for new field TOSS_WORDS_LONGER_THAN.
+
+	* opts.c (APPEND_STOPLIST_FILE_KEY): New macro.
+	(bow_options): Added "append-stoplist-file"
+	(parse_bow_opt): Handle new option.
+
+	* int4str.c (_str2id): Return the absolute value of the old return
+ 	value.  Sometimes with really long strings, the return value was
+ 	going negative.
+	(_str_hash_lookup): Assert that ID is non-negative.
+
+Thu Mar 20 11:47:49 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	These changes by Karl Kleinpaste <karl@jprc.com>
+	* int4word.c (bow_words_reread_from_file): Use fopen() instead of
+ 	bow_fopen(), so we are sure not to call abort().
+	* wv.c (bow_wv_sprintf): Fix function to account for length
+ 	troubles properly.
+	(bow_wv_sprintf_words): New function, prints the words themselves,
+	rather than the word indices.
+	* bow/libbow.h: Declare new function.
+
+	* naivebayes.c (bow_naivebayes_set_weights): Add commented-out
+ 	code that forces all counts to either 0 or 1.  This was used on
+ 	some experiments with Shumeet.
+
+	* lex-html.c (bow_lexer_html_get_raw_word): Add a ! to the
+ 	FALSE_TO_END condition test, so we don't end the tokenization too
+ 	early.
+
+Tue Mar 18 14:47:35 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (rainbow_parse_opt) [ARGP_KEY_END]: Print a useful
+ 	error when only one classname is given.
+	(main): Check for rainbow_infogain_printing properly.
+
+	* opts.c (parse_bow_opt) [ARGP_KEY_END]: Check for the existance
+ 	of BOW_DATA_DIRNAME in a way that works even when the directory is
+ 	owned by someone else.
+
+	* bow/libbow.h (bow_fread_string): Assert that the string length
+ 	is non-negative.
+
+	* barrel.c (_bow_barrel_version): New variable.
+	(BOW_DEFAULT_BARREL_VERSION): New macro.
+	(bow_barrel_new_from_data_fp): Read the version number instead of a
+	null_tag.
+	(bow_barrel_write): Likewise, for writing.
+
+	* arrow.c (main): Remove redundant code that is now in opts.c.
+
+Mon Mar 17 12:09:32 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* Makefile.in (%.o:%.c): Fix the order on this pattern rule.
+	($(DEMO_EXECUTABLES):%:%.o): Put $(DEMO_EXECUTABLES) at the beginning
+	of this pattern, so it matches only those files.
+
+	* arrow.c: Don't include getopt.h; we're using argp.h instead.
+	(arrow_index): Fix typo.
+
+	* configure.in: Don't look for getopt.h anymore.  We don't need it
+ 	now that we are using libargp.
+
+	* configure.in: AC_INIT looking for int4str.c instead of libbow.h.
+
+	* Makefile.in (%): Use this pattern to make DEMO_EXECUTABLES
+ 	instead of listing them all.  This avoids making all the .o's for
+ 	one of the DEMO_EXECUTABLES.
+
+	* rainbow.c: Converted to use argp command-line argument
+ 	processing.
+
+	* opts.c (bow_argp_method): Renamed from bow_default_method.
+	(parse_bow_opt) [ARGP_KEY_INIT]: Add words to stoplist.
+
+	* deflexer.c (_bow_default_lexer_init): Initialize
+ 	bow_default_lexer to BOW_DEFAULT_LEXER_GRAM, not BOW_LEXER_GRAM!
+
+	* bow/libbow.h (bow_argp_method): Renamed from bow_default_method.
+
+	* arrow.c (arrow_parse_opt) [q]: Set query.filename.
+	(arrow_index): BOW_DEFAULT_METHOD renamed to BOW_ARGP_METHOD.
+
+	* arrow.c (arrow_index): Set the method according to
+ 	BOW_DEFAULT_METHOD.
+
+	* opts.c: Fleshed out into first working version.
+
+	* error.c: Comment fix.  Include libbow.h and stdio.h.
+
+	* deflexer.c (_bow_default_lexer_init): New constructor function.
+	(bow_default_lexer_simple, bow_default_lexer_indirect,
+	bow_default_lexer_gram, bow_default_lexer_html,
+ 	bow_default_lexer_email): New variables, default instantiations of
+ 	lexers.
+
+	* bow/libbow.h: Add argp declarations.
+	(bow_argp_children): New variable.
+	(bow_prune_vocab_by_infogain_n): New variable.
+	(bow_prune_vocab_by_occur_count_n): New variable.
+	(bow_default_method): New variable.
+	(bow_data_dirname): New variable.
+
+	* arrow.c: Convert to using argp for command-line processing.
+
+	* Makefile.in: Change all instances of `libbow.h' to `bow/libbow'.
+	(includedir): Add `/bow' to end.
+	(LIBBOW_C_FILES): Add opts.c.
+	(ALL_CPPFLAGS): add -I$(srcdir)/bow and -I$(srcdir)/argp.
+	(rainbow-lisp.o): Use $< instead of rainbow.c, so VPATH will find it
+	when compiling in a different directory than the source.
+
+	* bow/libbow.h (STRINGIFY): New macro.
+	(bow_default_lexer_simple, bow_default_lexer_indirect,
+	bow_default_lexer_gram, bow_default_lexer_html,
+ 	bow_default_lexer_email): Declare default instantiations of
+ 	lexers.
+
+Fri Mar 14 11:01:14 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* Makefile.in (LIBBOW_C_FILES): Renamed defparser.c to deflexer.c.
+	* deflexer.c: Renamed from defparser.c.
+
+	Add the `argp' subdirectory, and incorporate it into the Makefile.
+	* HACKING: Add argp autoconf instruction.
+	* configure.in: Call AC_CONFIG_SUBDIRS to configure argp also.
+	* Makefile.in (ALL_LIBS): Move it closer to $(DEMO_EXECUTABLES)
+ 	target.  $(DEMO_EXECUTABLES): Make this target depend on
+ 	argp/libargp.a.
+	(install): Call make install in argp directory also.
+	(dist, snapshot): Call make in argp directory to include its files too.
+	
+Wed Mar 12 20:00:27 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* Makefile.in (CPPFLAGS): Don't include $(DEFS) here, it's now in
+ 	ALL_CPPFLAGS.
+
+	* Makefile.in (ALL_CPPFLAGS): New variable.
+	(ALL_CFLAGS): New variable.
+	(.c.o): New pattern rule that uses above new variables.  Now Kamal can
+	safely type `make CPPFLAGS=-DNDEBUG'.
+
+	* rainbow-h.c (_heir_barrel_set_node_scores): Don't threshhold the
+ 	scores to 0/1.
+	(strdup): New function.  Implement this local version to help with
+	debugging.  Consider removing it later.
+
+	* libbow.h (bow_params_prind): Remove variable SCALE_BY_FOILGAIN.
+	It isn't needed since we have a function pointer for it in BOW_METHOD.
+	* prind.c (bow_prind_params): Remove BOW_NO for scaling.
+	* rainbow.c (rainbow_lisp_setup): Remove setting of
+ 	BOW_PRIND_SCALE_BY_INFOGAIN; it now defaults to on.
+	(rainbow_print_usage): Change the sense of -G.  It now turns off
+	foilgain scaling, instead of turning on.  (Actually, it was the
+ 	default before this anyway.)
+	(main): Given -G, zero-out the SCALE_WEIGHTS entries in all the
+	methods. 
+
+Tue Mar 11 11:58:03 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* Version (BOW_MINOR_VERSION): Version 0.6.
+	* libbow.h: Likewise.
+
+	* Makefile.in (DIST_FILES): Add TODO.  Remove p.inc.
+	(p-alpha.o, p-alonly.o, p-white.o): Targets removed.
+
+	* rainbow.c (rainbow_query): Use bow_barrel_ macros instead of
+ 	indexing into the methods structure manually.
+
+	* crossbow.c: Add copyright info.
+
+	* readme.texi: Fill out.
+	* libbow-desc.texi: Add description.
+	* install.texi: Add pointer to the README.  Say that it requires GCC. 
+	* HACKING: Update CVS repository machine name.
+
+	* tfidf.c (bow_tfidf_set_weights): Insert dislaimer explaining
+ 	that TFIDF is broken.
+
+Tue Mar 11 11:31:39 1997  Rahul Sukthankar  <rahuls@syzygy.jprc.com>
+
+	* Makefile.in (DEMO_C_FILE): Added crossbow.c.
+	* crossbow.c: New file.
+
+Mon Mar 10 18:52:03 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* int4str.c (_str2id): Keep return value smaller using modulus.
+	This fixes bug Rosie Jones encountered with negative hash values.
+	(_str_hash_lookup): Assert that H is non-negative.
+
+	* Makefile.in (LIBBOW_C_FILES): Added lex-email.c.
+
+Fri Mar  7 10:54:09 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* int4word.c (bow_words_reread_from_file): Make sure LAST_FILE is
+ 	non-NULL.
+
+Tue, 18 Feb 1997 20:15:42 -0500  Jason Rennie <jr6b@andrew.cmu.edu>
+
+        * lex-email.c: New file.  Created lexer for e-mail/newsgroup messages
+
+	* lex-html.c: Changed code to allow words separated by HTML tags
+ 	to be tokenized as single words.  <FONT SIZE=+2>B</FONT>ig is now
+ 	tokenized as "Big".  Nested brackets are now ignored.  This should
+ 	more closely model the way HTML is interpreted.
+
+	* rainbow.c: Added rainbow_email_lexer as a bow_lexer_indirect.
+  	Added '-M' option to allow user to make use of
+ 	rainbow_email_lexer.  rainbow_email_lexer will remove
+ 	"Newsgroups:" and "Path:" headers from message.
+
+	* libbow.h (bow_email_headers_to_remove): Declare new global variable. 
+	(bow_email_lexer): Likewise.
+
+Tue Mar  4 11:51:53 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* libbow.h (bow_barrel_scale_weights): Don't call underlying
+	function if it's NULL.
+	(bow_barrel_normalize_weights): Likewise.
+	(bow_wv_set_weights): Likewise.
+	(bow_wv_normalize_weights): Likewise.
+	* vpc.c (bow_barrel_new_vpc_merge_then_weight): Use macros for
+ 	weight setting.
+	(bow_barrel_new_vpc_weight_then_merge): Likewise.
+
+	* rainbow-h.c (_heir_barrel_cdoc_write): Write WORD_COUNT.
+	(_heir_barrel_cdoc_read): Read it.
+	(heir_dir_is_leaf): Check the return status from CHDIR(), and print
+	appropriate error message.
+	(heir_barrel_keep_top_words_by_infogain): Return immediately if
+	num_words_to_keep is 0 or the children count is 0.
+	(heir_barrel_set_vpc_with_weights): Return immediately if the children
+	count is 0.
+	(_heir_barrel_set_node_scores): Add temporary #if'ed code to make
+	score either 1 or 0, so winner takes all.
+	(heir_barrel_score_recurse): New argument DEPTH.  All callers changed.
+	(main): Change default NUM_TOP_WORDS from 3000 to 0.  Add new command
+	line argument -m and -N.
+
+	Changes made with Sean Slattery.
+	* naivebayes.c (bow_naivebayes_set_weights): Store class-wide word
+ 	count in CDOC->WORD_COUNT instead of overloading CDOC->NORMALIZER.
+	(bow_naivebayes_score): Use CDOC->WORD_COUNT instead of
+	CDOC_NORMALIZER.  Use it to fix PR_W_C in case where that word
+	doesn't appear in the class.  Instead of (1.0 / MAX_WI) use (1.0 /
+	(MAX_WI + CDOC->WORD_COUNT)).  Don't normalize the weight by
+ 	CDOC->NORMALIZER because it it set to already by normalized
+ 	correctly, including the words that don't appear in the in class.
+	(bow_method_naivebayes): Change the weight normalizing function from
+	BOW_NORMALIZE_WEIGHTS_BY_SUMMING to NULL, because we don't use
+ 	CDOC->NORMALIZER anymore.
+	* libbow.h (bow_cdoc): Add WORD_COUNT.
+	* barrel.c (_bow_barrel_cdoc_write): Write WORD_COUNT.
+	(_bow_barrel_cdoc_read): Read it.
+
+	* vpc.c (bow_barrel_new_vpc): Assert MAX_CI is positive, otherwise
+ 	this means we didn't find any classes.
+
+Wed Feb 26 11:08:50 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* HACKING: Fix sandbox's name.
+
+Wed Feb 19 11:27:55 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* barrel.c (bow_barrel_keep_top_words_by_infogain): Return
+ 	immediately if NUM_WORDS_TO_KEEP is 0.
+
+Tue Feb 18 13:39:34 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* libbow.h (bow_str_to_method_id): Use a temporary variable, to we
+ 	use statements like ARGI++ as an argument.
+
+	* info_gain.c (bow_infogain_per_wi_new): Change assertion to
+ 	handle round-off error.
+
+	* rainbow-h.c: Include <math.h>, <time.h>.
+	(heir_barrel): Add components INDEX_IN_PARENT, NUM_LEAVES, FULL_NAME.
+	(heir_barrel_new): Set them.
+	(heir_dir_is_leaf): Use chdir() so that symlinks are dealt with
+	properly. Free() the results of scandir().
+	(heir_barrel_new_from_text_dir_leaf): Set FULL_NAME and add assertions.
+	(_heir_barrel_new_from_text_dir_recurse): New parameter PARENT_NAME.
+	Move the chdir() to handle symlinks properly.  Don't make a
+ 	SUBDIRNAME.
+	(heir_barrel_new_from_text_dir): New function.
+	(heir_barrel_write_to_file): Write new heir_barrel components.
+	(heir_barrel_new_from_file): Read them.
+	(heir_barrel_free): Free FULL_NAME.
+	(heir_barrel_keep_top_words_by_infogain): New function.
+	(heir_parent_di_to_child_index_and_di): New function.
+	(heir_di_to_classname): New function.
+	(heir_barrel_test_split): New function.
+	(_heir_barrel_set_node_scores): Use bow_barrel_score() instead to
+	bow_get_best_matches().
+	(heir_barrel_print_scores_recurse): Return void not int.  Print all on
+	same line.
+	(heir_barrel_score_recurse): New function.
+	(heir_barrel_score): New function.
+	(heir_barrel_test): New function.
+	(heir_barrel_print_weight_vectors): Change formatting.
+	(set_vocabulary_from_file): New function (unused).
+	(main): Allow user to set DATADIR (-d) and NUM_TOP_WORDS (-T), 
+	test (-t).
+	Compile with -Wall.
+
+Mon Feb 17 10:36:32 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* configure.in: Remove check for <float.h>, all ANSI compilers
+ 	should have it.
+
+	* split.c: Remove SunOS declarations of rand() and srand().
+	(RAND_MAX): Define macro, if not already defined.  These two
+	changes needed to compile on SunOS.
+
+	* naivebayes.c (bow_naivebayes_set_weights): Uncomment assertion
+ 	about METHOD->ID.
+
+	* rainbow.c (rainbow_lisp_setup): Add `-N' to effective arguments.
+	(rainbow_lisp_query): Fix typo in BOW_FOPEN() call.
+
+	* rainbow.c (rainbow_query): Check for QUERY_WV being NULL, and
+ 	output more useful messages in that case.
+
+	* naivebayes.c (bow_naivebayes_score): Rearrange the code for
+ 	stepping through a DV so we always get the CDOC.  This change
+ 	should have no effect on the outcome.
+
+	* lex-simple.c (bow_lexer_simple_open_text_fp): Fix test for
+ 	matching END_PATTERN_PTR.  Don't push the DOCUMENT_END_PATTERN
+ 	back on the input stream after we find it; this is a stylistic
+ 	choice.
+
+	* docnames.c (bow_map_filenames_from_dir): Pass relative instead
+ 	of absolute directory names to recursive calls.  Before I was
+ 	having trouble with symbolic links.  This seems to fix it.
+
+	* int4word.c (bow_words_keep_top_by_infogain): Fix assertions; its
+ 	OK to have infogain equal to 0.
+
+	* prind.c: Comment fixes.
+
+	* foilgain.c (bow_foilgain_per_wi_ci_new): Use malloc() for
+ 	POS_PER_WI_CI and NEG_PER_WI_CI, instead of using stack.  We were
+ 	overflowing the stack before.
+
+Tue Feb 11 12:15:30 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* naivebayes.c (bow_naivebayes_score): When word doesn't appear in
+ 	the class vector, make Pr(w|C) include CDOC->NORMALIZER.
+  	(Suggested by Sean Slattery).
+
+	* naivebayes.c (bow_naivebayes_score): Fix constant in assertion.
+
+	* configure.in: When perl5 isn't found, PERL will be "", not ":".
+  	Deal with it properly.
+
+	* libbow.h: Don't bother with HAVE_FLOAT, just always include
+ 	<float.h>.
+	(bow_get_best_matches): Remove declaration.  The function no longer
+	exists.
+
+	* rainbow.c (rainbow_test): Use macros for accessing method
+ 	functions.
+
+	* split.c: Fix author comment.
+
+	* info_gain.c (bow_infogain_per_wi_new): Use double instead of
+ 	float, because before we were loosing resolution and getting
+ 	negative IG's.
+	(bow_entropy): Likewise.
+
+Mon Feb 10 16:25:04 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* docnames.c (bow_map_filenames_from_dir): Use perror() when can't
+ 	open directory.
+
+Fri Feb  7 11:00:50 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* int4word.c (bow_words_read_from_file): Fix typo.
+
+	* rainbow.c (rainbow_lisp_query): Use bow_barrel_score instead of
+ 	bow_get_best_matches.
+
+	These changes by Tony Brusseau <brusseau@jprc.com>, with
+	modifications by <mccallum@jprc.com>.
+	* wv.c (bow_wv_new_from_text_string): New function.
+	(bow_wv_sprintf): New function.
+	* int4word.c (bow_words_set_map): Add new argument indicating if
+ 	old map should be freed.  All callers changed.
+	(bow_words_reread_from_file): New function.
+	* docnames.c: Include <stdio.h>.
+	(bow_map_filenames_from_dir): Add WindowsNT backslashes to first
+	assertion.
+	* libbow.h: Declare new functions.
+
+Thu Feb  6 18:33:21 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c: Updated for below library changes.
+	* arrow.c: Likewise.
+
+	* libbow.h: Declare many new functions, variables and types,
+ 	including:
+	(bow_boolean): New type.
+	(bow_wv_set_weights_to_count): New function declaration.
+	(bow_wv_normalize_weights_by_vector_length): Likewise.
+	(bow_wv_normalize_weights_by_summing): Likewise.
+	(bow_str_to_method_id): Macro renamed from bow_str2method.
+	(bow_method_id): New enum, replacing bow_method.
+	(bow_method): Now a struct.
+	(bow_barrel_set_weights, bow_barrel_scale_weights,
+	bow_barrel_normalize_weights, bow_new_vpc_with_weights,
+ 	bow_barrel_score, bow_wv_set_weights, bow_wv_normalize_weights):
+ 	New macros.
+	(bow_methods): New global variable declaration.
+	(bow_params_*): New types.
+	(bow_score): Renamed from bow_doc_score.
+
+	* wv.c (bow_wv_set_weights_to_count): New function.
+
+	* weight.c: File removed.
+
+	* vpc.c (bow_barrel_new_vpc_merge_then_weight): New function.
+	(bow_barrel_new_vpc_weight_then_merge): New function.
+	(bow_barrel_set_vpc_priors_by_counting): Renamed from
+	_bow_barrels_set_naivebayes_vpc_priors.
+
+	* tfidf.c: File contents totally replaced to implement TFIDF.
+  	Functions removed from weight.c and other places.
+	(bow_tfidf_set_weights): Function renamed.
+	(bow_tfidf_score): Function renamed from bow_get_best_matches().
+	(bow_tfidf_params_{words,log_words,log_occur}): New variables.
+	(bow_method_tfidf_{words,log_words,log_occur}): New global variables.
+
+	* prind.c (bow_prind_uniform_priors): Global variable removed.
+	(bow_prind_scale_by_infogain): Likewise.
+	(bow_prind_normalize_scores): Likewise.
+	(bow_prind_set_weights): Renamed from _bow_barrel_set_prind_weights.
+	(bow_prind_score): Renamed from _bow_score_prind_from_wv, and updated
+	for library changes.
+	(bow_prind_params): New variable.
+	(bow_method_prind): New global variable.
+
+	* score.c: File removed.
+
+	* naivebayes.c (_bow_barrels_set_naivebayes_vpc_priors): Function
+ 	removed.  Replacement in vpc.c.
+	(bow_naivebayes_set_weights): Minor updates for library changes.
+	(bow_naivebayes_params): New variable.
+	(bow_method_naivebayes): New global variable.
+
+	* info_gain.c (bow_barrel_scale_weights_by_info_gain): Function
+ 	removed.  Replacement is now in scale.c.
+	(bow_barrel_scale_weights_by_foilgain): Likewise.
+	(bow_foilgain_per_wi_ci_new): Likewise.  Replacement now in foilgain.c.
+	(bow_foilgain_free): Likewise.
+
+	* barrel.c (bow_barrel_new): Make the default method naivebayes,
+ 	instead of tfidf_log_occur.
+	(bow_barrel_new_from_data_fp): Get the METHOD pointer from
+	BOW_METHODS.
+	(bow_barrel_write): Write the ID.
+
+	* Makefile.in (CPPFLAGS): Add $(DEFS).
+	(ALL_INCLUDE_FLAGS, ALL_CPPFLAGS, ALL_CFLAGS, ALL_LDFLAGS): Variables
+	removed.
+	(LIBBOW_C_FILES): Added foilgain.c, methods.c, normalize.c, scale.c,
+	tfidf.c.  Removed score.c, weight.c.
+	(DEMO_EXECUTABLES): Don't use ALL_LDFLAGS.
+
+Tue Feb  4 14:21:08 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* split.c (bow_test_split): Properly deal with the fact the rand()
+ 	returns an int between 0 and RAND_MAX, and the previously-use
+ 	drand48() returned a double between 0 and 1.
+
+Mon Feb  3 12:44:18 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	Following changes made by Tony Brusseau for WindowsNT compatibility.
+	* configure.in: Check for <float.h>.
+	* libbow.h: Include float.h if we have it; otherwise include
+ 	values.h and redefine its macros.
+	(htonl, htons, ntohl, ntohs): Temporarily define as identity for
+	WindowsNT.
+	(bow_fwrite_string): Cast sizeof() to int.
+	* split.c: Use rand() and srand() instead of drand48() and
+ 	srand48().
+	* rainbow.c (rainbow_test_files): Make DIRLEN unsigned, to avoid
+ 	warning under WindowsNT.
+	* primes.c: Use unsigned int's instead of int's in several places,
+ 	to avoid warnings under WindowsNT.
+	* dv.c: Don't include <netinet/in.h>.  Use <limits.h>-style
+ 	MAX'es.
+	* naivebayes.c: Use <limits.h>-style MAX'es.
+	* int4word.c: Likewise.
+	* configure.in: Look for the wsock32 library.
+
+	* prind.c (_bow_score_prind_from_wv): Don't die if SCORES_SUM is
+ 	zero; just leave zero scores on all classes.
+
+	* rainbow.c (main): Add `s' to getopt call.
+	(rainbow_index): Add newline to end of "No text files" message.
+
+Fri Jan 31 11:28:54 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* Makefile.in (rainbow-lisp.o): New target.
+
+	* rainbow.c (rainbow_lisp_setup): New function.  (From Kamal.)
+  	Surround this and rainbow_lisp_query by #if RAINBOW_LISP.
+	(main): Surround by #if !RAINBOW_LISP.
+
+	* HACKING: Change the cvsroot in directions for networked
+ 	`pserver' use.
+
+	* libbow.h: If under WinNT, include <winnt.h>, otherwise include
+ 	<values.h>.
+	* bitvec.c (BITSPERBYTE): Surround it with an #ifndef.
+	* prind.c: Don't include <values.h>.
+	* naivebayes.c: Likewise.
+	* int4word.c: Likewise.
+	* dv.c: Likewise.
+	* bitvec.c: Likewise.
+	(BITSPERBYTE): New macro.
+
+Wed Jan 29 10:10:11 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (rainbow_lisp_query): New function.
+
+	* Makefile.in (maintainer-clean): Add config.* files.
+
+	* configure.in: Add quotes around $PERL so test will still work if
+ 	$PERL is empty.
+
+	* rainbow-h.c (_heir_barrel_set_node_scores): Add some temporary
+ 	progress printing.
+	(heir_barrel_print_scores_recurse): Renamed.
+	(heir_barrel_print_scores): New function.
+	(heir_barrel_print_foilgain): New function.
+	(heir_barrel_print_weight_vectors): New function.
+	(main): Add new options for calling new functions.
+
+	* prind.c (_bow_score_prind_from_wv): Add three checks for NaN.
+
+	* int4word.c (bow_words_write_to_file): New function.
+	(bow_words_read_from_file): New function.
+	* libbow.h: Declare new word functions.
+
+	* rainbow-h.c (method): New global variable.
+	(heir_barrel): Added component SCORE.
+	(heir_barrel_new_from_text_dir_leaf): Set doc_barrel method.
+	(heir_barrel_new_from_text_dir): Likewise.
+	(main): Take -i and -q arguments.
+
+	* libbow.h (bow_fwrite_string): Change type of LEN from int to
+ 	short.
+
+	* vpc.c (bow_barrel_new_vpc): Don't abort if CLASSNAMES is NULL.
+
+Tue Jan 28 15:49:46 1997  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow-h.c: New file.
+
+	* barrel.c (bow_barrel_write): Handle case in which BARREL is NULL.
+	(bow_barrel_new_from_data_fp): Likewise.  (xxx Although there is some
+	strangeness with FGETC returning -1, which I am currently
+ 	ignoring.  I should look at this again...)
+
+	* defparser.c (bow_default_lexer): Temporary fix to confusion
+ 	about constant initializers and pointers.
+
+	* Makefile.in: Fix copyright.
+
+	* barrel.c: Fix header comment.
+	(bow_barrel_printf): Print the word as well as the word index.
+
+	* docnames.c (bow_map_filenames_from_dir): Remove commented-out
+ 	code for checking whether the file contains text.
+
+Thu Jan 23 13:47:01 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* barrel.c (bow_barrel_printf): Don't print with paren's, so it
+ 	will be easier to process with AWK.
+
+	* rainbow.c (main): Add new option -B for printing barrel word
+ 	vectors in ASCII.
+	(rainbow_print_usage): Document it.
+
+	* barrel.c (bow_barrel_printf): New function.
+	* libbow.h: Declare new barrel function.
+
+Sat Jan 18 08:14:59 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* rainbow.c (main): Add -N option for turning off normalization of
+ 	PrInd scores by setting BOW_PRIND_NORMALIZE_SCORES.
+	(rainbow_print_usage): Document it.
+
+	* vpc.c (FOILGAIN): New macro, defined to be 1.  Switching back to
+ 	doing foilgain by default.
+
+	* prind.c (bow_prind_normalize_scores): Change to 1.  Now
+ 	normalizing scores by default.
+	* libbow.h: Declare prind normalization global variable.
+
+	* vpc.c (bow_barrel_new_vpc_with_weights): Condition choice of
+ 	weight-scaling on FOILGAIN.  Now default is to do scaling by
+ 	information gain (again).
+
+	* prind.c (bow_prind_normalize_scores): New global variable.
+  	Default: 0, don't normalize.  Note, this is different than what we
+ 	were doing before, and the default should be changed back to 1.
+	(_bow_score_prind_from_wv): Use it.
+
+	* rainbow.c (rainbow_index): Don't exit with error when a class
+ 	directory is empty, just print a message.
+	(rainbow_usage): Fix description of -G to Foil-gain, not info-gain.
+
+	* prind.c:  Improve formating of score printing.
+
+	* rainbow.c (main): New command-line argument `-P' sets
+ 	BOW_PRINT_WORD_SCORES.
+	(rainbow_print_usage): Document it.
+
+	* prind.c (bow_print_word_scores): Define new global variable.
+	(_bow_score_prind_from_wv): Use it to decide when to print
+	per-word/class score information.
+	* libbow.h (bow_print_word_scores): Declare new global variable.
+
+Fri Jan 17 09:39:30 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* rainbow.c (printing_class): Global variable renamed from
+ 	weight_vector_printing_class.
+	(rainbow_print_foilgain): New function.
+	(main): Call it, and add -F option for doing so.
+	(rainbow_print_usage): Document it.
+
+	* vpc.c (bow_barrel_new_vpc_with_weights): Use new foilgain
+ 	function for PrInd, instead of infogain function.
+
+	* info_gain.c (bow_barrel_scale_weights_by_info_gain): Set max_wi!
+  	Previously it was uninitialized.
+	(bow_foilgain_per_wi_ci_new): New function.
+	(bow_foilgain_free): New function.
+	(bow_barrel_scale_weights_by_foilgain): New function.
+	* libbow.h: Declare new foilgain functions.
+
+	* docnames.c (bow_map_filenames_from_dir): Add assertion that
+ 	checks for conditions under which directory-vs-file detection is
+ 	unreliable.  I should figure out why this isn't working as
+ 	expected.
+
+	* prind.c (bow_prind_scale_by_infogain): New global variable.
+	* libbow.h (bow_prind_scale_by_infogain): New declared global
+ 	varible.
+	* rainbow.c (main): Add -G for setting
+ 	bow_prind_scale_by_infogain.
+	* vpc.c (bow_barrel_new_vpc_with_weights): Use
+ 	BOW_PRIND_SCALE_BY_INFOGAIN.
+
+	* rainbow.c (rainbow_query): Only re-build the
+ 	RAINBOW_CLASS_BARREL if -m or -T arguments require its change.
+
+Thu Jan 16 13:35:31 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* vpc.c (bow_barrel_new_vpc_with_weights): For PrInd, scale
+ 	weights by information gain.  (Oooh, this may not be kosher;
+ 	perhaps remove it later.)
+
+	* rainbow.c (rainbow_print_weight_vector): Multiply the weight by
+ 	its normalizer.
+
+	* info_gain.c (bow_barrel_scale_weights_by_info_gain): Leave more
+ 	space for verbosifying progress, because the numbers are big.
+
+	* prind.c (_bow_barrel_set_prind_weights): Remove the information
+ 	gain scaling, i.e. undo previous change.
+
+	* info_gain.c (bow_barrel_scale_weights_by_info_gain): Change the
+ 	arguments so that the information gain array is passed in, not
+ 	calculated inside the function.
+	* libbow.h: Change arguments to weight info gain scaling function.
+
+	* naivebayes.c (_bow_score_naivebayes_from_wv): Scale DV WEIGHT by
+ 	CDOC NORMALIZER!
+
+	* prind.c (_bow_score_prind_from_wv): Scale DV WEIGHT by CDOC
+ 	NORMALIZER!
+
+	* rainbow.c (rainbow_query): If score is less than 1e-35, then
+ 	just print zero.  Do this for the sake of CommonLisp, which can't
+ 	read numbers smaller than 1e-35.
+	(rainbow_test): Likewise.
+	(rainbow_test_files): Likewise.
+
+Wed Jan 15 10:52:13 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* scan.c (bow_scan_fp_for_string): Change the for() to a while()
+ 	to clean up the handling of STRING_PTR incrementation.
+
+	* rainbow.c (method): Fix its handling from last change.
+	(rainbow_print_weight_vector): New function.
+	(main): Call it.
+	(rainbow_print_usage): Add -W.
+
+	* prind.c (_bow_barrel_set_prind_weights): Added comment.
+
+	* lex-simple.c (bow_lexer_simple_get_raw_word): Back up
+ 	DOCUMENT_POSITION to point at terminating character.  Add more
+ 	comments.
+
+	* int4str.c (_str_hash_lookup): Add assertion.
+	(_str_hash_add): Add assertions.
+	(bow_str2int): Increment MAP->STR_ARRAY_LENGTH++ first, then return -1
+	the value, instead of returning the value++.  This makes the
+ 	intermediate calls more clear and safe.
+
+	* barrel.c (bow_barrel_keep_top_words_by_infogain): Improve
+ 	verbosity and reduce number of times printed.
+
+	* lex-simple.c (bow_lexer_simple_open_text_fp): When checking to
+ 	see if we should realloc to increase the DOCUMENT buffer size,
+ 	make sure we leave room for the terminating '\0' that we'll add
+ 	later in the function!  (Wow!  This was a wild bug that's been
+ 	around for a while, but only recently caused occasional crashes.
+  	The crashes were in totally unrelated functions in int4str.c.  The
+ 	GDB `watch' command came to the rescue!)
+
+	* scan.c (bow_scan_fp_for_string): Make it ignore Carriage-Return
+ 	'\r' characters, so we can reliably scan for MIME header
+ 	separators.
+
+	* barrel.c (bow_barrel_keep_top_words_by_infogain): Make it more
+ 	efficient by using qsort().
+
+	* rainbow.c (method): Initialize to -1.
+	(DEFAULT_METHOD): New macro, equal to bow_method_naivebayes.
+	(rainbow_index): Use new macro.
+	(rainbow_query): Cause `-m' to have an effect here.
+	(rainbow_test): Likewise.
+	(rainbow_test_files): Likewise.
+	(rainbow_print_usage): Rearrange flags to reflect new contexts in
+	which -T, -m, and -U are valid.
+	(main): Don't use the length of argv[0] to determine value of
+	BOW_VERBOSITY_USE_BACKSPACE.
+
+Tue Jan 14 09:35:20 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* prind.m: Comment fixes.
+
+	* rainbow.c (test_percentage): Initialize it to 0, not 30.
+	(DEFAULT_TEST_PERCENTAGE): New macro, equal to 30.
+	(rainbow_test): Set TEST_PERCENTAGE to DEFAULT_TEST_PERCENTAGE if its
+	zero.  Set RAINBOW_CLASS_BARREL->METHOD to METHOD so we can give
+ 	the -m option when using -t.
+	(rainbow_test_files): Use TEST_PERCENTAGE and NUM_TEST_DOCS to
+	determine how many training examples to ignore.  Set
+ 	RAINBOW_CLASS_BARREL->METHOD to METHOD so we can give the -m
+ 	option when using -t.
+
+	* dv.c (bow_dv_add_di_count_weight): Add parens around MAXSHORT,
+ 	which seems to be needed on SunOS.
+
+	* dv.c (_bow_dv_index_for_di): Reverse direction of for()-loop
+ 	that scoots document entries up to make room!  (Reported by Kamal
+	Nigam.)
+
+	* wi2dvf.c (bow_wi2dvf_dv): Gracefully handle arithmetic overflow
+ 	of in COUNT.  Print a warning the first time it happens.
+
+	* rainbow.c (rainbow_test_files): Close the FP in the nested
+ 	function TEST_FILE!  Append "/" to the DIR.  Use
+ 	FILENAME_TO_CLASSNAME when setting CURRENT_CLASS.
+	(main): Add 'x' to the getopt call.
+
+	* configure.in: Look for perl5 before looking for perl.
+
+Mon Jan 13 09:51:32 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
+
+	* rainbow.c (rainbow_test_files): New function.
+	(main): Added local variable WHAT_DOING; use it.  Add command-line
+	option -x; call rainbow_test_files.  Add command-line option -b.
+
+	* lex-html.c: Use bow_verbose, instead of bow_quiet to print
+	message about unterminated `<'.
+
+	* docnames.c (bow_map_filenames_from_dir): Make it work even when
+ 	DIRNAME is actually a filename.
+
 Sun Jan 12 12:37:32 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
 
+	* rainbow.c (filename_to_classname): Make it work even when there
+ 	isn't a `/' in the FILENAME.
+	(rainbow_index): Use filename_to_classname().
+
 	* install.texi: Mention the need for GNU make.
+	Add missing @end enumerate.
 
 	* Makefile.in (default): Make it depend on all the
  	DEMO_EXECUTABLES and the PERL_RUNNABLE_FILES, instead of just
@@ -77,15 +2091,12 @@ Mon Jan  6 10:28:17 1997  Andrew McCallum  <mccallum@cs.cmu.edu>
 	(bow_wi2dvf_new_from_data_fp): Likewise.
 	* libbow.h:  Declare new wi2dvf function.
 
-	* rainbow.c, missy.c, weight.c, vpc.c, score.c, libbow.h: Separate
+	* rainbow.c, weight.c, vpc.c, score.c, libbow.h: Separate
 	PrTFIDF from PrInd (Fuhr's Probabilistic Indexing).
 	* prind.c: New file, for Fuhr's Probabilistic Indexing method.
 
 	* rainbow.c (rainbow_index): Prune words by info gain in barrel,
  	not in the word vocabulary, so that `-L' can work properly.
-
-	* missy.c (missy_query): When printing a list of the reply scores,
- 	don't print more than 10 of them.
 
 Fri Jan  3 12:56:53 1997  Andrew McCallum  <mccallum@pad>
 
@@ -214,8 +2225,8 @@ Fri Dec 27 20:00:30 1996  Andrew McCallum  <mccallum@pad>
 	* defparser.c (bow_default_lexer): Renamed from
  	BOW_DEFAULT_PARSER.
 
-	* missy.c (main): Use new lexer instead of old parser.
-	* int4word.c (bow_words_add_occurrences_from_text_dir): Likewise.
+	* int4word.c (bow_words_add_occurrences_from_text_dir): Use new 
+	lexer instead of old parser.
 	* wi2dvf.c (bow_wi2dvf_add_di_text_fp): Likewise.
 	* wv.c (bow_wv_new_from_text_fp): Likewise.
 
@@ -267,7 +2278,7 @@ Tue Dec 24 17:36:09 1996  Andrew McCallum  <mccallum@pad>
 
 Sun Dec 22 13:35:03 1996  Andrew McCallum  <mccallum@pad>
 
-	* .cvsignore: Added executables arrow, robin, missy, rainbow-stats.
+	* .cvsignore: Added executables arrow, robin, rainbow-stats.
 
 	* Makefile.in (INSTALL_FILES): New variable.
 	(install): Use it.  Fix removing of old executables.  Install Perl
@@ -289,22 +2300,13 @@ Fri Dec 20 15:53:50 1996  Andrew McCallum  <mccallum@pad>
 
 Tue Dec 17 18:19:55 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 
-	This version used to make missy-demo data for talk.
-
-	* missy.c (prune_words_with_occurrences_less_than): Change it from
- 	2 to 0, to turn it off by default.  (This was done for the
- 	missy-demo data.)
-	(missy_mdoc_read): Set the PRIOR to 1.0!
-	(missy_query): Normalize WI2PY.  Print a list of the reply
-	document scores.
-
 	* rainbow.c (main): Added prtfidf for `-m'.
 
 	* score.c (bow_get_best_matches): Do the right thing for prtfidf,
  	call _bow_score_prtfidf_from_wv.
 
 	* stoplist.c (init_stopwords): Temporarily turn off the builtin
- 	stoplist, for use with the missy-demo data.  Yipes, this needs to
+ 	stoplist, for use with the demo data.  Yipes, this needs to
  	be turned back on!
 
 	* vpc.c (bow_barrel_new_vpc): Do the right thing for prtfidf;
@@ -341,9 +2343,6 @@ Mon Dec 16 13:11:59 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 	* robin.c (robin_index): Do the right thing when WI is -1.
 	* wi2dvf.c (bow_wi2dvf_add_di_text_fp): Likewise.
 	* wv.c (bow_wv_new_from_text_fp): Likewise.
-
-	* missy.c (missy_index): Add code to prune words with occurrences
- 	less than a certain number.
 
 	* int4word.c (bow_words_keep_top_by_infogain): Implemented.
 	(bow_words_add_occurrences_from_text_dir): Do the right thing when WI
@@ -472,13 +2471,6 @@ Fri Dec  6 17:57:46 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 	(rainbow_query): Set and normalize the QUERY_WV weights!
 	(rainbow_test): Likewise.
 
-	* missy.c: Include <values.h>.
-	(test_query_ri): New global variable.
-	(missy_index): Normalize the RDOC.WV!
-	(missy_query): When printing wi2py[], use MAXFLOAT instead of 1000.
-	Normalize ri2pr[] so it sums to one.  Caluculate and print the
- 	number of replies with higher scores than the returned reply.
-
 	* dv.c (bow_dv_default_capacity): Value changed from 4 to 2, in an
  	effort to reduce memory use.
 
@@ -512,16 +2504,6 @@ Fri Dec  6 17:57:46 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 	(bow_wv_new_from_text_fp): Use new bow_word2int_add_occurrence().
 
 Thu Dec  5 09:49:46 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
-
-	* missy.c (method): New global variable.
-	(num_message_neighbors): New global variable set by command-line arg.
-	(missy_index): Write debugging info about matching to
-	"./missy-matching".  Set RDOC.MI even when the message is already
- 	in MDOCS!
-	(missy_query): Set and normalize the weights of the QUERY_WV.  Add
-	code for spreading P(y|m) based only on nearest neighbors.  Print
- 	more informative output, including filenames.
-	(main): New command-line option -k.
 
 	* score.c (bow_get_best_matches): Make sure QUERY_WV->NORMALIZER
  	is non-zero.
@@ -616,7 +2598,6 @@ Tue Dec  3 10:20:11 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 	(main): Add new command line switches -t, -p.  Call rainbow_test().
 
 	* arrow.c: Use new weight normalization functions.
-	* missy.c: Likewise.
 
 	* split.c: Renamed functions to all begin with `bow_test_'.  Use
  	argument `barrel' instead of `cdoc' and `wi2dvf'.
@@ -648,12 +2629,6 @@ Tue Dec  3 10:20:11 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
  	BOW_METHOD_TFIDF.
 	(bow_barrel_new_from_data_fp): Read METHOD.
 	(bow_barrel_write): Write METHOD.
-
-	* missy.c: Use renamed NORMALIZER member.
-	(set_test_reply): Use new weight and normalizer setting functions.
-	* rainbow.c (rainbow_wi2dvf_sum_classes): Assert DV.
-	(rainbow_index): Use new weight and normalizer setting functions.
-	* arrow.c: Use new weight and normalizer setting functions.
 
 	* weight.c (_bow_add_to_normalizer_total): New function.
 	(_bow_total_to_normalizer): New function.
@@ -737,17 +2712,6 @@ Tue Nov 26 15:56:07 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
  	be taken away once I change parsing to use strings and librx.
 	* scan.c: New file.
 
-	* missy.c (test_mode): New command-line argument variable.  New
- 	mode in which the user types message numbers instead of query
- 	text.
-	(set_test_reply): New function.
-	(missy_index): Fix something with SENDER_ID.  Keep track of
-	NUM_MESSAGES.
-	Remove commented code about scaling for infogain.
-	(missy_query): Add test_mode code.  Add more debugging output.
-	(main): New command-line args: -t, -T.  Add words from
-	./.bow-stopwords.
-
 	* heap.c (bow_make_dv_heap_from_wi2dvf): Add silly assert()ion.
 
 	* email.c (bow_email_get_date): Don't cause error when Date isn't
@@ -801,8 +2765,6 @@ Mon Nov 18 14:17:55 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
  	stoplist *after* stemming.
 
 Tue Nov  5 12:15:37 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
-
-	* missy.c: Add option for repeated queries.
 
 	* weight.c (bow_barrel_set_weights): Use the total number of
  	documents instead of 1.0.
@@ -877,8 +2839,6 @@ Mon Oct 28 12:03:11 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 
 	* rainbow.c: Totally rewritten to be a document classifier.
 
-	* missy.c (missy_index): Use new `barrel' names.
-
 	* wi2dvf.c (bow_wi2dvf_add_di_wv): Increase wi2dvf size with a
  	MAX(), so we are guaranteed to be big enough.
 	(bow_wi2dvf_add_wi_di_count): Likewise.
@@ -919,8 +2879,6 @@ Fri Oct 25 13:05:16 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 
 	* Version (BOW_MINOR_VERSION): Version 0.3.
 
-	* missy.c: Update for use with barrel's.
-
 	* sarray.c (bow_sarray_new_from_data_fp): Renamed from
  	bow_sarray_new_from_fp.
 	* libbow.h: Rename sarray function.
@@ -940,10 +2898,6 @@ Fri Oct 25 13:05:16 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 
 	* barrel.c: New file.
 	* libbow.h: Declare barrel archiving functions.
-
-	* missy.c (missy_read_data): Use new function names
- 	"...new_from_data_fp".
-	(main): Rely on bow_stoplist_add_from_file() to verbosify.
 
 	* stoplist.c (bow_stoplist_add_from_file): Add a verbosify
  	message.
@@ -969,16 +2923,8 @@ Wed Oct 23 16:45:46 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 
 Tue Oct 22 14:03:38 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 
-	* missy.c (main): Take -n argument, for not using dates in
- 	msgid's.  Take argument -q.
-	(missy_query): Print top N words in reply word distribution.
-
 	* email.c (_scan_fp_for_string): Make `\n' at the beginning of the
  	search string match the beginning of the file.
-
-	* missy.c (missy_index): Return the number of message/reply pairs.
-  	Completely skip a reply if the sender doesn't match SENDER_ID.
-	(main): Don't write data if MISSY_INDEX returns 0.
 
 	* error.c (_bow_error) [__linux__]: Call abort() instead of exit()
  	because it lets us find ourselves in GDB.  Still don't do it for
@@ -996,23 +2942,10 @@ Tue Oct 22 14:03:38 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 	(bow_email_get_date): New function.
 	* libbow.h: Declare new email functions.
 
-	* missy.c (missy_mdoc_free): Don't free the DOC pointer!  It was
- 	never malloc'ed; it's part of the array.
-	(missy_rdoc_free): Likewise!
-	(missy_index): Arrange search for Message-Id using goto's, because its
-	simpler; likewise with Reply-Id's.  Don't strdup() strings until
- 	we're sure we're going to use them.  Deal with null REPLY_DIR
- 	argument.
-	(main): Make it work using getopt().
-
 Mon Oct 21 12:08:45 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 
 	* libbow.h (bow_parse_news_headers): Add missing semi-colon to
  	declaration.
-
-	* missy.c (missy_index): Set the mdoc's class entry to be unique,
- 	so we can get usefully run bow_wi2dvf_scale_by_info_gain().  Run
- 	that function, (but commented out for now, since it's crashing).
 
 	* info_gain.c (bow_entropy): Get the "document vector" with
  	bow_wi2dvf_dv(), not by following the pointer directly.
@@ -1054,9 +2987,6 @@ Fri Oct 18 21:32:42 1996  Sean Slattery  <jslttery@anther.learning.cs.cmu.edu>
 
 Fri Oct 18 10:50:23 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 
-	* missy.c: Now working for getting matching replies, although it
- 	looks like our make could use a little improvement.
-
 	* libbow.h: Declare new functions.
 	(bow_wv): LENGTH entry renamed to NORM.
 
@@ -1097,10 +3027,6 @@ Fri Oct 18 01:15:57 1996  Sean Slattery  <jslttery@anther.learning.cs.cmu.edu>
 
 Thu Oct 17 11:08:42 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 
-	* missy.c: Make missy_mdoc a bow_cdoc, and pass the "cdocs" array
- 	in at the appropriate places.  Message matches still don't seem
-	correct. 
-
 	* score.c (bow_get_best_matches): Add an assert()'ion that WI
  	match the word index of our current location in the word vector.
 
@@ -1125,9 +3051,6 @@ Thu Oct 17 11:08:42 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 	* libbow.h (bow_wv): Renamed element `length' to `total' in an
  	attempt to choose a less confusing name.  Other naming suggestions
  	welcome.
-
-	* missy.c: Added -V and -d command line arguments.  Properly index
- 	and set weights.  Print the closest matching message.
 
 	* array.c (bow_array_new_from_fp): Set the LENGTH of the new
  	array; before it was uninitialized!
@@ -1191,9 +3114,6 @@ Thu Oct 17 14:36:44 1996  Sean Slattery  <jslttery@anther.learning.cs.cmu.edu>
 	* libbow.h: (bow_next_test_wv) Argument change as above.
 
 Wed Oct 16 08:35:45 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
-
-	* missy.c: Overhauled for new probabilistic framework based on
- 	sampling distributions and sufficient statistics.
 
 	* libbow.h (bow_screaming): Renamed from bow_shutup_already.
   	Commented all bow_verbosity_levels.
@@ -1310,11 +3230,6 @@ Tue Oct 15 10:07:42 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 
 Mon Oct 14 16:17:26 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 
-	* missy.c (main): Build a term frequency table for each mwi, not
- 	for each mwi/rwi pair.  Use a bitvector to determine which replies
- 	should be included in the sum, not a wv.  Now much, much faster;
- 	quite reasonable for use with 3000 email messages.
-
 	* libbow.h: Indentation and comment fixes.
 
 	* rainbow.c (main): Don't exit() prematurely.  Actually write the
@@ -1365,8 +3280,6 @@ Thu Oct 10 09:44:55 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 	* Makefile.in (LIBBOW_C_FILES): Added stopwords.c.
 	* getword.c (bow_get_word): Use renamed stoplist function.
 
-	* missy.c (main): Many bug fixes and extra verbosity.
-
 	* email.c (bow_email_get_receivedid): New function.
 	* libbow.h: Declare new email functions.
 
@@ -1384,9 +3297,7 @@ Thu Oct 10 09:44:55 1996  Andrew McCallum  <mccallum@cs.cmu.edu>
 
 	* wv.c (bow_wv_count_for_wi): Return 0 if WV is NULL.
 
-	* missy.c: New file.
 	* Makefile.in (LIBBOW_C_FILES): Added email.c.
-	(DEMO_C_FILES): Added missy.c.
 	(DEMO_EXECUTABLES:): Changed rule to make $*.o separately.
 	* email.c: New file.
 	* libbow.h: Declared new email functions.

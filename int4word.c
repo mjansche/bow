@@ -1,8 +1,26 @@
 /* A convient interface to int4str.c, specifically for words. */
 
-#include "libbow.h"
+/* Copyright (C) 1997 Andrew McCallum
+
+   Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
+
+   This file is part of the Bag-Of-Words Library, `libbow'.
+
+   This library is free software; you can redistribute it and/or
+   modify it under the terms of the GNU Library General Public License
+   as published by the Free Software Foundation, version 2.
+   
+   This library is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+   Library General Public License for more details.
+
+   You should have received a copy of the GNU Library General Public
+   License along with this library; if not, write to the Free Software
+   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
+
+#include <bow/libbow.h>
 #include <assert.h>
-#include <values.h>
 
 /* The int/string mapping for bow's vocabulary words. */
 static bow_int4str *word_map = NULL;
@@ -30,16 +48,21 @@ _bow_int4word_initialize ()
 
 /* Replace the current word/int mapping with MAP. */
 void
-bow_words_set_map (bow_int4str *map)
+bow_words_set_map (bow_int4str *map, int free_old_map)
 {
   int wi;
-  if (word_map)
-    {
-      bow_int4str_free (word_map);
-      assert (word_map_counts);
-      for (wi = 0; wi < word_map_counts_size; wi++)
-	word_map_counts[wi] = 0;
-    }
+
+  /* Do this so we are sure to initalize the counts array too. */
+  /* xxx This is messy way to doing this, though. */
+  if (!word_map)
+    _bow_int4word_initialize ();
+
+  if (free_old_map)
+    bow_int4str_free (word_map);
+  assert (word_map_counts);
+  for (wi = 0; wi < word_map_counts_size; wi++)
+    word_map_counts[wi] = 0;
+
   word_map = map;
 }
 
@@ -113,6 +136,16 @@ bow_words_write (FILE *fp)
 }
 
 void
+bow_words_write_to_file (const char *filename)
+{
+  FILE *fp;
+  
+  fp = bow_fopen (filename, "w");
+  bow_words_write (fp);
+  fclose (fp);
+}
+
+void
 bow_words_read_from_fp (FILE *fp)
 {
   int wi;
@@ -126,6 +159,42 @@ bow_words_read_from_fp (FILE *fp)
     bow_fread_int (&(word_map_counts[wi]), fp);
 }
 
+void
+bow_words_read_from_file (const char *filename)
+{
+  FILE *fp;
+
+  fp = bow_fopen (filename, "r");
+  bow_words_read_from_fp (fp);
+  fclose (fp);
+}
+
+void
+bow_words_reread_from_file (const char *filename, int force_update)
+{
+  FILE *fp;
+  static char *last_file = NULL;
+
+  if (!filename || !*filename)
+    return;
+  if (last_file && !strcmp (filename, last_file) && !force_update)
+    return;
+  if (last_file)
+    free (last_file);
+  last_file = strdup (filename);
+  assert (last_file);
+#if 0
+  /* This is bogus -- bow_fopen will use bow_error if the open fails
+     which in turn will call abort(3), which we MUST NOT DO. */
+  fp = bow_fopen (filename, "r");
+#else
+  if ((fp = fopen (filename, "r")))
+#endif /* 0 */
+  bow_words_read_from_fp (fp);
+  fclose (fp);
+}
+
+
 /* Modify the int/word mapping by removing all words that occurred 
    less than OCCUR number of times.  WARNING: This totally changes
    the word/int mapping; any WV's, WI2DVF's or BARREL's you build
@@ -137,6 +206,13 @@ bow_words_remove_occurrences_less_than (int occur)
   int wi;
   int max_wi;
 
+  if (word_map == NULL)
+    {
+      bow_verbosify (bow_quiet,
+		     "%s: Trying to remove words from an empty word map\n",
+		     __FUNCTION__);
+      return;
+    }
   max_wi = word_map->str_array_length;
   new_map = bow_int4str_new (0);
   for (wi = 0; wi < max_wi; wi++)
@@ -146,7 +222,7 @@ bow_words_remove_occurrences_less_than (int occur)
 	bow_str2int (new_map, bow_int2str (word_map, wi));
     }
   /* Replace the old map with the new map. */
-  bow_words_set_map (new_map);
+  bow_words_set_map (new_map, 1);
 }
 
 /* Modify the int/word mapping by removing all words except the
@@ -160,10 +236,13 @@ bow_words_keep_top_by_infogain (int num_words_to_keep,
   int wi2ig_size;
   bow_int4str *new_map;
   float max_ig;
-  int wi, max_ig_wi;
+  int wi, max_ig_wi = -1;
 
   new_map = bow_int4str_new (0);
   wi2ig = bow_infogain_per_wi_new (barrel, num_classes, &wi2ig_size);
+
+  if (num_words_to_keep > wi2ig_size)
+    num_words_to_keep = wi2ig_size;
 
   /* Add NUM_WORDS_TO_KEEP words to the new vocabulary. */
   while (num_words_to_keep--)
@@ -172,21 +251,23 @@ bow_words_keep_top_by_infogain (int num_words_to_keep,
       /* Find the word with the highest info gain. */
       for (wi = 0; wi < wi2ig_size; wi++)
 	{
-	  assert (wi2ig[wi] > 0 || wi2ig[wi] == -MAXFLOAT);
+	  assert (wi2ig[wi] >= 0 || wi2ig[wi] == -FLT_MAX);
 	  if (wi2ig[wi] > max_ig)
 	    {
 	      max_ig = wi2ig[wi];
 	      max_ig_wi = wi;
 	    }
 	}
-      assert (max_ig > 0);
+      assert (max_ig >= 0);
       /* Add the highest info gain word. */
       bow_str2int (new_map, bow_int2word (max_ig_wi));
-      /* Punch WI's info gain to the ground so we can find the next highest. */
-      wi2ig[max_ig_wi] = -MAXFLOAT;
+      /* Punch WI's info gain to the ground so we can find the
+	 next highest. */
+      wi2ig[max_ig_wi] = -FLT_MAX;
     }
+
   /* Replace the old map with the new map. */
-  bow_words_set_map (new_map);
+  bow_words_set_map (new_map, 1);
   bow_free (wi2ig);
 }
 

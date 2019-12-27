@@ -20,15 +20,32 @@ Configure the source for your system by typing
 ./configure --prefix=/usr/local
 @end example
 
+Where @samp{/usr/local} can be replaced with any pre-existing directory
+in which you want to install the package.  Executables will go in
+@samp{prefix}/bin.  The library, @code{libbow} will go in
+@samp{prefix}/lib.  The include files will go in
+@samp{prefix}/include/bow.
+
+If you want to turn off all debugging assertions, you can do this by
+setting CPPFLAGS in the configuration line.
+
+@example
+CPPFLAGS=-DNDEBUG ./configure --prefix=/usr/local
+@end example
+
 More detailed information about the @samp{configure} options can be
 found below.
 
 @item
-Make libbow.  (Note, the Makefile requires GNU make.)
+Make libbow.  (Note, libbow requires GCC, and the Makefile requires GNU
+make.)
 
 @example
 make
 @end example
+
+You can now try running the sample programs, (e.g. @samp{rainbow}).  See
+the README file for some examples.
 
 @item
 Install libbow
@@ -37,6 +54,7 @@ Install libbow
 make install
 @end example
 
+@end enumerate
 
 Here are general instructions for @file{configure}, that explain
 @file{configure}'s options.
@@ -156,22 +174,6 @@ the @samp{make} variables @samp{CFLAGS} and @samp{LDFLAGS} like this:
 	make CFLAGS=-O2 LDFLAGS=-s
 @end smallexample
 
-You will get some warnings from @samp{#warning} lines I've added to the
-code.  Ignore them.
-
-You may get some warnings like @samp{stdobjects.m:0: warning:
-`_OBJC_SELECTOR_TABLE' defined but not used}.  Ignore them. 
-They are bogus warnings due to a bug in cc1obj.
-
-You may get some warnings like @samp{ar: filename BinaryTreeEltNode.o
-truncated to BinaryTreeEltNo}.  Ignore them.
-
-
-@item
-If you want to compile the self-tests, cd to @samp{checks} and type
-@samp{make}.  If you want to compile the examples, cd to @samp{examples}
-and type @samp{make}.
-
 @item
 Type @samp{make install} to install programs, data files, and
 documentation.
@@ -180,7 +182,7 @@ documentation.
 You can remove the program binaries and object files from the source
 directory by typing @samp{make clean}.  To also remove the Makefile(s),
 and @samp{config.status} (all the files that @samp{configure} created),
-type @samp{make distclean}.
+type @samp{make maintainer-clean}.
 
 The file @samp{configure.in} is used as a template to create
 @samp{configure} by a program called @samp{autoconf}.  You will only

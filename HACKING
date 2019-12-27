@@ -1,4 +1,4 @@
-This file provides information for developers of BOW.
+This file provides information for developers of `libbow'.
 
 Source code revision control
 ============================
@@ -9,11 +9,11 @@ Source code revision control
    CVS is available at ftp://prep.ai.mit.edu.  Documentation is
    available in texinfo format.
 
-   The repository is on sandbox.learning.cs.cmu.edu.  To use it,
-   first obtain a login id from Andrew McCallum <mccallum@cs.cmu.edu>,
-   then type at your shell:
+   The repository is on sandbox.jprc.com.  To use it, first obtain a
+   login id from Andrew McCallum <mccallum@cs.cmu.edu>, then type at
+   your shell:
 
-      setenv CVSROOT :pserver:yourloginname@sandbox:/usr/local/cvsroot
+      setenv CVSROOT :pserver:yourloginname@sandbox.jprc.com:/home/mccallum/lib/cvsroot
       cvs login
 
    Answer its password prompt, then check out the source and `cd' into
@@ -23,9 +23,10 @@ Source code revision control
       cd bow
 
    In order to compile libbow, you'll have to create `./configure' from
-   `./configure.in' by typing
+   `./configure.in' by typing (in the bow directory)
 
       autoconf
+      cd argp ; autoconf
 
    You must have the autoconf program installed on your system.  It is
    available from ftp://prep.ai.mit.edu/pub/gnu or its mirrors.
