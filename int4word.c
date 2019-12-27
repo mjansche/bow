@@ -68,6 +68,10 @@ bow_words_set_map (bow_int4str *map, int free_old_map)
   if (!word_map)
     _bow_int4word_initialize ();
 
+  /* Passing a NULL map is simply a way of initializing the WORD_MAP */
+  if (!map)
+    return;
+
   if (free_old_map)
     bow_int4str_free (word_map);
   assert (word_map_counts);
@@ -177,8 +181,11 @@ bow_words_write (FILE *fp)
 
   bow_int4str_write (word_map, fp);
   bow_fwrite_int (word_map_counts_size, fp);
+#define ARCHIVE_COUNTS 1
+#if ARCHIVE_COUNTS
   for (wi = 0; wi < word_map_counts_size; wi++)
     bow_fwrite_int (word_map_counts[wi], fp);
+#endif
 }
 
 void
@@ -201,8 +208,13 @@ bow_words_read_from_fp (FILE *fp)
   word_map = bow_int4str_new_from_fp (fp);
   bow_fread_int (&word_map_counts_size, fp);
   word_map_counts = bow_malloc (word_map_counts_size * sizeof (int));
+#if ARCHIVE_COUNTS
   for (wi = 0; wi < word_map_counts_size; wi++)
     bow_fread_int (&(word_map_counts[wi]), fp);
+#else
+  for (wi = 0; wi < word_map_counts_size; wi++)
+    word_map_counts[wi] = 0;
+#endif
 }
 
 void

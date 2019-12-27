@@ -32,6 +32,10 @@ extern bow_em_perturb_method bow_em_perturb_starting_point;
 extern int bow_em_num_em_runs;
 extern int em_cross_entropy;
 
+/* hack for scoring for perplexity calculation */
+extern int bow_em_calculating_perplexity;
+
+
 typedef struct _bow_em_pr_struct {
   double score;
   int correct;

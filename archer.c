@@ -19,112 +19,62 @@
    License along with this library; if not, write to the Free Software
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
 
-#include <pwd.h>
-#include <crypt.h>
-#include <unistd.h>
+#define _FILE_OFFSET_BITS 64
+
 #include <bow/libbow.h>
 #include <argp.h>
 #include <bow/archer.h>
 #include <errno.h>		/* needed on DEC Alpha's */
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <netinet/in.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <signal.h>
+#include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#include <limits.h>
+#include <sys/mman.h>
 
-#ifdef ARCHER_USE_MCHECK
-#include <signum.h>
-#include <mcheck.h>
-#endif
- 
+/* The version number of this program. */
+#define ARCHER_MAJOR_VERSION 0
+#define ARCHER_MINOR_VERSION 0
+
 
 /* Global variables */
 
-/* The directory to index */
-char *archer_source_directory = NULL;
-
-/* The extraction directory: contains a mirror file, with markup, for each
-   file in the directory to index */
-char *archer_extraction_directory = NULL;
-
-/* The extraction file: Holds the name of the marked-up copy of file
-   to be indexed */
-char *archer_extraction_filename = NULL;
-
 /* The document/word/position matrix */
-bow_wi2pv *archer_wi2pv = NULL;
-
-/* The document/label/position matrix */
-bow_wi2pv *archer_li2pv = NULL;
+bow_wi2pv *archer_wi2pv;
 
 /* The list of documents. */
-bow_sarray *archer_docs = NULL;
+bow_sarray *archer_docs;
 
-/* The labels */
-bow_sarray *archer_labels = NULL;
-
-/* The file-pointer for the vocabulary */
-FILE *archer_vocabulary_fp = NULL;
-
-/* File pointers for the list of documents */
-FILE *archer_docs_i4k_fp = NULL;
-FILE *archer_docs_array_fp = NULL;
-
-/* File pointers for the labels */
-FILE *archer_labels_i4k_fp = NULL;
-FILE *archer_labels_array_fp = NULL;
-
-/* Are we doing incremental writes? 
-   This will be true for the query server,
-   false if we're doing one big indexing run. */
-/* Can this be inferred from archer_arg_stat? */
-int archer_index_inc = 1;
-
-/* Doing one big run, but only indexing files not in index */
-int archer_incremental_index = 0;
-
-/* Password protection */
-char archer_password[14] = {0};
+/* The file descriptor of the socket on which we can act as a query-server. */
+int archer_sockfd;
 
 /* The variables that are set by command-line options. */
-struct archer_arg_state_s archer_arg_state;
+struct archer_arg_state
+{
+  /* What this invocation of archer to do? */
+  void (*what_doing)();
+  int non_option_argi;
+  int num_hits_to_print;
+  FILE *query_out_fp;
+  const char *dirname;
+  const char *query_string;
+  const char *server_port_num;
+  int serve_with_forking;
+  int score_is_raw_count;
+} archer_arg_state;
 
-/* Host restrictions: default = 255.255.255.255 (allow all connections) */
-struct in_addr archer_ip_spec = { 0xffffffff };
 
 
 /* Functions for creating, reading, writing a archer_doc */
-
-int
-archer_label_write (archer_label *label, FILE *fp)
-{
-  int ret;
-
-  ret = bow_fwrite_int(label->word_count, fp);
-  ret += bow_fwrite_int(label->li, fp);
-
-  return ret;
-}
-
-int
-archer_label_read (archer_label *label, FILE *fp)
-{
-  int ret;
-
-  ret = bow_fread_int (&(label->word_count), fp);
-  ret += bow_fread_int (&(label->li), fp);
- 
-  return ret;
-}
-
-void
-archer_label_free (archer_label *label)
-{
-}
 
 int
 archer_doc_write (archer_doc *doc, FILE *fp)
@@ -163,21 +113,23 @@ archer_doc_free (archer_doc *doc)
 void
 archer_archive ()
 {
-  if (archer_index_inc) 
-  {
-      fflush (archer_wi2pv->fp);
-      fflush(archer_li2pv->fp);
-  }
-  else 
-  {
-      bow_wi2pv_write(archer_wi2pv);
-      bow_wi2pv_write(archer_li2pv);
-  }
-  fflush (archer_docs_i4k_fp);
-  fflush (archer_docs_array_fp);  
-  fflush (archer_labels_i4k_fp);
-  fflush (archer_labels_array_fp);
-  fflush (archer_vocabulary_fp);
+  char filename[BOW_MAX_WORD_LENGTH];
+  FILE *fp;
+
+  sprintf (filename, "%s/vocabulary", bow_data_dirname);
+  fp = bow_fopen (filename, "wb");
+  bow_words_write (fp);
+  fclose (fp);
+
+  sprintf (filename, "%s/wi2pv", bow_data_dirname);
+  bow_wi2pv_write_to_filename (archer_wi2pv, filename);
+
+  sprintf (filename, "%s/docs", bow_data_dirname);
+  fp = bow_fopen (filename, "wb");
+  bow_sarray_write (archer_docs, (int(*)(void*,FILE*))archer_doc_write, fp);
+  fclose (fp);
+
+  fflush (archer_wi2pv->fp);
 }
 
 /* Read the stats from the directory DATA_DIRNAME. */
@@ -185,47 +137,55 @@ void
 archer_unarchive ()
 {
   char filename[BOW_MAX_WORD_LENGTH];
+  FILE *fp;
 
   bow_verbosify (bow_progress, "Loading data files...");
 
   sprintf (filename, "%s/vocabulary", bow_data_dirname);
-  archer_vocabulary_fp = bow_fopen (filename, "rb+");
-  bow_words_read_from_fp_inc (archer_vocabulary_fp);
+  bow_words_read_from_file (filename);
 
   sprintf (filename, "%s/wi2pv", bow_data_dirname);
   archer_wi2pv = bow_wi2pv_new_from_filename (filename);
 
-  sprintf (filename, "%s/li2pv", bow_data_dirname);
-  archer_li2pv = bow_wi2pv_new_from_filename (filename);
-
-  sprintf (filename, "%s/docs.i4k", bow_data_dirname);
-  archer_docs_i4k_fp = bow_fopen (filename, "rb+");
-  sprintf (filename, "%s/docs.array", bow_data_dirname);
-  archer_docs_array_fp = bow_fopen (filename, "rb+");
+  sprintf (filename, "%s/docs", bow_data_dirname);
+  fp = bow_fopen (filename, "rb");
   archer_docs = 
-    bow_sarray_new_from_data_fps_inc ((int(*)(void*,FILE*))archer_doc_read, 
-				      archer_doc_free, archer_docs_i4k_fp, archer_docs_array_fp);
- 
-  sprintf (filename, "%s/labels.i4k", bow_data_dirname);
-  archer_labels_i4k_fp = bow_fopen (filename, "rb+");
-  sprintf (filename, "%s/labels.array", bow_data_dirname);
-  archer_labels_array_fp = bow_fopen (filename, "rb+");
-  archer_labels = 
-    bow_sarray_new_from_data_fps_inc ((int(*)(void*,FILE*))archer_label_read, 
-				      archer_label_free, archer_labels_i4k_fp, archer_labels_array_fp);
+    bow_sarray_new_from_data_fp ((int(*)(void*,FILE*))archer_doc_read, 
+				archer_doc_free, fp);
+  fclose (fp);
 
   bow_verbosify (bow_progress, "\n");
 }
 
 int
-archer_index_filename_old_lex (const char *filename, void *unused, int di)
+archer_index_filename (const char *filename, void *unused)
 {
-  FILE *fp;
-  bow_lex *lex;
-  char word[BOW_MAX_WORD_LENGTH];
+  int di;
+  archer_doc doc, *doc_ptr;
   int wi;
   int pi = 0;
+  char word[BOW_MAX_WORD_LENGTH];
+#define USE_FAST_LEXER 1
+#if !USE_FAST_LEXER
+  bow_lex *lex;
+  FILE *fp;
+#endif
 
+  /* Make sure this file isn't already in the index.  If it is just
+     return (after undeleting it, if necessary. */
+  doc_ptr = bow_sarray_entry_at_keystr (archer_docs, filename);
+  if (doc_ptr)
+    {
+      if (doc_ptr->word_count < 0)
+	doc_ptr->word_count = -(doc_ptr->word_count);
+      return 1;
+    }
+
+  /* The index of this new document is the next available index in the
+     array of documents. */
+  di = archer_docs->array->length;
+
+#if !USE_FAST_LEXER
   fp = fopen (filename, "r");
   if (fp == NULL)
     {
@@ -242,349 +202,134 @@ archer_index_filename_old_lex (const char *filename, void *unused, int di)
   while (bow_default_lexer->get_word (bow_default_lexer,
 				      lex, word, BOW_MAX_WORD_LENGTH))
     {
-      wi = bow_word2int_inc (word, archer_vocabulary_fp);
-      
+      wi = bow_word2int_add_occurrence (word);
       if (wi < 0)
 	continue;
-
-      bow_wi2pv_add_wi_di_pi (archer_wi2pv, wi, di, pi); 
-
-      if (archer_index_inc) 
-	bow_wi2pv_write_entry (archer_wi2pv, wi);
-
+      bow_wi2pv_add_wi_di_pi (archer_wi2pv, wi, di, pi);
+#if 0
+      /* Debugging */
+      {
+	int di_read, pi_read;
+	bow_wi2pv_wi_next_di_pi (archer_wi2pv, wi, &di_read, &pi_read);
+	assert (di_read == di);
+	assert (pi_read == pi);
+	if (di == 0)
+	  printf ("%010d %010d %s\n", di, pi, bow_int2word (wi));
+      }
+#endif
       pi++;
     }
   bow_default_lexer->close (bow_default_lexer, lex);
   fclose (fp);
 
-  if (archer_index_inc)
-    bow_wi2pv_write_header(archer_wi2pv); 
-
-  return pi;
-}
-
-
-static FILE *
-archer_get_fp_from_filename(const char *filename)
-{
-  FILE *fp;
-
-  if (archer_extraction_filename)
+#else /* USE_FAST_LEXER */
   {
-    fp = fopen(archer_extraction_filename, "r");
-  }
-  if (archer_extraction_directory)
-  {
-    int len;
-    char buf[1000];
+    int fd, c, wordlen;
+    //bow_strtrie *strie;
+    //int strtrie_index;
+    unsigned hashid;
+    char *docbuf;
+    char *docbufptr;
+    char *docbufptr_end;
+    //size_t page_size = (size_t) sysconf (_SC_PAGESIZE);
+    struct stat statbuf;
 
-    len = strlen(archer_source_directory);
-    if (archer_source_directory[len - 1] != '/')
-      ++len;
-    sprintf(buf, "%s/%s", archer_extraction_directory, &filename[len]);
-    fp = fopen(buf, "r");
-  }
-  else
-    fp = fopen (filename, "r");
+    if (!word_map)
+      bow_words_set_map (NULL, 0);
 
-  return fp;
-}
-
-
-static int waitli[1000], waitln;
-
-
-static inline void flush_labels(int di, int pi)
-{
-  int waiti;
-
-  for (waiti = 0; waiti < waitln; ++waiti)
-  {
-    bow_wi2pv_add_wi_di_li_pi(archer_li2pv,waitli[waiti], di, NULL, 0, pi);
-    if (archer_index_inc) bow_wi2pv_write_entry(archer_li2pv, waitli[waiti]);
-  }
-  waitln = 0;
-}
-
-
-static void
-archer_index_term(char *word, int di, int pi)
-{
-  char *cp, label[BOW_MAX_WORD_LENGTH];
-  int ln, li[BOW_MAX_WORD_LABELS], wi;
-  archer_label *label_ptr;
-
-  flush_labels(di, pi);
-      
-  for (cp = bow_first_label(label, BOW_MAX_WORD_LENGTH), ln = 0; 
-       cp;
-       cp = bow_next_label(label, BOW_MAX_WORD_LENGTH))
-  {
-    int i;
-
-    for (i = 0; label[i]; ++i) label[i] = tolower(label[i]);
-    label_ptr = bow_sarray_entry_at_keystr(archer_labels, label);
-    if (!label_ptr)
-      bow_error("Missed a label (%s)", label);
-    label_ptr->word_count++;
-
-    /* Update information on disk */
-    bow_array_write_entry_inc (
-		       archer_labels->array, 
-		       bow_sarray_index_at_keystr(archer_labels, label), 
-		       (int(*)(void*,FILE*))archer_label_write, 
-		       archer_labels_array_fp);
-
-    li[ln++] = label_ptr->li;
-  }
-
-  wi = bow_word2int_inc (word, archer_vocabulary_fp);
-  if (wi < 0)
-    return;
-
-  bow_wi2pv_add_wi_di_li_pi (archer_wi2pv, wi, di, li, ln, pi);
-      
-  if (archer_index_inc)
-    bow_wi2pv_write_entry (archer_wi2pv, wi);
-}
-
-
-static void
-archer_index_label(char *word, int di, int pi)
-{
-  int wi, waiti;
-  archer_label *label_ptr, labelobj;
-
-  label_ptr = bow_sarray_entry_at_keystr(archer_labels, word);
-  if (!label_ptr)
-  {
-    labelobj.word_count = 0;
-    labelobj.li = archer_labels->array->length;
-    bow_sarray_add_entry_with_keystr_inc (
-				 archer_labels, &labelobj, word,
-				 (int(*)(void*,FILE*))archer_label_write,
-				 archer_labels_i4k_fp,
-				 archer_labels_array_fp);
-    label_ptr = bow_sarray_entry_at_keystr(archer_labels, word);
-  }
-  wi = label_ptr->li;
-
-  /* We can't just go ahead and write it.  Reason: 
-     This might mean writing two identical labels one after the other
-     with the same pi.  For obscure reasons, archer's indexing
-     scheme disallows this.  Instead, we'll hold onto
-     the label.  If we see an identical one immediately, we'll wait 
-     until we see the next closing label. Note, this also takes care
-     of the potential problem of fields containing no indexable text */
- 
-  for (waiti = 0; waiti < waitln; ++waiti)
-    if (waitli[waiti] == wi)    /* String fields together */
-    {
-      while (waiti + 1 < waitln)
+    fd = open (filename, O_RDONLY);
+    if (fd == -1)
       {
-	waitli[waiti] = waitli[waiti + 1];
-	++waiti;
+				perror ("archer index_filename open");
+				return 0;
       }
-      waitln--;
-      waiti = -1;
-      break;
-    }
-  if (waiti != -1)              /* Didn't find in wait list */
-    waitli[waitln++] = wi;
-}
-
-
-static int 
-archer_index_filename_flex(const char *filename, 
-                           archer_doc *doc_ptr, int di)
-{
-  FILE *fp;
-  char word[BOW_MAX_WORD_LENGTH];
-  int skip = 0;
-  int pi = 0;
-  int wtype;
-  int (*get_word)(char buf[], int bufsz) = NULL;
-  void (*set_fp)(FILE *fp, const char * name) = NULL;
-
-  switch (bow_flex_option)
-    {
-    case USE_MAIL_FLEXER :
-      set_fp = flex_mail_open;
-      get_word = flex_mail_get_word;
-      break;
-    case USE_TAGGED_FLEXER :
-      set_fp = tagged_lex_open;
-      get_word = tagged_lex_get_word;
-      break;
-    default :
-      bow_error("Unrecognized bow_flex_option=%d\n", bow_flex_option);
-    }
-
-  fp = archer_get_fp_from_filename(filename);
-  if (fp == NULL)
-  {
-    bow_verbosify (bow_progress, "Not indexing %s\n", filename);
-    return 0;
-  }
-
-  set_fp(fp, filename);
-  waitln = 0;
-  while ((wtype = get_word(word, BOW_MAX_WORD_LENGTH)))
-  {
-    if (wtype == 1)
-    {
-      if (!skip)
-	archer_index_term(word, di, pi);
-      ++pi;
-    }
-         /* Start label -- End label */
-    else if (wtype == 2 || wtype == 3)
-    {
-      if (strcmp(word, "skip") == 0)
+    fstat (fd, &statbuf);
+    //statbuf.st_size = 20 * 1024;
+    docbuf = mmap (NULL, statbuf.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    close (fd);
+    if (docbuf == (void*)-1)
       {
-	skip += wtype == 2 ? 1 : -1;
-	assert(skip >= 0);
+				fprintf (stderr, "\narcher index_filename(%s)\n", filename);
+				perror (" mmap");
+				return 0;
       }
-      else 
-	archer_index_label(word, di, pi);
-    }
-  }
+    docbufptr_end = docbuf + statbuf.st_size;
 
-  flush_labels(di, pi);
-
-  fclose (fp);
-
-  if (archer_index_inc)
-  {
-    bow_wi2pv_write_header (archer_wi2pv); 
-    bow_wi2pv_write_header(archer_li2pv);
-  }
-
-  return pi;
-}
-
-int
-archer_index_filename (const char *filename, void *unused)
-{
-  int di, count;
-  archer_doc doc, *doc_ptr;
-
-  /* Make sure this file isn't already in the index.  If it is just
-     return (after undeleting it, if necessary. */
-  doc_ptr = bow_sarray_entry_at_keystr (archer_docs, filename);
-  if (doc_ptr)
-    {
-      if (doc_ptr->word_count < 0)
+    /* One time through this loop for each word */
+    for (docbufptr = docbuf;;)
       {
-	doc_ptr->word_count = -(doc_ptr->word_count);
-
-	/* Update information on disk */
-	bow_array_write_entry_inc (archer_docs->array, 
-				   bow_sarray_index_at_keystr(archer_docs, filename), 
-				   (int(*)(void*,FILE*))archer_doc_write, archer_docs_array_fp);
+	hashid = wordlen = 0;
+	/* Ignore characters until we get a beginning character. */
+	while (!isalpha((unsigned)*docbufptr))
+	  if (++docbufptr >= docbufptr_end)
+	    goto done_with_file;
+	/* Add alphabetics to the word */
+	do
+	  {
+	    c = tolower((unsigned)*docbufptr);
+	    word[wordlen++] = c;
+	    /* The following must exactly match the behavior of
+               int4str.c:_str2id */
+	    hashid = 131 * hashid + c;
+	    docbufptr++;
+	  }
+	while (wordlen < BOW_MAX_WORD_LENGTH
+	       && isalnum((unsigned)*docbufptr));
+	if (wordlen == BOW_MAX_WORD_LENGTH)
+	  {
+	    /* Word is longer than MAX, consume it and skip it. */
+	    while (isalpha(*docbufptr++))
+	      ;
+	    continue;
+	  }
+	word[wordlen] = '\0';
+	/* Token is now in WORD; next see if it's too short or a stopword */
+	if (wordlen < 2 
+	    || wordlen > 30
+	    || bow_stoplist_present_hash (word, hashid))
+	  continue;
+	/* Get the integer index of the word in WORD */
+	wi = _bow_str2int (word_map, word, hashid);
+	bow_wi2pv_add_wi_di_pi (archer_wi2pv, wi, di, pi);
+	if (docbufptr >= docbufptr_end)
+	  break;
+	pi++;
       }
-
-      return 1;
-    }
-
-  /* The index of this new document is the next available index in the
-     array of documents. */
-  di = archer_docs->array->length;
-  count = bow_flex_option ?
-    archer_index_filename_flex (filename, doc_ptr, di) :
-    archer_index_filename_old_lex (filename, NULL, di);
-  if (count == 0)
-    return 0;
+  done_with_file:
+    munmap (docbuf, statbuf.st_size);
+  }
+#endif /* USE_FAST_LEXER */
 
   doc.tag = bow_doc_train;
-  doc.word_count = count;
+  doc.word_count = pi;
   doc.di = di;
-
-  /* Update document list on disk */
-  /* Do this -regardless- of archer_index_inc; writing once per
-     word is expensive, but once per document cheap.
-     Doing this makes things in archer_archive less complicated.
-  */
-  bow_sarray_add_entry_with_keystr_inc (archer_docs, &doc, filename,
-					(int(*)(void*,FILE*))archer_doc_write,
-					archer_docs_i4k_fp,
-					archer_docs_array_fp);
+  bow_sarray_add_entry_with_keystr (archer_docs, &doc, filename);
       
-  if (di % 10 == 0)
-    bow_verbosify (bow_progress, "\b\b\b\b\b\b\b\b%8d", di);
-  
+  if (di % 200 == 0)
+    bow_verbosify (bow_progress, "\r%8d |V|=%10d", di, bow_num_words());
+
   di++;
-  return count;
+  return pi;
 }
+
 
 void
 archer_index ()
 {
-  char filename[BOW_MAX_WORD_LENGTH];
-  int count;
-
-  if (!archer_docs_i4k_fp)
-  {
-    sprintf (filename, "%s/docs.i4k", bow_data_dirname);
-    archer_docs_i4k_fp =  bow_fopen (filename, "wb+");
-  }
-  if (!archer_docs_array_fp)
-  {
-    sprintf (filename, "%s/docs.array", bow_data_dirname);
-    archer_docs_array_fp =  bow_fopen (filename, "wb+");
-  }
-  if (!archer_docs)
-  {
-    archer_docs = bow_sarray_new (0, sizeof (archer_doc), archer_doc_free);
-    bow_array_write_header_inc (archer_docs->array, archer_docs_array_fp);
-  }
-  
-  if (!archer_labels_i4k_fp)
-  {
-    sprintf (filename, "%s/labels.i4k", bow_data_dirname);
-    archer_labels_i4k_fp =  bow_fopen (filename, "wb+");
-  }
-  if (!archer_labels_array_fp)
-  {
-    sprintf (filename, "%s/labels.array", bow_data_dirname);
-    archer_labels_array_fp =  bow_fopen (filename, "wb+");
-  }
-  if (!archer_labels)
-  {
-    archer_labels = bow_sarray_new (0, sizeof (archer_label), archer_label_free);
-    bow_array_write_header_inc (archer_labels->array, archer_labels_array_fp);
-  }
-
-  if (!archer_wi2pv)
-    archer_wi2pv = bow_wi2pv_new (0, "pv", "wi2pv");
-  if (!archer_li2pv)
-    archer_li2pv = bow_wi2pv_new (0, "lipv", "li2pv");
-
-  if (!archer_vocabulary_fp)
-  {
-    sprintf (filename, "%s/vocabulary", bow_data_dirname);
-    archer_vocabulary_fp = bow_fopen (filename, "wb+");
-  }
-
-  /* Do NOT write to disk every word */
-  archer_index_inc = 0;
-
-  count = archer_docs->array->length;
+  archer_docs = bow_sarray_new (0, sizeof (archer_doc), archer_doc_free);
+  archer_wi2pv = bow_wi2pv_new (0, "pv");
   bow_verbosify (bow_progress, "Indexing files:              ");
   bow_map_filenames_from_dir (archer_index_filename, NULL,
 			      archer_arg_state.dirname, "");
-  bow_verbosify (bow_progress, "\nIndexed %d documents\n", 
-		 archer_docs->array->length - count);
+  bow_verbosify (bow_progress, "\n");
 
   archer_archive ();
-
-  /* Close the wi2pv and pv files */
+  /* To close the FP for FILENAME_PV */
   bow_wi2pv_free (archer_wi2pv);
-  bow_wi2pv_free(archer_li2pv);
 }
 
 /* Index each line of ARCHER_ARG_STATE.DIRNAME as if it were a
-   separate file, named after the line number. Does not deal with labels.*/
+   separate file, named after the line number. */
 void
 archer_index_lines ()
 {
@@ -595,59 +340,10 @@ archer_index_lines ()
   bow_lex *lex;
   char word[BOW_MAX_WORD_LENGTH];
   int wi, di, pi;
-  char filename[BOW_MAX_WORD_LENGTH];
+  char filename[1024];
 
-  /*
-    archer_docs = bow_sarray_new (0, sizeof (archer_doc), archer_doc_free);
-    archer_wi2pv = bow_wi2pv_new (0, "pv", "wi2pv");
-  */
-
-  if (!archer_docs_i4k_fp)
-  {
-    sprintf (filename, "%s/docs.i4k", bow_data_dirname);
-    archer_docs_i4k_fp =  bow_fopen (filename, "wb+");
-  }
-  if (!archer_docs_array_fp)
-  {
-    sprintf (filename, "%s/docs.array", bow_data_dirname);
-    archer_docs_array_fp =  bow_fopen (filename, "wb+");
-  }
-  if (!archer_docs)
-  {
-    archer_docs = bow_sarray_new (0, sizeof (archer_doc), archer_doc_free);
-    bow_array_write_header_inc (archer_docs->array, archer_docs_array_fp);
-  }
-  
-  if (!archer_labels_i4k_fp)
-  {
-    sprintf (filename, "%s/labels.i4k", bow_data_dirname);
-    archer_labels_i4k_fp =  bow_fopen (filename, "wb+");
-  }
-  if (!archer_labels_array_fp)
-  {
-    sprintf (filename, "%s/labels.array", bow_data_dirname);
-    archer_labels_array_fp =  bow_fopen (filename, "wb+");
-  }
-  if (!archer_labels)
-  {
-    archer_labels = bow_sarray_new (0, sizeof (archer_label), archer_label_free);
-    bow_array_write_header_inc (archer_labels->array, archer_labels_array_fp);
-  }
-
-  if (!archer_wi2pv)
-    archer_wi2pv = bow_wi2pv_new (0, "pv", "wi2pv");
-  if (!archer_li2pv)
-    archer_li2pv = bow_wi2pv_new (0, "lipv", "li2pv");
-
-  if (!archer_vocabulary_fp)
-  {
-    sprintf (filename, "%s/vocabulary", bow_data_dirname);
-    archer_vocabulary_fp = bow_fopen (filename, "wb+");
-  }
-
-  /* Do NOT write to disk every word */
-  archer_index_inc = 1;
-
+  archer_docs = bow_sarray_new (0, sizeof (archer_doc), archer_doc_free);
+  archer_wi2pv = bow_wi2pv_new (0, "pv");
   fp = bow_fopen (archer_arg_state.dirname, "r");
   bow_verbosify (bow_progress, "Indexing lines:              ");
   while (fgets (buf, max_line_length, fp))
@@ -661,32 +357,24 @@ archer_index_lines ()
       while (bow_default_lexer->get_word (bow_default_lexer,
 					  lex, word, BOW_MAX_WORD_LENGTH))
 	{
-	  wi = bow_word2int_inc (word, archer_vocabulary_fp);
+	  wi = bow_word2int_add_occurrence (word);
 	  if (wi < 0)
 	    continue;
 	  bow_wi2pv_add_wi_di_pi (archer_wi2pv, wi, di, pi);
-	  if (archer_index_inc) 
-	    bow_wi2pv_write_entry (archer_wi2pv, wi);
-	  pi++;
 	}
       bow_default_lexer->close (bow_default_lexer, lex);
       doc.tag = bow_doc_train;
       doc.word_count = pi;
       doc.di = di;
-      bow_sarray_add_entry_with_keystr_inc (archer_docs, &doc, filename,
-					    (int(*)(void*,FILE*))archer_doc_write,
-					    archer_docs_i4k_fp,
-					    archer_docs_array_fp);
+      bow_sarray_add_entry_with_keystr (archer_docs, &doc, filename);
       pi++;
     }
   fclose (fp);
   bow_verbosify (bow_progress, "\n");
 
   archer_archive ();
-
-  /* Close the wi2pv and pv files */
+  /* To close the FP for FILENAME_PV */
   bow_wi2pv_free (archer_wi2pv);
-  bow_wi2pv_free (archer_li2pv);
 }
 
 /* Set the special flag in FILENAME's doc structure indicating that
@@ -701,48 +389,28 @@ archer_delete_filename (const char *filename)
   if (doc)
     {
       doc->word_count = -(doc->word_count);
-
-      /* Update information on disk */
-      bow_array_write_entry_inc (archer_docs->array, 
-				 bow_sarray_index_at_keystr(archer_docs, filename), 
-				 (int(*)(void*,FILE*))archer_doc_write, archer_docs_array_fp);
       return 0;
     }
   return 1;
 }
 
 bow_wa *
-archer_query_hits_matching_wi (int wi, int fld, int *occurrence_count)
+archer_query_hits_matching_wi (int wi, int *occurrence_count)
 {
   int count = 0;
-  int di, pi, li[100], ln;
-  int i;
+  int di, pi;
   bow_wa *wa;
 
-  if (wi >= archer_wi2pv->entry_count && archer_wi2pv->entry[wi].count <= 0)
+  if (wi >= archer_wi2pv->entry_count && archer_wi2pv->entry[wi].word_count <= 0)
     return NULL;
   wa = bow_wa_new (0);
   bow_pv_rewind (&(archer_wi2pv->entry[wi]), archer_wi2pv->fp);
-  ln = 100;
-  bow_wi2pv_wi_next_di_li_pi (archer_wi2pv, wi, &di, li, &ln, &pi);
+  bow_wi2pv_wi_next_di_pi (archer_wi2pv, wi, &di, &pi);
   while (di != -1)
     {
-      if (fld >= 0)
-	{
-	  for (i = 0; i < ln; ++i) 
-	    {
-	      if (li[i] == fld)
-		{
-		  bow_wa_add_to_end (wa, di, 1);
-		  break;
-		}
-	    }
-	}
-      else
-	bow_wa_add_to_end (wa, di, 1);
+      bow_wa_add_to_end (wa, di, 1);
       count++;
-      ln = 100;
-      bow_wi2pv_wi_next_di_li_pi (archer_wi2pv, wi, &di, li, &ln, &pi);
+      bow_wi2pv_wi_next_di_pi (archer_wi2pv, wi, &di, &pi);
     }
   *occurrence_count = count;
   return wa;
@@ -751,14 +419,13 @@ archer_query_hits_matching_wi (int wi, int fld, int *occurrence_count)
 /* Temporary constant.  Fix this soon! */
 #define MAX_QUERY_WORDS 50
 
-bow_wa*
+bow_wa *
 archer_query_hits_matching_sequence (const char *query_string,
 				     const char *suffix_string)
 {
   int query[MAX_QUERY_WORDS];		/* WI's in the query */
   int di[MAX_QUERY_WORDS];
   int pi[MAX_QUERY_WORDS];
-  int li = -1;
   int query_len;
   int max_di, max_pi;
   int wi, i;
@@ -769,21 +436,6 @@ archer_query_hits_matching_sequence (const char *query_string,
   bow_wa *wa;
   float scaler;
   archer_doc *doc;
-  archer_label *label;
-
-  if (bow_flex_option) 
-    {
-      if (suffix_string[0])
-	{
-	  label = bow_sarray_entry_at_keystr(archer_labels, suffix_string);
-	  
-	  /* No words occur in label */
-	  if (!label)
-	    return NULL;
-	  
-	  li = label->li;
-	}
-    }
 
   /* Parse the query */
   lex = bow_default_lexer->open_str (bow_default_lexer, (char*)query_string);
@@ -794,14 +446,11 @@ archer_query_hits_matching_sequence (const char *query_string,
 				      word, BOW_MAX_WORD_LENGTH))
     {
       /* Add the field-restricting suffix string, e.g. "xxxtitle" */
-      if (!bow_flex_option) 
+      if (suffix_string[0])
 	{
-	  if (suffix_string[0])
-	    {
-	      strcat (word, "xxx");
-	      strcat (word, suffix_string);
-	      assert (strlen (word) < BOW_MAX_WORD_LENGTH);
-	    }
+	  strcat (word, "xxx");
+	  strcat (word, suffix_string);
+	  assert (strlen (word) < BOW_MAX_WORD_LENGTH);
 	}
       wi = bow_word2int_no_add (word);
       if (wi >= 0)
@@ -826,13 +475,12 @@ archer_query_hits_matching_sequence (const char *query_string,
 	break;
     }
   bow_default_lexer->close (bow_default_lexer, lex);
-
   if (query_len == 0)
     return NULL;
 
   if (query_len == 1)
     {
-      wa = archer_query_hits_matching_wi (query[0], li,
+      wa = archer_query_hits_matching_wi (query[0], 
 					  &sequence_occurrence_count);
       goto search_done;
     }
@@ -845,7 +493,7 @@ archer_query_hits_matching_sequence (const char *query_string,
   bow_wi2pv_rewind (archer_wi2pv);
   max_di = max_pi = -200;
   /* Loop while we look for matches.  We'll break out of this loop when
-     all query words are at the end of their PV's. */
+     any of the query words are at the end of their PV's. */
   for (;;)
     {
       /* Keep reading DI and PI from one or more of the query-word PVs
@@ -859,16 +507,13 @@ archer_query_hits_matching_sequence (const char *query_string,
 	  something_was_greater_than_max = 0;
 	  for (i = 0; i < query_len; i++)
 	    {
-	      int lia[100];
-	      int ln;
-
+	      /* Keep looking for instances of word query[wi] */
 	      while (di[i] != -1
 		  && (di[i] < max_di
 		      || (di[i] <= max_di && pi[i] < max_pi)))
 		{
-		  ln = 100;
-		  bow_wi2pv_wi_next_di_li_pi (archer_wi2pv, query[i],
-					      &(di[i]), lia, &ln, &(pi[i]));
+		  bow_wi2pv_wi_next_di_pi (archer_wi2pv, query[i],
+					   &(di[i]), &(pi[i]));
 
 		  /* If any of the query words is at the end of their
 		     PV, then we're not going to find any more
@@ -894,13 +539,6 @@ archer_query_hits_matching_sequence (const char *query_string,
 		{
 		  max_pi = pi[i];
 		  something_was_greater_than_max = 1;
-		}
-	      else if ((di[i] == max_di) && (pi[i] == max_pi))
-		{
-		  int j;
-
-		  for (j = 0; j < ln; ++j) if (lia[j] == li) break;
-		  if((ln != 0) && (j == ln)) something_was_greater_than_max = 1;
 		}
 	    }
 	}
@@ -931,19 +569,24 @@ archer_query_hits_matching_sequence (const char *query_string,
     }
  search_done:
 
-  /* Scale the scores by the log of the occurrence count of this sequence,
-     and take the log of the count (shifted) to encourage documents that
-     have all query term to be ranked above documents that have many 
-     repetitions of a few terms. */
-  scaler = 1.0 / log (5 + sequence_occurrence_count);
-  for (i = 0; i < wa->length; i++)
-    wa->entry[i].weight = scaler * log (5 + wa->entry[i].weight);
-
   if (wa->length == 0)
     {
       bow_wa_free (wa);
       return NULL;
     }
+
+  /* Scale the scores by the log of the occurrence count of this sequence,
+     and take the log of the count (shifted) to encourage documents that
+     have all query term to be ranked above documents that have many 
+     repetitions of a few terms. */
+  if (!archer_arg_state.score_is_raw_count)
+    {
+      double document_frequency = wa->length;
+      scaler = 1.0 / log (5 + document_frequency);
+      for (i = 0; i < wa->length; i++)
+	wa->entry[i].weight = scaler * log (5 + wa->entry[i].weight);
+    }
+
   return wa;
 }
 
@@ -993,6 +636,35 @@ archer_query ()
 	return -1;
     }
 
+  void archer_sort_hits (struct _doc_hit *hits, int hits_count, 
+			 int num_to_sort)
+    {
+      int i, j,max_j;
+      float max_score;
+      struct _doc_hit tmp;
+      /* Find the highest score NUM_TO_SORT times */
+      for (i = 0; i < num_to_sort;  i++)
+	{
+	  /* Find the next highest score */
+	  max_score = -FLT_MAX;
+	  max_j = -1;
+	  for (j = i; j < hits_count; j++)
+	    {
+	      if (hits[j].score > max_score)
+		{
+		  max_score = hits[j].score;
+		  max_j = j;
+		}
+	    }
+	  /* Move the high score into position */
+	  assert (max_j >= 0);
+	  tmp = hits[i];
+	  hits[i] = hits[max_j];
+	  hits[max_j] = tmp;
+	}
+    }
+	
+
   /* Initialize the list of target documents associated with each term */
   for (i = 0; i < num_flags; i++)
     word_hits_count[i] = 0;
@@ -1014,7 +686,7 @@ archer_query ()
     {
       /* Find the beginning of the next query term, and record +/- flags */
       while (*query_remaining 
-	     && (!isalnum (*query_remaining)
+	     && (!isalnum ((unsigned char)*query_remaining)
 		 && *query_remaining != ':'
 		 && *query_remaining != '+'
 		 && *query_remaining != '-'
@@ -1245,14 +917,19 @@ archer_query ()
 
   if (doc_hits_count)
     {
-      /* Sort the DOC_HITS list */
-      qsort (doc_hits, doc_hits_count, sizeof (struct _doc_hit), 
-	     (int(*)(const void*,const void*))compare_doc_hits);
-
       fprintf (archer_arg_state.query_out_fp, ",HITCOUNT %d\n", 
 	       doc_hits_count);
       num_hits_to_print = MIN (doc_hits_count, 
 			       archer_arg_state.num_hits_to_print);
+
+      /* Sort the DOC_HITS list */
+#if 1
+      archer_sort_hits (doc_hits, doc_hits_count, num_hits_to_print);
+#else
+      qsort (doc_hits, doc_hits_count, sizeof (struct _doc_hit), 
+	     (int(*)(const void*,const void*))compare_doc_hits);
+#endif
+
       for (i = 0; i < num_hits_to_print; i++)
 	{
 	  fprintf (archer_arg_state.query_out_fp,
@@ -1284,6 +961,162 @@ archer_query ()
   bow_free (query_copy);
 }
 
+/* Set up to listen for queries on a socket */
+void
+archer_query_socket_init (const char *socket_name, int use_unix_socket)
+{
+  int servlen, type, bind_ret;
+  struct sockaddr_un un_addr;
+  struct sockaddr_in in_addr;
+  struct sockaddr *sap;
+
+  type = use_unix_socket ? AF_UNIX : AF_INET;
+  archer_sockfd = socket (type, SOCK_STREAM, 0);
+  assert (archer_sockfd >= 0);
+  if (type == AF_UNIX)
+    {
+      sap = (struct sockaddr *)&un_addr;
+      bzero ((char *)sap, sizeof (un_addr));
+      strcpy (un_addr.sun_path, socket_name);
+      servlen = strlen (un_addr.sun_path) + sizeof(un_addr.sun_family) + 1;
+    }
+  else
+    {
+      sap = (struct sockaddr *)&in_addr;
+      bzero ((char *)sap, sizeof (in_addr));
+      in_addr.sin_port = htons (atoi (socket_name));
+      in_addr.sin_addr.s_addr = htonl (INADDR_ANY);
+      servlen = sizeof (in_addr);
+    }
+  sap->sa_family = type;     
+  bind_ret = bind (archer_sockfd, sap, servlen);
+  assert (bind_ret >= 0);
+  bow_verbosify (bow_progress, "Listening on port %d\n", atoi (socket_name));
+  listen (archer_sockfd, 5);
+}
+
+
+/* We assume that commands are no longer than 1024 characters in length */
+/* At the moment, we assume that the only possible command is ",HITS <num>" */
+void
+archer_query_server_process_commands (FILE *fp, int doing_pre_fork_commands)
+{
+  int first;
+  char buf[1024];
+  int i;
+  char s[1024];
+
+  /* See if the first character of the line is the special char ',' 
+     which indicates that this is a command line. */
+  while ((first = fgetc (fp)))
+    {
+      if ((doing_pre_fork_commands && first != ';')
+	  || (!doing_pre_fork_commands && first != ','))
+	{
+	  ungetc (first, fp);
+	  return;
+	}
+
+      /* Retrieve the rest of the line, and process the command. */
+      fgets ((char *) buf, 1024, fp);
+      if (doing_pre_fork_commands) 
+	{
+	  if (sscanf (buf, "INDEX %1023s", s) == 1)
+	    archer_index_filename (s, NULL);
+	  else if (sscanf (buf, "DELETE %1023s", s) == 1)
+	    archer_delete_filename (s);
+	  else if (strstr (buf, "ARCHIVE") == buf)
+	    archer_archive ();
+	  else if (strstr (buf, "QUIT") == buf)
+	    {
+	      archer_archive ();
+	      exit (0);
+	    }
+	  else
+	    bow_verbosify (bow_progress,
+			   "Unknown pre-fork command `%s'\n", buf);
+	}
+      else
+	{
+	  if (sscanf (buf, "HITS %d", &i) == 1)
+	    archer_arg_state.num_hits_to_print = i;
+	  else
+	    bow_verbosify (bow_progress,
+			   "Unknown post-fork command `%s'\n", buf);
+	}
+    }
+}
+
+
+void
+archer_query_serve_one_query ()
+{
+  int newsockfd, clilen;
+  struct sockaddr cli_addr;
+  FILE *in, *out;
+  int pid;
+  char query_buf[BOW_MAX_WORD_LENGTH];
+ 
+  clilen = sizeof (cli_addr);
+  newsockfd = accept (archer_sockfd, &cli_addr, &clilen);
+  if (newsockfd == -1)
+    bow_error ("Not able to accept connections!\n");
+
+  bow_verbosify (bow_progress, "Accepted connection\n");
+
+  assert (newsockfd >= 0);
+  in = fdopen (newsockfd, "r");
+  out = fdopen (newsockfd, "w");
+  archer_arg_state.query_out_fp = out;
+  archer_arg_state.query_string = query_buf;
+
+  archer_query_server_process_commands (in, 1);
+
+  if (archer_arg_state.serve_with_forking)
+    {
+      if ((pid = fork()) != 0)
+	{
+	  /* parent - return to server mode */
+	  fclose (in);
+	  fclose (out);
+	  close (newsockfd);
+	  return;
+	}
+      else
+	{
+	  /* child - reopen the PV file so we get our own lseek() position */
+	  bow_wi2pv_reopen_pv (archer_wi2pv);
+	}
+    }
+
+  bow_verbosify (bow_progress, "Processing query...\n");
+  while (!feof(in))
+    {
+      /* Strips any special commands from the beginning of the stream */
+      archer_query_server_process_commands
+	(in, archer_arg_state.serve_with_forking ? 0 : 1);
+
+      fgets (query_buf, BOW_MAX_WORD_LENGTH, in);
+      archer_query ();
+    }
+
+  fclose (in);
+  fclose (out);
+  close (newsockfd);
+  bow_verbosify (bow_progress, "Closed connection.\n");
+ 
+  /* Kill the child - don't want it hanging around, sucking up memory :) */
+  if (archer_arg_state.serve_with_forking)
+    exit (0);
+}
+
+void
+archer_query_serve ()
+{
+  archer_query_socket_init (archer_arg_state.server_port_num, 0);
+  for (;;)
+    archer_query_serve_one_query ();
+}
 
 void
 archer_print_all ()
@@ -1291,23 +1124,16 @@ archer_print_all ()
   int wi;
   int di;
   int pi;
-  int li;
-  int labels[BOW_MAX_WORD_LABELS];
-  int i;
 
   bow_wi2pv_rewind (archer_wi2pv);
   for (wi = 0; wi < bow_num_words (); wi++)
     {
       for (;;)
 	{
-	  li = BOW_MAX_WORD_LABELS;
-	  bow_wi2pv_wi_next_di_li_pi (archer_wi2pv, wi, &di, labels, &li, &pi);
+	  bow_wi2pv_wi_next_di_pi (archer_wi2pv, wi, &di, &pi);
 	  if (di == -1)
 	    break;
-	  printf ("%010d %010d %s: ", di, pi, bow_int2word (wi));
-	  for (i = 0; i < li; i++)
-	    printf ("%s ", bow_sarray_keystr_at_index (archer_labels, labels[i]));
-	  printf("\n");
+	  printf ("%010d %010d %s\n", di, pi, bow_int2word (wi));
 	}
     }
 }
@@ -1325,8 +1151,6 @@ const char *argp_program_version =
 "archer " STRINGIFY(ARCHER_MAJOR_VERSION) "." STRINGIFY(ARCHER_MINOR_VERSION);
 
 const char *argp_program_bug_address = "<mccallum@cs.cmu.edu>";
-
-#if !defined(DART) && !defined(FDART) && !defined(IDART)
 
 static char archer_argp_doc[] =
 "Archer -- a document retrieval front-end to libbow";
@@ -1437,181 +1261,18 @@ archer_parse_opt (int key, char *arg, struct argp_state *state)
   return 0;
 }
 
-#endif
-
-#ifdef ARCHER_USE_MCHECK
-void mem_error (enum mcheck_status status)
-{
-  switch (status)
-    {
-    case MCHECK_DISABLED:
-      printf ("mem_error: `mcheck' was not called before the first\n"
-	      "allocation. No consistency checking can be done.\n");
-      break;
-    case MCHECK_OK:
-      break;
-    case MCHECK_HEAD:
-      printf ("mem_error: The data immediately before the block was\n"
-	      "modified. This commonly happens when an array index or\n"
-	      "pointer is decremented too far.\n");
-      break;
-    case MCHECK_TAIL:
-      printf ("mem_error: The data immediately after the block was modified.\n"
-	      "This commonly happens when an array index or pointer is\n"
-	      "incremented too far.\n");
-      break;
-    case MCHECK_FREE:
-      printf ("mem_error: The block was already freed.\n");
-      break;
-    }
-
-  if (status != MCHECK_OK)
-    raise (SIGSEGV);
-}
-#endif
-
-
-/* The main() function. */
-
-#if defined(DART) || defined(FDART)
-
-static void dart_usage(char **argv)
-{
-  fprintf(stderr, 
-	  "USAGE: %s [-a<ip-spec>] [-p] <port> <data-dir> [<annotations>]\n", 
-	  argv[0]);
-  exit(1);
-}
-
-static int dart_arg_parse(int argc, char **argv)
-{
-  char *cp;
-  int argoff;
-
-  if (argc < 3 || argc > 6)
-    dart_usage(argv);
-
-  for (argoff = 1; argoff < argc && argv[argoff][0] == '-'; ++argoff)
-  {
-    switch (argv[1][1])
-    {
-    case 'a' :
-      cp = argv[1] + 2;
-      if (!inet_aton(cp, &archer_ip_spec))
-	dart_usage(argv);
-      break;
-    case 'p' :
-      {  
-	char *pw = getpass("Password: ");
-	if (pw[0] == 0)
-	  fprintf(stderr, "No password supplied: queries unrestricted\n");
-	else
-	  strcpy(archer_password, crypt(pw, "t5"));
-      }
-      break;
-    default :
-      dart_usage(argv);
-    }
-  }
-
-  return argoff;
-}
-
-
-int
-main(int argc, char **argv)
-{
-  extern const char *bow_annotation_filename;
-  int argoff;
-
-  /* Prevents zombie children in System V environments */
-  signal (SIGCHLD, SIG_IGN);
-
-  /* Default command-line argument values */
-  archer_arg_state.what_doing = archer_query_serve;
-  archer_arg_state.num_hits_to_print = 10;
-  archer_arg_state.dirname = NULL;
-  archer_arg_state.query_string = NULL;
-#if defined(FDART)
-  archer_arg_state.serve_with_forking = 1; 
-#endif
-  archer_arg_state.query_out_fp = stdout;
-  archer_arg_state.score_is_raw_count = 0;
-
-  argoff = dart_arg_parse(argc, argv);
-
-  archer_arg_state.server_port_num = argv[argoff];
-  bow_data_dirname = argv[argoff + 1];
-  if (argc == argoff + 3)
-    bow_annotation_filename = argv[argoff + 2];
-  bow_flex_option = USE_TAGGED_FLEXER;
-  bow_lexer_stoplist_func = NULL;
-
-  archer_unarchive ();
-
-  (*archer_arg_state.what_doing) ();
-
-  exit (0);
-}
-
-#elif defined(IDART)
-
-int
-main (int argc, char *argv[])
-{
-  /* Prevents zombie children in System V environments */
-  signal (SIGCHLD, SIG_IGN);
-
-  /* Default command-line argument values */
-  archer_arg_state.what_doing = archer_index;
-  archer_arg_state.dirname = NULL;
-  archer_arg_state.serve_with_forking = 0;
-  archer_arg_state.query_out_fp = stdout;
-  archer_arg_state.score_is_raw_count = 0;
-
-  if (argc < 3 || argc > 5)
-  {
-    fprintf(stderr, 
-	    "USAGE: %s [-i] <dir-to-index> <dir-to-write-to> [<extraction-dir>]\n",
-	    argv[0]);
-    exit(1);
-  }
-
-  if (strcmp(argv[1], "-i") == 0)
-    archer_incremental_index = 1;
-
-  archer_source_directory = archer_arg_state.dirname 
-                          = argv[archer_incremental_index + 1];
-  bow_data_dirname = argv[archer_incremental_index + 2];
-  if (argc == 4 + archer_incremental_index)
-    archer_extraction_directory = argv[archer_incremental_index + 3];
-
-  bow_flex_option = USE_TAGGED_FLEXER;
-  bow_lexer_stoplist_func = NULL;
-
-  if (archer_incremental_index)
-      archer_unarchive();
-
-  (*archer_arg_state.what_doing) ();
-
-  exit (0);
-}
-
-#else
-
 static struct argp archer_argp = 
 { archer_options, archer_parse_opt, archer_argp_args_doc,
   archer_argp_doc, bow_argp_children};
 
+
+/* The main() function. */
+
 int
 main (int argc, char *argv[])
 {
   /* Prevents zombie children in System V environments */
   signal (SIGCHLD, SIG_IGN);
-
-#ifdef ARCHER_USE_MCHECK
-  mcheck (mem_error);
-#endif
 
   /* Default command-line argument values */
   archer_arg_state.what_doing = NULL;
@@ -1635,9 +1296,3 @@ main (int argc, char *argv[])
 
   exit (0);
 }
-
-#endif
-
-
-
-

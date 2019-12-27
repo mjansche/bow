@@ -584,7 +584,7 @@ int build_svm_guts(bow_wv **docs, int *yvect, double *weights, double *b,
     }
 
     /* this detects infinite loops - which shouldn't happen - but... */
-#ifdef 0
+#if 0
     if (j == cwss && qdata.digits == old_digits) {
       fprintf(stderr, "Uh-oh - old weights identical to new weights");
       system("echo \"rainbow did a boo-boo - stopping!\" | /usr/sbin/sendmail gcs@jules.res.cmu.edu");

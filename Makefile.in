@@ -140,6 +140,7 @@ methods.c \
 next.c \
 normalize.c \
 opts.c \
+primelist.c \
 primes.c \
 random.c \
 sarray.c \
@@ -149,6 +150,7 @@ split.c \
 stem.c \
 stoplist.c \
 stopwords.c \
+strtrie.c \
 vpc.c \
 wa.c \
 wicoo.c \
@@ -348,46 +350,14 @@ $(STANDARD_CROSSBOW_C_FILES)
 # Archer section
 
 ARCHER_H_FILES = \
-
-ARCHER_H_FILES = \
-bow/archer.h \
-bow/archer_query.h \
-bow/archer_query_array.h \
-bow/archer_query_execute.h \
-bow/archer_query_table.h \
-bow/archer_query_index.h
-
-ARCHER_LEX_FILES = \
-archer_query.lex \
-flex_mail.lex \
-tagged.lex
-
-ARCHER_Y_FILES = \
-archer_query.y
+bow/archer.h
 
 ARCHER_C_FILES = \
-annotation.c \
-archer_query.c \
-archer_query_array.c \
-archer_query_execute.c \
-archer_query_index.c \
-archer_query_table.c \
-archer-server.c \
 deflexer.c \
-labels.c \
 pv.c \
 wi2pv.c 
 
-ARCHER_GENERATED_C_FILES = \
-$(ARCHER_LEX_FILES:.lex=$(LEX_RULE)) \
-$(ARCHER_Y_FILES:.y=$(Y_RULE))
-
-ARCHER_O_FILES = $(ARCHER_C_FILES:.c=.o) $(ARCHER_GENERATED_C_FILES:.c=.o)
-
-# we need the yacc .h file to compile the lex file; this forces the dependency
-# $(archer_query.lex:.lex=$(LEX_RULE)): $(archer_query.y:.y=$(Y_RULE))
-# well that doesn't work; there should be a better way to do it than:
-archer_query_lex.c: archer_query_y.c
+ARCHER_O_FILES = $(ARCHER_C_FILES:.c=.o)
 
 archer: libbow.a argp/libargp.a archer.o $(ARCHER_O_FILES)
 	$(CC) $(CFLAGS) -o $@ archer.o $(ARCHER_O_FILES) $(LDFLAGS) $(ALL_LIBS)
@@ -397,10 +367,7 @@ archer.o: archer.c
 
 ARCHER_DIST_FILES = \
 archer.c \
-archer_query.c \
 $(ARCHER_H_FILES) \
-$(ARCHER_Y_FILES) \
-$(ARCHER_LEX_FILES) \
 $(ARCHER_C_FILES) 
 
 # Other name ideas: longbow, flint, shoelace, bowtie, ...

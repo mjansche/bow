@@ -29,6 +29,8 @@
 #define BOW_MINOR_VERSION 95
 #define BOW_VERSION BOW_MAJOR_VERSION.BOW_MINOR_VERSION
 
+#define _FILE_OFFSET_BITS 64
+
 #include <stdio.h>
 #include <math.h>
 #include <assert.h>
@@ -329,6 +331,10 @@ int bow_isgraph (int character);
 /* Return non-zero if WORD is on the stoplist. */
 int bow_stoplist_present (const char *word);
 
+/* Return non-zero if WORD is on the stoplist, where HASH corresponds
+   to int4str.c:_str2id */
+int bow_stoplist_present_hash (const char *word, unsigned hash);
+
 /* Add to the stoplist the white-space delineated words from FILENAME.
    Return the number of words added.  If the file could not be opened,
    return -1. */
@@ -456,6 +462,10 @@ const char *bow_int2str (bow_int4str *map, int index);
    the first time we're seeing STRING, add it to the mapping, assign
    it a new index, and return the new index. */
 int bow_str2int (bow_int4str *map, const char *string);
+
+/* Just like BOW_STR2INT, except assume that the STRING's ID has
+   already been calculated. */
+int _bow_str2int (bow_int4str *map, const char *string, unsigned id);
 
 /* Given the char-pointer STRING, return its integer index.  If STRING
    is not yet in the mapping, return -1. */
@@ -585,6 +595,26 @@ int bow_bitvec_value (bow_bitvec *bv, int *indices);
 
 /* Free the memory held by the "bit vector" BV. */
 void bow_bitvec_free (bow_bitvec *bv);
+
+
+
+/* A trie for testing membership in a set of lowercase alphabetic strings */
+typedef struct _bow_strtrie {
+  struct _bow_strtrie *next[27];
+} bow_strtrie;
+
+/* Return a new strtrie */
+bow_strtrie *bow_strtrie_new ();
+
+/* Add the string STR to the trie STRIE */
+void bow_strtrie_add (bow_strtrie *strie, const char *str);
+
+/* Return non-zero if the string STR is present in the trie STRIE */
+int bow_strtrie_present (bow_strtrie *strie, const char *str);
+
+/* Free the memory occupied by STRIE */
+void bow_strtrie_free (bow_strtrie *strie);
+
 
 
 /* A convient interface to a specific instance of the above int/string
@@ -1156,6 +1186,9 @@ void bow_wi2dvf_remove_wi (bow_wi2dvf *wi2dvf, int wi);
    for this WI, but */
 void bow_wi2dvf_hide_wi (bow_wi2dvf *wi2dvf, int wi);
 
+/* hide all the words that exist */
+void bow_wi2dvf_hide_all_wi (bow_wi2dvf *wi2dvf);
+
 /* unhide a specific word index */
 void bow_wi2dvf_unhide_wi (bow_wi2dvf *wi2dvf, int wi);
 
@@ -1218,7 +1251,8 @@ typedef enum {
   bow_smoothing_goodturing,
   bow_smoothing_laplace,
   bow_smoothing_mestimate,
-  bow_smoothing_wittenbell
+  bow_smoothing_wittenbell,
+  bow_smoothing_dirichlet
 } bow_smoothing;
 
 /* A wrapper around a wi2dvf/cdocs combination. */
@@ -1725,6 +1759,29 @@ bow_fread_int (int *np, FILE *fp)
   return num_read * sizeof (int);
 }
 
+/* Write a (int) value to the stream FP. */
+_BOW_IO_INLINE_EXTERN int
+bow_fwrite_off_t (off_t n, FILE *fp)
+{
+  int num_written;
+  //n = htonl (n);
+  num_written = fwrite (&n, sizeof (off_t), 1, fp);
+  assert (num_written == 1);
+  return num_written * sizeof (off_t);
+}
+
+/* Read a (long) value from the stream FP. */
+_BOW_IO_INLINE_EXTERN int
+bow_fread_off_t (off_t *np, FILE *fp)
+{
+  int num_read;
+  num_read = fread (np, sizeof (off_t), 1, fp);
+  assert (num_read == 1);
+  //*np = ntohl (*np);
+  return num_read * sizeof (off_t);
+}
+
+
 /* Write a (short) value to the stream FP. */
 _BOW_IO_INLINE_EXTERN int
 bow_fwrite_short (short n, FILE *fp)
@@ -2116,6 +2173,13 @@ extern bow_smoothing bow_smoothing_method;
 
 /* smooth words that occur up to k times in a class for Good-Turing. */
 extern int bow_smoothing_goodturing_k;
+
+/* The filename containing the dirichlet alphas */
+extern const char *bow_smoothing_dirichlet_filename;
+
+/* The weighting factor for the alphas */
+extern float bow_smoothing_dirichlet_weight;
+
 
 /* Remove words that occur in this many or fewer documents. */
 extern int bow_prune_words_by_doc_count_n;

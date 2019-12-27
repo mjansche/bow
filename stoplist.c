@@ -22,26 +22,22 @@
 #include <bow/libbow.h>
 #include <stdlib.h>
 #include <ctype.h>		/* for isupper */
-#include <string.h>
 
-static bow_int4str *stopword_map;
+static bow_strtrie *stopword_strie;
 
 /* This is defined in stopwords.c */
 extern char *_bow_builtin_stopwords[];
 
-static void
-init_stopwords ()
+static void init_stopwords () __attribute__ ((constructor));
+static void init_stopwords ()
 {
   char **word_ptr;
 
-  stopword_map = bow_int4str_new (0);
-#if 0
-  return;			/* xxx temporary for missy-demo data! */
-#endif
+  stopword_strie = bow_strtrie_new ();
 
   for (word_ptr = _bow_builtin_stopwords; *word_ptr; word_ptr++)
     {
-      bow_str2int (stopword_map, *word_ptr);
+      bow_strtrie_add (stopword_strie, *word_ptr);
     }
 }
 
@@ -58,12 +54,12 @@ bow_stoplist_add_from_file (const char *filename)
   if ((fp = fopen (filename, "r")) == NULL)
     return -1;
 
-  if (!stopword_map)
+  if (!stopword_strie)
     init_stopwords ();
 
   while (fscanf (fp, "%s", word) == 1)
     {
-      bow_str2int (stopword_map, word);
+      bow_strtrie_add (stopword_strie, word);
       count++;
       bow_verbosify (bow_screaming, "Added to stoplist: `%s'\n", word);
     }
@@ -76,31 +72,54 @@ bow_stoplist_add_from_file (const char *filename)
 void
 bow_stoplist_replace_with_file (const char *filename)
 {
-  if (stopword_map)
-    bow_int4str_free (stopword_map);
-  stopword_map = bow_int4str_new (0);
+  if (stopword_strie)
+    bow_strtrie_free (stopword_strie);
+  stopword_strie = bow_strtrie_new ();
   bow_stoplist_add_from_file (filename);
 }
 
 void
 bow_stoplist_add_word (const char *word)
 {
-  bow_str2int (stopword_map, word);
+  bow_strtrie_add (stopword_strie, word);
   bow_verbosify (bow_screaming, "Added to stoplist: `%s'\n", word);
 }
 
 int
 bow_stoplist_present (const char *word)
 {
-  char *test_word;
+  return bow_strtrie_present (stopword_strie, word);
+}
 
-  if (!stopword_map)
-    init_stopwords ();
+#define stophash_sizepower 14
+#define stophash_size (1 << stophash_sizepower)
+static int stophash[stophash_size];
+static const unsigned stophash_mask = (1 << stophash_sizepower) - 1;
 
-  if (bow_lexer_infix_separator &&
-      (test_word = strstr (word, bow_lexer_infix_separator)))
-    word = test_word + bow_lexer_infix_length;
+static void stophash_init() __attribute__ ((constructor));
+static void stophash_init()
+{
+  unsigned h;
+  char **word_ptr;
+  char *s;
 
-  return ((bow_str2int_no_add (stopword_map, word) == -1)
-	  ? 0 : 1);
+  for (h = 0; h < stophash_size; h++)
+    stophash[h] = 0;
+  for (word_ptr = _bow_builtin_stopwords; *word_ptr; word_ptr++)
+    {
+      s = *word_ptr;
+      /* This code must match exactly int4str.c:_str2id */
+      for (h = 0; *s; s++)
+	h = 131*h + *s;
+      h &= stophash_mask;
+      stophash[h] = 1;
+    }    
+}
+
+int
+bow_stoplist_present_hash (const char *word, unsigned hash)
+{
+  if (stophash[hash & stophash_mask] == 0)
+    return 0;
+  return bow_strtrie_present (stopword_strie, word);
 }

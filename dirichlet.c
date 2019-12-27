@@ -385,14 +385,13 @@ main (int argc, const char *argv[])
       dirichlet_alphas = malloc (dirichlet_num_dims * sizeof (double));
       sum = dirichlet_moment_match (dirichlet_num_dims, dirichlet_num_bags,
 				    dirichlet_counts, dirichlet_alphas);
-      printf ("n       = %d\n", dirichlet_num_bags);
-      printf ("sum     = %g\np      = ", sum);
+      fprintf (stderr, "n       = %d\n", dirichlet_num_bags);
+      fprintf (stderr, "sum     = %g\np      = ", sum);
       for (j = 0; j < dirichlet_num_dims; j++)
-	printf ("%9g ", dirichlet_alphas[j] / sum);
-      printf ("\nalphas = ");
+	fprintf (stderr, "%9g ", dirichlet_alphas[j] / sum);
+      fprintf (stderr, "\nalphas =\n ");
       for (j = 0; j < dirichlet_num_dims; j++)
-	printf ("%9g ", dirichlet_alphas[j]);
-      printf ("\n");
+	printf ("%15f\n", dirichlet_alphas[j]);
     }
 
   exit (0);

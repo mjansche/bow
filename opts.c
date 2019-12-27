@@ -82,8 +82,15 @@ int bow_event_document_then_word_document_length = 200;
 /* Smooth words that occur k or fewer times for Good-Turing smoothing */
 int bow_smoothing_goodturing_k = 7;
 
+/* The filename containing the dirichlet alphas */
+const char *bow_smoothing_dirichlet_filename = NULL;
+
 /* Only tokenize words containing `xxx' */
 int bow_xxx_words_only = 0;
+
+/* The weighting factor for the alphas */
+float bow_smoothing_dirichlet_weight = 1.0;
+
 
 /* Value added to key to get the key of the opposite option.  For
    example "do not use stoplist" has key 's'; "use stoplist" has key
@@ -115,8 +122,10 @@ enum {
   INFOGAIN_EVENT_MODEL_KEY,
   SMOOTHING_GOODTURING_K,
   HDB_KEY,
-  XXX_WORDS_ONLY_KEY,
   ANNOTATION_KEY,
+  SMOOTHING_DIRICHLET_FILENAME,
+  SMOOTHING_DIRICHLET_WEIGHT,
+  XXX_WORDS_ONLY_KEY,
   MAX_NUM_WORDS_PER_DOCUMENT_KEY,
   USE_UNKNOWN_WORD_KEY,
 };
@@ -240,6 +249,11 @@ static struct argp_option bow_options[] =
   {"smoothing-goodturing-k", SMOOTHING_GOODTURING_K, "NUM", 0,
    "Smooth word probabilities for words that occur NUM or less times. "
    "The default is 7."},
+  {"smoothing-dirichlet-filename", SMOOTHING_DIRICHLET_FILENAME, "FILE", 0,
+   "The file containing the alphas for the dirichlet smoothing."},
+  {"smoothing-dirichlet-weight", SMOOTHING_DIRICHLET_WEIGHT, "NUM", 0,
+   "The weighting factor by which to muliply the alphas for dirichlet "
+   "smoothing."},
   {"event-model", EVENT_MODEL_KEY, "EVENTNAME", 0,
    "Set what objects will be considered the `events' of the probabilistic "
    "model.  EVENTNAME can be one of: word, document, document-then-word.  "
@@ -453,11 +467,19 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
 	bow_smoothing_method = bow_smoothing_mestimate;
       else if (!strcmp (arg, "wittenbell"))
 	bow_smoothing_method = bow_smoothing_wittenbell;
+      else if (!strcmp (arg, "dirichlet"))
+	bow_smoothing_method = bow_smoothing_dirichlet;
       else
 	bow_error ("--smoothing-method: No such smoothing method `%s'", arg);
       break;
     case SMOOTHING_GOODTURING_K:
       bow_smoothing_goodturing_k = atoi (arg);
+      break;
+    case SMOOTHING_DIRICHLET_FILENAME:
+      bow_smoothing_dirichlet_filename = arg;
+      break;
+    case SMOOTHING_DIRICHLET_WEIGHT:
+      bow_smoothing_dirichlet_weight = atof (arg);
       break;
     case PRINT_WORD_SCORES_KEY:
       bow_print_word_scores = 1;
@@ -571,7 +593,7 @@ _help_filter (int key, const char *text, void *input)
   char *ret;
 
   /* Add the names of the available methods to the help text. */
-  if (key == 'm')
+  if (key == 'm' && bow_methods)
     {
       static const int len = 1024;
       char methodnames[len];

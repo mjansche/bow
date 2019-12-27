@@ -43,6 +43,10 @@ double bow_naivebayes_anneal_temperature = 1;
 static double **bow_naivebayes_goodturing_discounts = NULL;
 static bow_barrel *bow_naivebayes_goodturing_barrel = NULL;
 
+/* icky globals for Dirichlet smoothing */
+double *bow_naivebayes_dirichlet_alphas = NULL;
+double bow_naivebayes_dirichlet_total = 0;
+
 /* The integer or single char used to represent this command-line option.
    Make sure it is unique across all libbow and rainbow. */
 #define NB_M_EST_M_KEY 3001
@@ -208,6 +212,55 @@ bow_naivebayes_initialize_goodturing (bow_barrel *barrel)
     }
 }
 
+void
+bow_naivebayes_load_dirichlet_alphas ()
+{
+  int max_wi = bow_num_words ();
+  FILE *fp;
+  float x;
+  char s[256];
+  int wi;
+  
+  if (bow_naivebayes_dirichlet_alphas)
+    bow_free (bow_naivebayes_dirichlet_alphas);
+  bow_naivebayes_dirichlet_alphas = bow_malloc (sizeof (double) * max_wi);
+  for (wi = 0; wi < max_wi; wi++)
+    bow_naivebayes_dirichlet_alphas[wi] = 0.0;
+  
+  fp = fopen (bow_smoothing_dirichlet_filename, "r");
+  while (fscanf(fp, "%f %s", &x, s)==2)
+    {
+      wi = bow_word2int (s);
+      
+      assert (wi != -1);
+      bow_naivebayes_dirichlet_alphas[wi] = x * bow_smoothing_dirichlet_weight;
+    }
+  fclose (fp);
+}
+
+
+
+/* load up the alphas */
+void
+bow_naivebayes_initialize_dirichlet_smoothing (bow_barrel *barrel)
+{
+  int max_wi = MIN (barrel->wi2dvf->size, bow_num_words ());
+  int wi;
+  
+  bow_naivebayes_dirichlet_total = 0;
+
+  /* make sure all the alphas are > 0 and calculate the sum */
+  for (wi = 0; wi < max_wi; wi++)
+    {
+      bow_dv *dv = bow_wi2dvf_dv (barrel->wi2dvf, wi);
+      if (dv)
+	{
+	  bow_naivebayes_dirichlet_total += bow_naivebayes_dirichlet_alphas[wi];
+	  assert (bow_naivebayes_dirichlet_alphas[wi] > 0);
+	}
+    }
+}
+
 /* Return the probability of word WI in class CI. 
    If LOO_CLASS is non-negative, then we are doing 
    leave-out-one-document evaulation.  LOO_CLASS is the index
@@ -345,6 +398,11 @@ bow_naivebayes_pr_wi_ci (bow_barrel *barrel,
 	pr_w_c = bow_naivebayes_goodturing_discounts[ci][(int) num_wi_ci] * 
 	  num_wi_ci / num_w_ci;
     }
+  else if (bow_smoothing_method == bow_smoothing_dirichlet)
+    {
+      pr_w_c = (num_wi_ci + bow_naivebayes_dirichlet_alphas[wi]) / 
+	(num_w_ci + bow_naivebayes_dirichlet_total);
+    }
   else
     {
       bow_error ("Naivebayes does not implement smoothing method %d",
@@ -396,9 +454,8 @@ bow_naivebayes_print_word_probabilities_for_class (bow_barrel *barrel,
     {
       pr_w = bow_naivebayes_pr_wi_ci (barrel, wi, ci, -1, 0, 0, NULL, NULL);
       if (pr_w >= 0)
-	printf ("%-30s  %10f\n", 
-		bow_int2word (wi), 
-		pr_w);
+	printf ("%20.18f %s\n", pr_w,
+		bow_int2word (wi));
     }
   printf ("%-30s  %10.8f\n", "total_count", 
 	  bow_naivebayes_total_word_count_for_ci (barrel, ci));
@@ -630,7 +687,7 @@ bow_naivebayes_set_weights (bow_barrel *barrel)
 	      num_words_per_ci[ci] += dv->entry[dvi].weight;
 	      cdoc->normalizer++;
 	      dv->idf += dv->entry[dvi].weight;
-	      total_num_words += dv->idf;
+	      total_num_words += dv->entry[dvi].weight;
 	    }
 	}
       for (ci = 0; ci < barrel->cdocs->length; ci++)
@@ -659,9 +716,14 @@ bow_naivebayes_set_weights (bow_barrel *barrel)
 	}
     }
 
-  /* initialize Good-Turing smoothing */
+  /* initialize smoothing methods, if necessary */
   if (bow_smoothing_method == bow_smoothing_goodturing)
     bow_naivebayes_initialize_goodturing (barrel);
+  else if (bow_smoothing_method == bow_smoothing_dirichlet)
+    {
+      bow_naivebayes_load_dirichlet_alphas ();
+      bow_naivebayes_initialize_dirichlet_smoothing (barrel);
+    }
 
   if (bow_event_model != bow_event_document && !barrel_is_empty)
     {

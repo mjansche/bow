@@ -292,6 +292,22 @@ bow_wi2dvf_hide_wi (bow_wi2dvf *wi2dvf, int wi)
     }
 }
 
+
+/* hide all the words that exist */
+void
+bow_wi2dvf_hide_all_wi (bow_wi2dvf *wi2dvf)
+{
+  int wi;
+
+  for (wi = 0; wi < wi2dvf->size; wi++)
+    {
+      bow_dv *dv = bow_wi2dvf_dv (wi2dvf, wi);
+      if (dv)
+	bow_wi2dvf_hide_wi (wi2dvf, wi);
+    }
+}
+
+
 /* unhide a specific word index */
 void
 bow_wi2dvf_unhide_wi (bow_wi2dvf *wi2dvf, int wi)

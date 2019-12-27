@@ -24,11 +24,20 @@
    size-of-vocabulary instead. */
 double naivebayes_argp_m_est_m;
 
+/* icky globals for Dirichlet smoothing */
+double *bow_naivebayes_dirichlet_alphas;
+double bow_naivebayes_dirichlet_total;
+
 /* the score normally returns P(c|X) - this makes the score return P(X|c) */
 extern int  naivebayes_score_returns_doc_pr;
 /* leave the scores in sorted order with regards to class indices */
 extern int  naivebayes_score_unsorted;
 extern double bow_naivebayes_anneal_temperature;
+
+/* load up the alphas */
+void bow_naivebayes_load_dirichlet_alphas ();
+void bow_naivebayes_initialize_dirichlet_smoothing (bow_barrel *barrel);
+
 
 void bow_naivebayes_set_weights (bow_barrel *barrel);
 

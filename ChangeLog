@@ -1,3 +1,208 @@
+2001-09-26  Andrew McCallum  <mccallum@pail.whizbang.com>
+
+	* wi2pv.c (bow_wi2pv_flush): Assert that there are no bytes in the
+	PVM.
+
+	* archer.c (archer_index_filename): Properly print the filename as
+	part of the mmap error.  Include the vocabulary size in the
+	progress message.
+
+2001-03-17  Andrew McCallum  <mccallum@whizbang.com>
+
+	* wi2pv.c (bow_wi2pv_new): Write something so that no PV can have
+	a start offset of 0, so that 0 can be reserved in pv.c as a
+	special value.
+
+	* bow/libbow.h (_FILE_OFFSET_BITS): Define to be 64 here.  This
+	fixed problem with bow_fwrite_off_t().
+
+	* strtrie.c (bow_strtrie_present): If STR is not all lowercase,
+	don't exit, just say it isn't in the trie.
+
+	* pv.c: Use 0 instead of -1 to represent an unset seek start,
+	because I'm not sure whether offset_t is signed.
+
+	* int4str.c (_str2id): Make sure we do unsigned arithmetic.
+	(_bow_str_hash_lookup): Comment out bad fix to looping hash lookup,
+	and document the persistent problem in a comment below.
+
+	* archer.c (archer_index_filename): Use mmap() to get the text
+	files.
+
+2001-02-04  Andrew McCallum  <mccallum@whizbang.com>
+
+	* pv.c: Use off_t instead of int in appropriate places.
+	(_FILE_OFFSET_BITS): New macro, defined to be 64.
+	* archer.c, wi2pv.c (_FILE_OFFSET_BITS): New macro, defined to be
+	64.
+	* bow/archer.h: Use off_t instead of int in appropriate places.
+	* bow/libbow.h (bow_fwrite_off_t): New function.
+	(bow_fread_off_t): New function.
+
+2001-01-21  Andrew McCallum  <mccallum@whizbang.com>
+
+	* stoplist.c (stophash_init): New function.
+	(bow_stoplist_present_hash): New function.
+
+	* pv.c (bow_pv_write): Faster, architecture-dependent
+	implementation based on single call to fwrite().
+	(bow_pv_read): Likewise for reading.
+
+	* int4word.c (bow_words_set_map): Allow MAP to be NULL, in which
+	case this function simply initializes the WORD_MAP.
+	(bow_words_write): If !ARCHIVE_COUNTS, don't write out the
+	WORD_MAP_COUNTS.  Currently is archiving.
+	(bow_words_read_from_fp): Likewise for reading.
+
+	* int4str.c (_str2id): No need to initialize H twice.
+	(_bow_str_hash_lookup): Make this a public interface.
+	(_bow_str_hash_lookup2): New function.
+	(_bow_str2int): New function that takes a pre-computed hash.  Use
+	above function. 
+	(bow_str2int): New shell around above function.
+
+	* archer.c (archer_index_filename): Add local lexing
+	implementation, used only if USE_FAST_LEXER is #define'd to be 1
+	(which is the default).  Print document count once every 200
+	documents, not every 100.
+	(archer_sort_hites): New function.
+	(archer_query): Use it.
+
+	* bow/libbow.h: Declare new functions.
+
+2000-12-19  Andrew McCallum  <mccallum@whizbang.com>
+
+	* lex-simple.c: Cast (char) to (unsigned char) before passing to
+	isalpha() and other functions that take an int.  On Solaris, the
+	high bit in these chars gets changed to a sign bit in the int, and
+	isalpha() and islower(), etc don't work.
+
+	* lex-simple.c (bow_lexer_simple_open_text_fp): Increase default
+	document size.  Only scan FP for start string if it's non-empty.
+	If there is no end pattern, read the contents more efficiently.
+	(bow_lexer_simple_get_raw_word): New temporary version that is more
+	efficient, but ignores out many of the command-line arguments.
+	(bow_lexer_simple_postprocess_word): Likewise.
+
+2000-12-18  Andrew McCallum  <mccallum@whizbang.com>
+
+	* bow/libbow.h: Declare strtrie functions.
+	* int4str.c: Many efficiency cleanups, including better string
+	hash function and more efficient code paths for str_hash_lookup().
+	* stoplist.c: Use strtrie instead of hashtable.
+	* archer.c, pv.c, wi2pv.c, bow/archer.h: Trimmed back to version
+	as of 1999/05/20, and augmented with faster indexing.
+
+	* Makefile.in (STANDARD_LIBBOW_C_FILES): Added primelist.c and
+	strtrie.c.
+	(ARCHER_H_FILES): Remove all bow/archer_query* files.
+	(ARCHER_LEX_FILES, ARCHER_Y_FILES, ARCHER_GENERATED_C_FILES): Removed.
+	(ARCHER_DIST_FILES): Trimmed.
+
+	* Makefile.in (ARCHER_H_FILES): Remove reduntant one of these
+	definitions.
+
+	* opts.c (_help_filter): Make sure BOW_METHODS is non-NULL before
+	trying to use it.
+	* primes.c: Formatting change.
+	* Makefile.local: RAINBOW_METHOD_C_FILES: Added dirk.c.
+	* Makefile.in (STANDARD_RAINBOW_METHOD_C_FILES): Removed dirk.c.
+
+2000-12-07  Kamal Nigam  <knigam@whizbang.com>
+
+	* bow/libbow.h (bow_wi2dvf_hide_all_wi): Added.
+	(bow_smoothing): Added dirichlet smoothing.
+	(bow_smoothing_dirichlet_filename): Added.
+	(bow_smoothing_dirichlet_weight): Added.
+
+	* bow/naivebayes.h (bow_naivebayes_dirichlet_alphas): Added to
+	enable dirichlet smoothing.
+	(bow_naivebayes_dirichlet_total): Likewise.
+	(bow_naivebayes_load_dirichlet_alphas): Likewise.
+	(bow_naivebayes_initialize_dirichlet_smoothing): Likewise.
+
+	* bow/em.h (bow_em_calculating_perplexity): Added.
+
+	* cotrain.c (cotrain_selection_type): Add randomly selection type.
+	(cotrain_select_docs): Changed prototype.
+	(cotrain_print_dependency_matrix): Variable for new option.
+	(cotrain_vocab_split_file): Likewise.
+	(cotrain_co_gem): Likewise.
+	(cotrain_options): Added new options
+	--cotrain-print-dependency-matrix,
+	--cotrain-split-vocab-from-file, and --cotrain-co-gem.
+	(cotrain_parse_opt): Likewise.
+	(cotrain_calculate_perplexity): New funtion.
+	(cotrain_split_vocabulary_from_file): New function.
+	(cotrain_do_vocab_split): New code for splitting from file.
+	(cotrain_generic_select): Changed prototype for changed data
+	structure.
+	(cotrain_select_by_confidence_weighting): Likewise.
+	(cotrain_select_by_confidence): Likewise.
+	(cotrain_select_by_density_weighting): Likewise.
+	(cotrain_select_by_density): Likewise.
+	(cotrain_select_by_random_weighting): New function for random
+	selection type.
+	(cotrain_select_by_random): Likewise.
+	(cotrain_new_vpc_with_weights): New code for printing the dependency
+	matrix.  New code for co-GEM.  New code for changed data
+	structure.
+
+	* dirichlet.c (main): Print progress information to stderr, not
+	stdout.  Increase print precision on alphas.
+
+	* em.c (bow_em_calculating_perplexity): Made non-static to allow
+	access from cotraining.
+	(bow_em_new_vpc_with_weights): Initialize dirichlet smoothing if using
+	it.  Add word counts even when class probs are 0.  This will fill
+	out the class word matrix for perplexity calculations.
+	(em_calculate_perplexity): Fix class correspondence bug.  hit index is
+	not class index when adding up log_prob_of_data.  Also correctly
+	calculate num_data_words based on actual words occurring in the
+	model.
+	(bow_em_pr_wi_ci): Add in code for dirichlet smoothing.
+	(bow_em_set_weights): Likewise.
+	(bow_method_em): Change word vector normalization to
+	set_weights_to_count.  This causes document-then-word test
+	documents to have their probabilities not be scaled to the
+	document length.  This can be interpreted as more correct than the
+	other way.
+
+	* naivebayes.c (bow_naivebayes_dirichlet_alphas): New global
+	variable for Dirichlet smoothing.
+	(bow_naivebayes_dirichlet_total): Likewise.
+	(bow_naivebayes_load_dirichlet_alphas): New function.
+	(bow_naivebayes_initialize_dirichlet_smoothing): New function.
+	(bow_naivebayes_pr_wi_ci): Added dirichlet smoothing option.
+	(bow_naivebayes_print_word_probabilities_for_class): Changed output
+	format to include word count as well.
+	(bow_naivebayes_set_weights): Initialize dirichlet smoothing if its
+	being used.
+
+	* opts.c (bow_smoothing_dirichlet_filename): variable for
+	Dirichlet smoothing.
+	(bow_smoothing_dirichlet_weight): Likewise.
+	(bow_options): Added new options --smoothing-dirichlet-filename and
+	--smoothing-dirichlet-weight.
+	(parse_bow_opt): Likewise.
+
+	* wi2dvf.c (bow_wi2dvf_hide_all_wi): New function.
+
+	* Makefile.local (RAINBOW_METHOD_C_FILES): Remove dirk.c because
+	it's already in Makefile.in
+
+	* primes.c (_bow_nextprime): Bugfix from Andrew for mixing alloca
+	and realloc in weird ways.
+
+	* em.c (em_labeled_for_start_only): New option variable.
+	(em_set_vocab_from_unlabeled): New option variable.
+	(em_options): Changes for new options.
+	(em_parse_opt): Likewise.
+	(bow_em_new_vpc_with_weights): New option --em-labeled-for-start-only
+	uses the labeled data just to set the starting point of EM, and
+	not used during iterations.  Option --em-set-vocab-from-unlabeled
+	sets to vocabulary to only words occurring in the unlabeled data.
+
 2000-09-08  Kamal Nigam  <knigam@whizbang.com>
 
 	* primes.c (_bow_nextprime): Fix very peculiar memset bug.

@@ -61,7 +61,7 @@ _bow_nextprime (unsigned n)
     { 
       return primes[0];
     }
-  
+
   while (n > (max_prime = primes[primes_len - 1])) 
     {
       /* primes doesn't contain any prime large enough.  Sieve from
@@ -70,7 +70,6 @@ _bow_nextprime (unsigned n)
       unsigned end   = start + max_prime + 1;
       char *sieve = (char *) alloca ((end - start) * sizeof (*sieve));
       unsigned int i;
-
       assert (sieve);
 
       memset (sieve, 0, (end - start) * sizeof (*sieve));

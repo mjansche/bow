@@ -1,6 +1,6 @@
 /* Implementation of a one-to-one mapping of string->int, and int->string. */
 
-/* Copyright (C) 1997, 1998, 1999 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -38,10 +38,11 @@
 #define HASH(map, id) ((id) % (map)->str_hash_size)
 
 /* Returns subsequent indices for ID, given the previous one. */
+/* All elements of the formula must be of type unsigned to get unsigned arithmetic */
 #define REHASH(map, id, h) (((id) + (h)) % (map)->str_hash_size)
 
-/* This function is defined in bow/primes.c. */
-extern int _bow_nextprime (unsigned n);
+/* This function is defined in bow/primelist.c. */
+extern int _bow_primedouble (unsigned n);
 
 /* Initialize the string->int and int->string map.  The parameter
    CAPACITY is used as a hint about the number of words to expect; if
@@ -56,8 +57,9 @@ bow_int4str_init (bow_int4str *map, int capacity)
     capacity = DEFAULT_INITIAL_CAPACITY;
   map->str_array_size = capacity;
   map->str_array = bow_malloc (map->str_array_size * sizeof (char*));
+  //map->hash_id_array = bow_malloc (map->str_array_size * sizeof (unsigned));
   map->str_array_length = 0;
-  map->str_hash_size = _bow_nextprime (map->str_array_size * 2);
+  map->str_hash_size = _bow_primedouble (map->str_array_size);
   map->str_hash = bow_malloc (map->str_hash_size * sizeof (int));
   for (i = 0; i < map->str_hash_size; i++)
     map->str_hash[i] = HASH_EMPTY;
@@ -80,40 +82,65 @@ bow_int4str_new (int capacity)
 const char *
 bow_int2str (bow_int4str *map, int index)
 {
-  assert (index < map->str_array_length && index >= 0);
+  assert (index < map->str_array_length);
   return map->str_array[index];
 }
 
 
 /* Extract and return a (non-unique) integer `id' from string S. */
-static int
-_str2id (const char *s)
+static unsigned
+_str2id (const unsigned char *s)
 {
-  int h = 0;
-  int c = 0;
+  unsigned h;
 
-  while (*s != '\0')
+#if 0
+  static const unsigned bigprime = 1931045213L;
+  static const unsigned copying = 0x1111U;
+  unsigned c = 0;
+  unsigned x;
+  int i;
+#endif
+
+  for (h = 0; *s; s++)
+    h = 131*h + *s;
+
+#if 0
+  while (*s++ != '\0')
     {
-      h ^= *s << c;
-      s++;
+      x = (*s) * copying;
+      for (i = 0; i < c; i++)
+	x = (x & 0x1) ? ((x << 1) | 0x1) : (x << 1);
+      h ^= x;
       c++;
     }
-  /* If return value is too big then REHASH() can make it go negative,
-     so here we use modulo to keep it a little small.  */
-  h = h % (INT_MAX / 4);
-  /* Be sure to do this after the %-modulo above, because the largest
-     negative integer negated, it just again the largest negative
-     integer. */
-  if (h < 0)
-    h = -h;
+#endif
+
+#if 0
+  while (*s++ != '\0')
+    h ^= (((unsigned)*s) * copying) << (c++ % 7);
+#endif
+
+#if 0
+  while (*s++ != '\0')
+    h ^= (((unsigned)*s) * bigprime) << (c++ % 7);
+    //h ^= (((unsigned)*s) * bigprime);
+#endif
+
   /* Never return 0, otherwise _str_hash_add() will infinite-loop */
-  else if (h == 0)
-    h = 1;
+  //assert (h != 0);
+  //if (h == 0) h = 1;
 
   return h;
 }
 
+#if 0
+int my_strcmp (const char *s1, const char *s2)
+{
+  return strcmp (s1, s2);
+}
+#endif
 
+#if 0
 /* Look up STRING in the MAP->STR_HASH; or, more precisely: Return the
    index to the location in MAP->STR_HASH that contains the index to
    the location in MAP->STR_ARRAY that contains a (char*) with
@@ -122,14 +149,13 @@ _str2id (const char *s)
    return value will be different from HASH_EMPTY, and *STRDIFF will
    be zero. */
 static int
-_str_hash_lookup (bow_int4str *map, const char *string, int id, int *strdiffp)
+old_str_hash_lookup (bow_int4str *map, const char *string, unsigned id, int *strdiffp)
 {
-  int h;
+  unsigned h;
   int firsth = -1;		/* the first value of H */
 
-  assert (id >= 0);
   assert (map->str_hash[0] >= -1);
-  assert (id == _str2id (string));
+  //assert (id == _str2id (string));
   /* Keep looking at STR_HASH locations until we either (1) find the
      string, or (2) find an empty spot, or (3) "modulo-loop" around to
      the same spot we began the search.  In the third case, we know
@@ -149,6 +175,186 @@ _str_hash_lookup (bow_int4str *map, const char *string, int id, int *strdiffp)
   return h;
 }
 
+
+
+static int
+old2_str_hash_lookup (bow_int4str *map, const char *string, unsigned id, int *strdiffp)
+{
+  unsigned h;
+  int num_hops = 0;
+  register int local_strdiffp = 1;
+  static int num_hops_sum = 0;
+  static int num_calls = 0;
+  static int max_num_hops = 0;
+  /* Make INCR be relatively prime to the STR_HASH_SIZE */
+  unsigned incr = 1 + (id % (map->str_hash_size - 1));
+
+  //assert (map->str_hash[0] >= -1);
+  //assert (id == _str2id (string));
+  /* Keep looking at STR_HASH locations until we either (1) find the
+     string, or (2) find an empty spot, or (3) "modulo-loop" around to
+     the same spot we began the search.  In the third case, we know
+     that we will have to grow the STR_HASH before we can add the
+     string corresponding to ID.  We don't need to check to stop when
+     H == the first H because we are now growing the table whenever it gets
+     half full, and so we can never loop around completely.  */
+  //assert (h > 0);
+  num_hops++;
+  for (h = HASH(map, id);
+       map->str_hash[h] != HASH_EMPTY 
+	 && (//id != map->hash_id_array[map->str_hash[h]] ||
+	     (local_strdiffp = strcmp (string, map->str_array[map->str_hash[h]])));
+       h = (h + incr) % map->str_hash_size)
+    {
+      num_hops++;
+      //assert (h > 0);
+    }
+  *strdiffp = local_strdiffp;
+#if 1
+  num_calls++;
+  num_hops_sum += num_hops;
+  if (num_hops > max_num_hops)
+    max_num_hops = num_hops;
+  if (num_calls % 10000 == 0)
+    {
+      bow_verbosify (bow_progress,
+		     "0x%x Average num hops = %f\n "
+		     "Max num hops = %d\n "
+		     "Hash size = %d  Num entries = %d\n",
+		     map,
+		     ((float)num_hops_sum)/num_calls, max_num_hops,
+		     map->str_hash_size, map->str_array_length);
+      num_calls = num_hops_sum = max_num_hops = 0;
+    }
+#endif
+  return h;
+}
+
+static int
+old3_str_hash_lookup (bow_int4str *map, const char *string, unsigned id, int *strdiffp)
+{
+  register unsigned h;
+  /* Make INCR be relatively prime to the STR_HASH_SIZE */
+  unsigned incr = 1 + (id % (map->str_hash_size - 1));
+
+  /* Keep looking at STR_HASH locations until we either (1) find the
+     string, or (2) find an empty spot.  We don't need to check to
+     stop when H == the first H because we are now growing the table
+     whenever it gets half full, and so we can never loop around
+     completely.  */
+  for (h = id % map->str_hash_size;
+       map->str_hash[h] != HASH_EMPTY 
+	 && (*strdiffp = strcmp (string, map->str_array[map->str_hash[h]]));
+       h = (h + incr) % map->str_hash_size)
+    ;
+  return h;
+}
+#endif /* 0 */
+
+int
+_bow_str_hash_lookup (bow_int4str *map, const char *string, unsigned id, 
+		  int *strdiffp)
+{
+  register unsigned h;
+  register const char **str_array = map->str_array;
+  
+  *strdiffp = 1;
+  h = id % map->str_hash_size;
+  if (map->str_hash[h] == HASH_EMPTY
+      || (!(*strdiffp = strcmp (string, str_array[map->str_hash[h]]))))
+    return h;
+
+  {
+    unsigned incr = 1 + (id % (map->str_hash_size - 1));
+    for (;;)
+      {
+	/* Incrementing INCR is not among the recommendation of
+	   Corman, Lieiserson & Rivest, page 236, but without this,
+	   the problem below happens.  I'm mystified. */
+	//h = (h + incr++) % map->str_hash_size;
+	h = (h + incr) % map->str_hash_size;
+	if (map->str_hash[h] == HASH_EMPTY
+	    || (!(*strdiffp =strcmp(string, str_array[map->str_hash[h]]))))
+	  return h;
+      }
+  }
+}
+
+/* Problem:
+56911565 65517 %p
+42809
+1-p
+42808
+56911565 65516 %p
+43677
+42809 43678 + 65517 %p
+20970
+43678 + 65517 %p
+64648
+43678 + 65517 %p
+42809
+43678 + 65517 %p
+20970
+
+65517 2*p
+131034
+43678 3*p
+131034
+
+*/
+
+int
+_bow_str_hash_lookup2 (bow_int4str *map, const char *string, unsigned id)
+{
+  register unsigned h;
+  register const char **str_array = map->str_array;
+
+#define HOP_REPORTING 0
+#if HOP_REPORTING
+  static int num_hops = 0;
+  static int num_calls = 0;
+  static int hops_count = 0;
+  static int max_hops_count = 0;
+  static int max2_hops_count = 0;
+  if (num_calls % 100000 == 0)
+    {
+      fprintf (stderr, "num_hops=%d, num_calls=%d, ratio=%f, max_hops=%d,%d\n",
+	       num_hops, num_calls, ((float)num_hops)/num_calls, 
+	       max_hops_count, max2_hops_count);
+      max_hops_count, hops_count = num_hops = num_calls = 0;
+    }
+#endif
+
+#if HOP_REPORTING
+  num_calls++;
+  hops_count = 0;
+#endif
+  h = id % map->str_hash_size;
+  if (map->str_hash[h] == HASH_EMPTY
+      || (! strcmp (string, str_array[map->str_hash[h]])))
+    return h;
+
+  {
+    unsigned incr = 1 + (id % (map->str_hash_size - 1));
+    for (;;)
+      {
+#if HOP_REPORTING
+	num_hops++;
+	hops_count++;
+	if (hops_count > max_hops_count)
+	  max_hops_count = hops_count;
+	if (hops_count != max_hops_count && hops_count > max2_hops_count)
+	  max2_hops_count = hops_count;
+#endif
+	h = (h + incr) % map->str_hash_size;
+	if (map->str_hash[h] == HASH_EMPTY
+	    || (! strcmp(string, str_array[map->str_hash[h]])))
+	  return h;
+      }
+  }
+}
+
+
 /* Given the char-pointer STRING, return its integer index.  If STRING
    is not yet in the mapping, return -1. */
 int
@@ -157,7 +363,7 @@ bow_str2int_no_add (bow_int4str *map, const char *string)
   int strdiff;
   int h;
 
-  h = _str_hash_lookup (map, string, _str2id (string), &strdiff);
+  h = _bow_str_hash_lookup (map, string, _str2id (string), &strdiff);
   if (strdiff == 0)
     return map->str_hash[h];
   return -1;
@@ -165,16 +371,17 @@ bow_str2int_no_add (bow_int4str *map, const char *string)
 
 /* Add the char* STRING to the string hash table MAP->STR_HASH.  The
    second argument H must be the value returned by
-   _STR_HASH_LOOKUP(STRING).  Don't call this function with a string
+   _BOW_STR_HASH_LOOKUP(STRING).  Don't call this function with a string
    that has already been added to the hashtable!  The duplicate index
    would get added, and cause many bugs. */
 static void
 _str_hash_add (bow_int4str *map, 
-	       const char *string, int id, int h, int str_array_index)
+	       const char *string, unsigned id, int h, int str_array_index)
 {
   assert (h >= 0);
   assert (str_array_index >= 0 && str_array_index < map->str_array_length);
-  if (map->str_hash[h] == HASH_EMPTY)
+  /* if (map->str_hash[h] == HASH_EMPTY) */
+  if (map->str_hash_size > map->str_array_length * 2)
     {
       /* str_hash doesn't have to grow; just drop it in place.
 	 STR_ARRAY_INDEX is the index at which we can find STRING in
@@ -193,7 +400,11 @@ _str_hash_add (bow_int4str *map,
       /* Create a new, empty str_hash. */
       old_str_hash = map->str_hash;
       old_str_hash_size = map->str_hash_size;
-      map->str_hash_size = _bow_nextprime (2 * old_str_hash_size);
+      map->str_hash_size = _bow_primedouble (old_str_hash_size);
+#if 0
+      bow_verbosify (bow_progress,
+		     "Growing hash table to %d\n", map->str_hash_size);
+#endif
       map->str_hash = bow_malloc (map->str_hash_size * sizeof(int));
       for (i = map->str_hash_size, entry = map->str_hash; i > 0; i--, entry++)
 	*entry = HASH_EMPTY;
@@ -204,9 +415,10 @@ _str_hash_add (bow_int4str *map,
 	  if (old_str_hash[i] != HASH_EMPTY)
 	    {
 	      const char *old_string = map->str_array[old_str_hash[i]];
-	      int old_id = _str2id (old_string);
+	      unsigned old_id = _str2id (old_string);
 	      _str_hash_add (map, old_string, old_id,
-			     _str_hash_lookup (map, old_string, old_id, &sd),
+			     _bow_str_hash_lookup (map, old_string, old_id, 
+						   &sd),
 			     old_str_hash[i]);
 	      assert (sd);      /* All these strings should be unique! */
 	    }
@@ -217,28 +429,23 @@ _str_hash_add (bow_int4str *map,
 
       /* Finally, add new string. */
       _str_hash_add (map, string, id,
-		     _str_hash_lookup (map, string, id, &sd),
+		     _bow_str_hash_lookup (map, string, id, &sd),
 		     str_array_index);
     }
 }
 
 
-/* Given the char-pointer STRING, return its integer index.  If this is 
-   the first time we're seeing STRING, add it to the tables, assign
-   it a new index, and return the new index. */
+/* Just like BOW_STR2INT, except assume that the STRING's ID has
+   already been calculated. */
 int
-bow_str2int (bow_int4str *map, const char *string)
+_bow_str2int (bow_int4str *map, const char *string, unsigned id)
 {
-  int id;			/* the integer extracted from STRING */
   int h;			/* ID, truncated to fit in STR_HASH */
-  int strdiff;			/* gets 0 if we found STRING in STR_HASH */
-
-  id = _str2id (string);
 
   /* Search STR_HASH for the string, or an empty space.  */
-  h = _str_hash_lookup (map, string, id, &strdiff);
+  h = _bow_str_hash_lookup2 (map, string, id);
   
-  if (!strdiff)
+  if (map->str_hash[h] != HASH_EMPTY)
     /* Found the string; return its index. */
     return map->str_hash[h];
 
@@ -254,10 +461,14 @@ bow_str2int (bow_int4str *map, const char *string)
     {
       /* str_array must grow in order to accomodate new entry. */
       map->str_array_size *= 2;
+      assert (map->str_array_size < 1768448882);
       map->str_array = bow_realloc (map->str_array, 
 				    map->str_array_size * sizeof (char*));
+      //map->hash_id_array = bow_realloc (map->hash_id_array, 
+      //map->str_array_size * sizeof (unsigned));
     }
   map->str_array[map->str_array_length] = string;
+  //map->hash_id_array[map->str_array_length] = id;
 
   /* The STR_ARRAY has one more element in it now, so increment its length. */
   map->str_array_length++;
@@ -267,6 +478,15 @@ bow_str2int (bow_int4str *map, const char *string)
 
   /* Return the index at which it was added.  */
   return (map->str_array_length)-1;
+}
+
+/* Given the char-pointer STRING, return its integer index.  If this is 
+   the first time we're seeing STRING, add it to the tables, assign
+   it a new index, and return the new index. */
+int
+bow_str2int (bow_int4str *map, const char *string)
+{
+  return _bow_str2int (map, string, _str2id (string));
 }
 
 /* Create a new int-str mapping words fscanf'ed from FILE using %s. */
@@ -426,7 +646,7 @@ bow_int4str_new_from_fp_inc (FILE *fp)
       /* Read the string from the file. */
       len = strlen (buf);
       if (buf[len-1] == '\n')
-	buf[len-1] = '\0';
+        buf[len-1] = '\0';
       /* Add it to the mappings. */
       bow_str2int (ret, buf);
     }

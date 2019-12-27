@@ -262,15 +262,15 @@ bow_treenode_iterate_all (treenode **context)
   else
     {
       while ((*context)->parent
-						 && ((*context)->ci_in_parent
-								 == (*context)->parent->children_count-1))
-			{
-				*context = (*context)->parent;
-			}
+	     && ((*context)->ci_in_parent
+		 == (*context)->parent->children_count-1))
+	{
+	  *context = (*context)->parent;
+	}
       if ((*context)->parent)
-				*context = (*context)->parent->children[(*context)->ci_in_parent+1];
+	*context = (*context)->parent->children[(*context)->ci_in_parent+1];
       else
-				*context = NULL;
+	*context = NULL;
     }
   return ret;
 }

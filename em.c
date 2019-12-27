@@ -70,7 +70,7 @@ void bow_em_set_weights (bow_barrel *barrel);
 static int bow_em_making_barrel = 0;
 
 /* hack for scoring for perplexity calculation */
-static int bow_em_calculating_perplexity = 0;
+int bow_em_calculating_perplexity = 0;
 
 /* ci of binary positive class */
 static int binary_pos_ci = -1;
@@ -101,7 +101,8 @@ static int bow_em_anneal_normalizer = 0;
 static int em_halt_using_accuracy = 0;
 static int (* em_accuracy_docs)(bow_cdoc *) = NULL;
 static int em_accuracy_loo = 0;
-
+static int em_labeled_for_start_only = 0;
+static int em_set_vocab_from_unlabeled = 0;
 
 /* The integer or single char used to represent this command-line option.
    Make sure it is unique across all libbow and rainbow. */
@@ -128,7 +129,9 @@ enum {
   EM_ANNEAL_NORMALIZER,
   EM_PRINT_PERPLEXITY,
   EM_HALT_USING_ACCURACY,
-  EM_PRINT_ACCURACY
+  EM_PRINT_ACCURACY,
+  EM_LABELED_FOR_START_ONLY,
+  EM_SET_VOCAB_FROM_UNLABELED
 };
 
 static struct argp_option em_options[] =
@@ -199,6 +202,11 @@ static struct argp_option em_options[] =
    "When running EM, print the accuracy of documents at each round.  "
    "TYPE is type of document to measure perplexity on.  See "
    "`--em-halt-using-perplexity` for choices for TYPE"},
+  {"em-labeled-for-start-only", EM_LABELED_FOR_START_ONLY, 0, 0,
+   "Use the labeled documents to set the starting point for EM, but"
+   "ignore them during the iterations"},
+  {"em-set-vocab-from-unlabeled", EM_SET_VOCAB_FROM_UNLABELED, 0, 0,
+   "Remove words from the vocabulary not used in the unlabeled data"},
   {0, 0}
 };
 
@@ -327,6 +335,12 @@ em_parse_opt (int key, char *arg, struct argp_state *state)
     case EM_ANNEAL_NORMALIZER:
       bow_em_anneal_normalizer = 1;
       unlabeled_normalizer = 0;
+      break;
+    case EM_LABELED_FOR_START_ONLY:
+      em_labeled_for_start_only = 1;
+      break;
+    case EM_SET_VOCAB_FROM_UNLABELED:
+      em_set_vocab_from_unlabeled = 1;
       break;
     default:
       return ARGP_ERR_UNKNOWN;
@@ -612,12 +626,16 @@ bow_em_new_vpc_with_weights (bow_barrel *doc_barrel)
   assert (doc_barrel->classnames);
   assert (!(bow_em_perturb_starting_point && em_anneal));
   assert (em_stat_method == nb_score || bow_em_multi_hump_neg == 0);
+  assert (bow_em_multi_hump_neg == 0 || em_labeled_for_start_only == 0);
 
   /* this option is broken */
   assert (!em_halt_using_perplexity);
 
   /* initialize some variables */
   bow_em_making_barrel = 1;
+
+  if (bow_smoothing_method == bow_smoothing_dirichlet)
+    bow_naivebayes_load_dirichlet_alphas ();
 
   max_old_ci = bow_barrel_num_classes(doc_barrel);
 
@@ -631,6 +649,45 @@ bow_em_new_vpc_with_weights (bow_barrel *doc_barrel)
   
   max_wi = MIN (doc_barrel->wi2dvf->size, bow_num_words ());
   /*  assert(doc_barrel->wi2dvf->size == bow_num_words ()); */
+
+  /* remove words from vocab if using only the unlabeled vocab */
+  if (em_set_vocab_from_unlabeled)
+    {
+      int removed = 0;
+      int kept = 0;
+
+      for (wi = 0; wi < max_wi; wi++)
+	{
+	  int found = 0;
+	  
+	  bow_dv *dv = bow_wi2dvf_dv (doc_barrel->wi2dvf, wi);
+	  if (!dv)
+	    continue;
+	  dvi = 0;
+	  while (dvi < dv->length)
+	    {
+	      bow_cdoc *cdoc = bow_array_entry_at_index (doc_barrel->cdocs, 
+							 dv->entry[dvi].di);
+	      
+	      if (cdoc->type == bow_doc_unlabeled)
+		{
+		  found = 1;
+		  break;
+		}
+	      dvi++;
+	    }
+	  
+	  if (!found) 
+	    {
+	      bow_wi2dvf_hide_wi (doc_barrel->wi2dvf, wi);
+	      removed++;
+	    }
+	  else
+	    kept++;
+	}
+      bow_verbosify (bow_progress, "Removed %d words using unlabeled data; %d remaining\n", 
+		     removed, kept);
+    }
 
   /* Count the number of training and unlabeled documents */
   for (di=0; di < doc_barrel->cdocs->length; di++)
@@ -1027,7 +1084,12 @@ bow_em_new_vpc_with_weights (bow_barrel *doc_barrel)
 		  assert(cdoc->word_count > 0);
 		  for (ci=0; ci < max_new_ci; ci++)
 		    {
+		      /* it's important to do this even when class_prob is 0 to 
+			 ensure that perplexity calculations happen ok. */
+
+#if 0
 		      if (cdoc->class_probs[ci] > 0)
+#endif
 			{
 			  if (bow_event_model == bow_event_document_then_word)
 			    bow_wi2dvf_add_wi_di_count_weight 
@@ -1084,6 +1146,18 @@ bow_em_new_vpc_with_weights (bow_barrel *doc_barrel)
       if (bow_em_print_probs)
 	bow_em_print_word_distribution(vpc_barrel, em_runs, 
 				       bow_barrel_num_classes(vpc_barrel));
+
+      /* if we're ignoring the labeled data during the iterations, then
+	 zero out their class probs now */
+      if (em_runs == 1 && em_labeled_for_start_only)
+	{
+	  for (di=0; di < doc_barrel->cdocs->length; di++)
+	    {
+	      bow_cdoc *cdoc = bow_array_entry_at_index (doc_barrel->cdocs, di);
+	      if (cdoc->type == bow_doc_train)
+		cdoc->class_probs[cdoc->class] = 0.0;
+	    }
+	}
 
       /* OK.  we're done with our M-step.  We have a new vpc barrel to 
 	 use.  Let's now do the E-step, and classify all our documents. */
@@ -1311,8 +1385,11 @@ em_calculate_perplexity (bow_barrel *doc_barrel, bow_barrel *class_barrel)
   int ci;
   double rescaler;
   double scores_sum;
-  long num_data_words = 0;
+  double num_data_words = 0;
   int num_tested = 0;
+  int wvi;
+  bow_dv *dv;
+
   
   /* turn this on so scoring knows to return perplexities */
   bow_em_calculating_perplexity = 1;
@@ -1407,18 +1484,37 @@ em_calculate_perplexity (bow_barrel *doc_barrel, bow_barrel *class_barrel)
 	  for (hi = 0; hi < num_hits_to_retrieve; hi++)
 	    log_prob_of_data += class_probs[hits[hi].di] * hits[hi].weight;
 	}
-      else if (doc_cdoc->type == bow_doc_train &&
-	       hits[hi].di == doc_cdoc->class)
+      else 
 	{
 	  for (hi = 0; hi < num_hits_to_retrieve; hi++)
-	    log_prob_of_data += hits[hi].weight;
+	    {
+	      if (hits[hi].di == doc_cdoc->class)
+		{
+		  log_prob_of_data += hits[hi].weight;
+		  break;
+		}
+	    }
 	}
 
+#if 0
       if (bow_event_model == bow_event_document_then_word)
 	assert (query_wv->normalizer == 
 		bow_event_document_then_word_document_length );
 
       num_data_words += query_wv->normalizer;
+
+#endif
+
+      /* calculate the number of words shared between the model and the doc */
+      for (wvi = 0; wvi < query_wv->num_entries; wvi++)
+	{
+	  dv = bow_wi2dvf_dv (class_barrel->wi2dvf, query_wv->entry[wvi].wi);
+	  if (!dv)
+	    continue;
+
+	  num_data_words += query_wv->entry[wvi].weight;
+	}
+
 
       if (num_tested % 100 == 0)
 	bow_verbosify (bow_progress, "\b\b\b\b\b\b%6d", num_tested);
@@ -1427,7 +1523,7 @@ em_calculate_perplexity (bow_barrel *doc_barrel, bow_barrel *class_barrel)
     }
 
   bow_verbosify(bow_progress, "\b\b\b\b\b\b%6d\n", num_tested);
-  bow_verbosify (bow_progress, "Docs = %d, Words = %ld, l(data) = %f\n",
+  bow_verbosify (bow_progress, "Docs = %d, Words = %f, l(data) = %f\n",
 		 num_tested, num_data_words, log_prob_of_data);
 
   /* convert log prob to perplexity and return */
@@ -1934,6 +2030,11 @@ bow_em_pr_wi_ci (bow_barrel *barrel,
 	    pr_w_c = 1.0 / barrel->wi2dvf->num_words;
 	}
     }
+  else if (bow_smoothing_method == bow_smoothing_dirichlet)
+    {
+      pr_w_c = (num_wi_ci + bow_naivebayes_dirichlet_alphas[wi]) / 
+	(num_w_ci + bow_naivebayes_dirichlet_total);
+    }
   else
     {
       bow_error ("EM does not implement smoothing method %d",
@@ -1969,7 +2070,7 @@ bow_em_set_weights (bow_barrel *barrel)
   int weight_setting_num_words = 0;
   double *pr_all_w_c = alloca (barrel->cdocs->length * sizeof (double));
   double pr_w_c;
-  int total_num_words = 0;
+  double total_num_words = 0;
   /* Gather the word count here instead of directly of in CDOC->WORD_COUNT
      so we avoid round-off error with each increment.  Remember,
      CDOC->WORD_COUNT is a int! */
@@ -2031,7 +2132,7 @@ bow_em_set_weights (bow_barrel *barrel)
 	      cdoc->normalizer++;
 #endif
 	      dv->idf += dv->entry[dvi].weight;
-	      total_num_words += dv->idf;
+	      total_num_words += dv->entry[dvi].weight;
 	    }
 	}
       for (ci = 0; ci < barrel->cdocs->length; ci++)
@@ -2068,6 +2169,9 @@ bow_em_set_weights (bow_barrel *barrel)
   if (bow_smoothing_method == bow_smoothing_goodturing)
     bow_naivebayes_initialize_goodturing (barrel);
 #endif
+  
+  if (bow_smoothing_method == bow_smoothing_dirichlet)
+    bow_naivebayes_initialize_dirichlet_smoothing (barrel);
 
   if (bow_event_model != bow_event_document && !barrel_is_empty)
     {
@@ -2414,7 +2518,7 @@ rainbow_method bow_method_em =
   bow_em_new_vpc_with_weights,
   bow_em_set_priors_using_class_probs,
   bow_em_score,
-  bow_wv_set_weights_by_event_model,
+  bow_wv_set_weights_to_count,
   NULL,				/* no need for extra weight normalization */
   bow_barrel_free,
   NULL  /* is this right?  should we have em parameters? */

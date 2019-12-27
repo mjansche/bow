@@ -62,8 +62,8 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
 			       FILE *fp,
 			       const char *filename)
 {
-  int document_size = 2048;	/* the initial size of the document buffer */
-  int len;			/* an index into RET->DOCUMENT */
+  int document_size = 8 * 1024;	/* the initial size of the document buffer */
+  int len = 0;			/* an index into RET->DOCUMENT */
   bow_lex *ret;			/* the BOW_LEX we will return.  */
   const char *end_pattern_ptr;
   int byte;			/* a character read from FP */
@@ -82,7 +82,8 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
   assert (bow_lexer_document_start_pattern);
 
   /* Scan forward in the file until we find the start pattern. */
-  bow_scan_fp_for_string (fp, bow_lexer_document_start_pattern, 0);
+  if (*bow_lexer_document_start_pattern != '\0')
+    bow_scan_fp_for_string (fp, bow_lexer_document_start_pattern, 0);
 
   /* Make sure the DOCUMENT_END_PATTERN isn't the empty string; this
      would cause it to match and finish filling immediately. */
@@ -115,43 +116,62 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
 	bow_error ("Could not create pipe to `%s'\n", bow_lex_pipe_command);
     }
 
-  /* Fill the document buffer until we get EOF, or until we get to the
-     DOCUMENT_END_PATTERN. */
-  for (len = 0, end_pattern_ptr = bow_lexer_document_end_pattern;
-       /* We got EOF */
-       (((byte = fgetc (fp)) != EOF)
-	/* We found the DOCUMENT_END_PATTERN */ 
-	&& !(end_pattern_ptr 
-	     && *end_pattern_ptr == byte && *(end_pattern_ptr+1) == '\0'));
-       len++)
+  if (bow_lexer_document_end_pattern == NULL)
     {
+      /* Fill the document buffer until we get EOF */
+      int nbytes;
+      nbytes = fread (ret->document, sizeof(char), document_size, fp);
+      len += nbytes;
+      while (!feof (fp))
+        {
+          document_size *= 2;
+          ret->document = bow_realloc (ret->document, document_size);
+          nbytes = fread (ret->document + len,
+                          sizeof(char), document_size/2, fp);
+          //assert (nbytes <= document_size/2);
+          len += nbytes;
+        }
+    }
+  else
+    {
+      /* Fill the document buffer until we get EOF, or until we get to the
+	 DOCUMENT_END_PATTERN. */
+      for (len = 0, end_pattern_ptr = bow_lexer_document_end_pattern;
+	   /* We got EOF */
+	   (((byte = fgetc (fp)) != EOF)
+	    /* We found the DOCUMENT_END_PATTERN */ 
+	    && !(end_pattern_ptr 
+		 && *end_pattern_ptr == byte && *(end_pattern_ptr+1) == '\0'));
+	   len++)
+	{
 #if 0
-      fprintf (stderr, "%c", byte);
-      fflush (stderr);
+	  fprintf (stderr, "%c", byte);
+	  fflush (stderr);
 #endif
-      if (len >= document_size-1)
-	{
-	  /* The RET->DOCUMENT buffer must grow to accommodate more chars. */
-	  /* We need `DOCUMENT_SIZE-1' in the above test, because we
-	     must have room for the terminating '\0'! */
-	  document_size *= 2;
-	  ret->document = bow_realloc (ret->document, document_size);
-	}
+	  if (len >= document_size-1)
+	    {
+	      /* The RET->DOCUMENT buffer must grow to accommodate more chars. */
+	      /* We need `DOCUMENT_SIZE-1' in the above test, because we
+		 must have room for the terminating '\0'! */
+	      document_size *= 2;
+	      ret->document = bow_realloc (ret->document, document_size);
+	    }
 
-      /* Put the byte in the document buffer. */
-      ret->document[len] = byte;
+	  /* Put the byte in the document buffer. */
+	  ret->document[len] = byte;
 
-      /* If the byte matches the next character of the DOCUMENT_END_PATTERN
-	 then prepare to match the next character of the pattern,
-	 otherwise reset to the beginning of the pattern. */
-      if (end_pattern_ptr)
-	{
-	  if (byte == *end_pattern_ptr)
-	    end_pattern_ptr++;
-	  else if (byte == bow_lexer_document_end_pattern[0])
-	    end_pattern_ptr = bow_lexer_document_end_pattern+1;
-	  else
-	    end_pattern_ptr = bow_lexer_document_end_pattern;
+	  /* If the byte matches the next character of the DOCUMENT_END_PATTERN
+	     then prepare to match the next character of the pattern,
+	     otherwise reset to the beginning of the pattern. */
+	  if (end_pattern_ptr)
+	    {
+	      if (byte == *end_pattern_ptr)
+		end_pattern_ptr++;
+	      else if (byte == bow_lexer_document_end_pattern[0])
+		end_pattern_ptr = bow_lexer_document_end_pattern+1;
+	      else
+		end_pattern_ptr = bow_lexer_document_end_pattern;
+	    }
 	}
     }
 
@@ -323,7 +343,7 @@ bow_lexer_simple_close (bow_lexer *self, bow_lex *lex)
    an ending character.  The resulting token in the buffer is
    NULL-terminated.  Return the length of the token. */
 int
-bow_lexer_simple_get_raw_word (bow_lexer *self, bow_lex *lex, 
+old_bow_lexer_simple_get_raw_word (bow_lexer *self, bow_lex *lex, 
 			       char *buf, int buflen)
 {
   int byte;			/* characters read from the FP */
@@ -333,7 +353,7 @@ bow_lexer_simple_get_raw_word (bow_lexer *self, bow_lex *lex,
   /* Ignore characters until we get a beginning character. */
   do
     {
-      byte = lex->document[lex->document_position++];
+      byte = (unsigned char)lex->document[lex->document_position++];
       if (byte == 0)
 	{
 	  lex->document_position--;
@@ -369,6 +389,43 @@ bow_lexer_simple_get_raw_word (bow_lexer *self, bow_lex *lex,
   return wordlen;
 }
 
+int
+bow_lexer_simple_get_raw_word (bow_lexer *self, bow_lex *lex, 
+			       char *buf, int buflen)
+{
+  //int byte;                   /* characters read from the FP */
+  int wordlen;                  /* number of characters in the word so far */
+  const char *docptr;
+  const char *word_start;
+
+  docptr = lex->document + lex->document_position;
+
+  /* Ignore characters until we get a beginning character. */
+  while (*docptr && !isalpha ((unsigned char)*docptr))
+    docptr++;
+  if (*docptr == '\0')
+    return 0;
+  word_start = docptr;
+
+  /* Add alphabetics to the word */
+  do
+    *buf++ = tolower ((unsigned char)*docptr++);
+  while (isalpha ((unsigned char)*docptr));
+  /* Now DOCPTR is pointing to the non-alpha immediately after the word */
+
+  /* Adjust the LEX's pointer into the the document for the next word */
+  lex->document_position += docptr - (lex->document + lex->document_position);
+  wordlen = docptr - word_start;
+  if (wordlen >= buflen)
+    bow_error ("Encountered word longer than buffer length=%d", buflen);
+
+  /* Terminate it. */
+  *buf = '\0';
+
+  return wordlen;
+}
+
+
 /* Perform all the necessary postprocessing after the initial token
    boundaries have been found: strip non-alphas from end, toss words
    containing non-alphas, toss words containing certain many digits,
@@ -380,18 +437,37 @@ bow_lexer_simple_postprocess_word (bow_lexer *self, bow_lex *lex,
 				   char *buf, int buflen)
 {
   int wordlen = strlen (buf);
+  if (wordlen > bow_lexer_toss_words_longer_than
+      /* Toss words shorter than 2 characters */
+      || buf[1] == '\0'
+      || (bow_lexer_stoplist_func && bow_lexer_stoplist_func (buf))  )
+    return 0;
+  /* Return the length of the word we found. */
+  return wordlen;
+}
 
+int
+old_bow_lexer_simple_postprocess_word (bow_lexer *self, bow_lex *lex, 
+				   char *buf, int buflen)
+{
+  int wordlen = strlen (buf);
+
+  /* This is done at the end anyway.  So it should be slightly faster
+     to skip this step, assuming that often none of the PARAM tests
+     below are true. */
+#if 0 
   /* Toss words that are longer than bow_lexer_TOSS_WORDS_LONGER_THAN */
   if (bow_lexer_toss_words_longer_than)
     {
       if (wordlen > bow_lexer_toss_words_longer_than)
 	return 0;
     }
+#endif
 
   if (PARAMS->strip_non_alphas_from_end)
     {
       /* Strip any non-alphabetic characters off the end of the word */
-      while (wordlen && !isalpha(buf[wordlen-1]))
+      while (wordlen && !isalpha((unsigned char)buf[wordlen-1]))
 	wordlen--;
       /* Terminate it. */
       buf[wordlen] = '\0';
@@ -407,7 +483,7 @@ bow_lexer_simple_postprocess_word (bow_lexer *self, bow_lex *lex,
 	char *bufp;
 	for (bufp = buf; *bufp; bufp++)
 	  {
-	    if (!isalpha (*bufp))
+	    if (!isalpha ((unsigned char)*bufp))
 	      return 0;
 	  }
       }
@@ -433,15 +509,18 @@ bow_lexer_simple_postprocess_word (bow_lexer *self, bow_lex *lex,
 
   /* Apply the stemming algorithm to the word. */
   if (bow_lexer_stem_func)
-    bow_lexer_stem_func (buf);
+    {
+      bow_lexer_stem_func (buf);
 
-  /* If the result of stemming is on the stoplist, go back and start again. */
-  if (bow_lexer_stoplist_func && bow_lexer_stoplist_func (buf))
-    return 0;
+      /* If the result of stemming is on the stoplist, 
+	 go back and start again. */
+      if (bow_lexer_stoplist_func && bow_lexer_stoplist_func (buf))
+	return 0;
+      wordlen = strlen (buf);
+    }
 
   /* If the result of stemming is too short or too long, go back and
      start again. */
-  wordlen = strlen (buf);
   if (wordlen < bow_lexer_toss_words_shorter_than
       || wordlen > bow_lexer_toss_words_longer_than)
     return 0;
