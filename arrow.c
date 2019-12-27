@@ -422,8 +422,8 @@ arrow_compare (bow_wv *wv1, bow_wv *wv2)
   bow_wv_set_weights_to_count_times_idf (wv1, arrow_barrel);
   bow_wv_set_weights_to_count_times_idf (wv2, arrow_barrel);
 #else
-  bow_wv_set_weights_to_count (wv1);
-  bow_wv_set_weights_to_count (wv2);
+  bow_wv_set_weights_to_count (wv1, (bow_barrel *) NULL);
+  bow_wv_set_weights_to_count (wv2, (bow_barrel *) NULL);
 #endif
   bow_wv_normalize_weights_by_vector_length (wv1);
   bow_wv_normalize_weights_by_vector_length (wv2);

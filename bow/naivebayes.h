@@ -20,6 +20,11 @@
 #ifndef __BOW_NAIVEBAYES_H
 #define __BOW_NAIVEBAYES_H
 
+/* Default value for option "naivebayes-m-est-m".  When zero, then use
+   size-of-vocabulary instead. */
+double naivebayes_argp_m_est_m;
+
+
 void bow_naivebayes_set_weights (bow_barrel *barrel);
 
 int bow_naivebayes_score (bow_barrel *barrel, bow_wv *query_wv, 

@@ -180,7 +180,7 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
 
 /* Create and return a BOW_LEX, filling the document buffer from
    characters in BUF, starting after the START_PATTERN, and ending with
-   the END_PATTERN.  NOTE: BUF is not modified, nor does it need to 
+   the END_PATTERN.  NOTE: BUF is not modified, and it does not need to 
    be saved for future use. */
 bow_lex *
 bow_lexer_simple_open_str (bow_lexer *self, 

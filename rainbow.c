@@ -148,9 +148,9 @@ static struct argp_option rainbow_options[] =
   {"print-word-probabilities", PRINT_WORD_PROBABILITIES_KEY, "CLASS", 0,
    "Print P(w|CLASS), the probability in class CLASS "
    "of each word in the vocabulary."},
-  {"print-foilgain", 'F', "CLASSNAME", 0,
+  {"print-word-foilgain", 'F', "CLASSNAME", 0,
    "Print the word/foilgain vector for CLASSNAME."},
-  {"print-barrel", 'B', "FORMAT", OPTION_ARG_OPTIONAL,
+  {"print-matrix", 'B', "FORMAT", OPTION_ARG_OPTIONAL,
    "Print the word/document count matrix in an awk- or perl-accessible "
    "format.  Format is specified by the following letters:\n"
    "print all vocab or just words in document:\n"
@@ -160,12 +160,16 @@ static struct argp_option rainbow_options[] =
    "print word as:\n  "
    "  n=integer index OR w=string OR e=empty OR c=combination\n"
    "The default is the last in each list"},
+  {"print-barrel", 'B', "FORMAT", 
+   OPTION_ARG_OPTIONAL | OPTION_ALIAS | OPTION_HIDDEN},
   {"print-word-counts", PRINT_COUNTS_FOR_WORD_KEY, "WORD", 0,
    "Print the number of times WORD occurs in each class."},
   {"print-counts-for-word", PRINT_COUNTS_FOR_WORD_KEY, "WORD", 
    OPTION_ALIAS | OPTION_HIDDEN},
-  {"print-doc-names", PRINT_DOC_NAMES_KEY, 0, 0,
-   "Print the list of filenames on which the model was built."},
+  {"print-doc-names", PRINT_DOC_NAMES_KEY, "TAG", OPTION_ARG_OPTIONAL,
+   "Print the filenames of documents contained in the model.  "
+   "If the optional TAG argument is given, print only the documents "
+   "that have the specified tag."},
 
   { 0 }
 };
@@ -310,6 +314,7 @@ rainbow_parse_opt (int key, char *arg, struct argp_state *state)
       break;
     case PRINT_DOC_NAMES_KEY:
       rainbow_arg_state.what_doing = rainbow_doc_name_printing;
+      rainbow_arg_state.printing_class = arg;
       break;
     case PRINT_WORD_PROBABILITIES_KEY:
       rainbow_arg_state.what_doing = rainbow_printing_word_probabilities;
@@ -518,8 +523,10 @@ rainbow_unarchive ()
 	}
     }
 
+  /* Don't want doc priors set equal - want class priors set equal */
   if (bow_uniform_class_priors)
-    bow_barrel_set_cdoc_priors_to_class_uniform (rainbow_doc_barrel);
+    bow_barrel_set_cdoc_priors_to_class_uniform (rainbow_class_barrel);
+  /*bow_barrel_set_cdoc_priors_to_class_uniform (rainbow_doc_barrel);*/
 }
 
 
@@ -795,8 +802,11 @@ rainbow_query (FILE *in, FILE *out)
 	      && hits[i].weight > 0)
 	    hits[i].weight = 0;
 	  fprintf (out, "%s %.*g\n", 
-		   cdoc->filename, bow_score_print_precision, 
-		   hits[i].weight);
+		   /* cdoc->filename,*/
+		   /* When knn runs, CDOCS entries correspond to documents
+		    * rather than classes.  We want to print class names. */
+		   bow_int2str (rainbow_class_barrel->classnames, hits[i].di),
+		   bow_score_print_precision, hits[i].weight);
 	}
     }
   if (rainbow_arg_state.what_doing == rainbow_query_serving)
@@ -1022,8 +1032,7 @@ rainbow_test (FILE *test_fp)
   /* Loop once for each trial. */
   for (tn = 0; tn < rainbow_arg_state.num_trials; tn++)
     {
-
-      set_doc_types (rainbow_doc_barrel);
+      bow_set_doc_types_for_barrel (rainbow_doc_barrel);
 
       if (bow_uniform_class_priors)
 	bow_barrel_set_cdoc_priors_to_class_uniform (rainbow_doc_barrel);
@@ -1111,13 +1120,25 @@ rainbow_test (FILE *test_fp)
 						 doc_cdoc->class);
 	  bow_wv_set_weights (query_wv, rainbow_class_barrel);
 	  bow_wv_normalize_weights (query_wv, rainbow_class_barrel);
-	  actual_num_hits = 
-	    bow_barrel_score (rainbow_class_barrel, 
+	  if (!strcmp(rainbow_class_barrel->method->name, "em"))
+	    {
+	      actual_num_hits = 
+		bow_barrel_score (rainbow_class_barrel, 
 			      query_wv, hits,
 			      num_hits_to_retrieve, 
 			      (rainbow_arg_state.test_on_training
-			       ? doc_cdoc->class
-			       : -1));
+			       ? (int) doc_cdoc->class_probs
+			       : (int) NULL));
+	    }
+	  else
+	    actual_num_hits = 
+	      bow_barrel_score (rainbow_class_barrel, 
+				query_wv, hits,
+				num_hits_to_retrieve, 
+				(rainbow_arg_state.test_on_training
+				 ? doc_cdoc->class
+				 : -1));
+
 	  assert (actual_num_hits == num_hits_to_retrieve);
 #if 0
 	  printf ("%8.6f %d %8.6f %8.6f %d ",
@@ -1447,7 +1468,7 @@ main (int argc, char *argv[])
 
   /* Make the test/train split */
   if (rainbow_arg_state.what_doing != rainbow_testing)
-    set_doc_types(rainbow_doc_barrel);
+    bow_set_doc_types_for_barrel (rainbow_doc_barrel);
 
   /* Do things that update their own class/word weights. */
 
@@ -1555,11 +1576,20 @@ main (int argc, char *argv[])
   if (rainbow_arg_state.what_doing == rainbow_doc_name_printing)
     {
       int di;
+      int tag = -1;
       bow_cdoc *cdoc;
+
+      if (rainbow_arg_state.printing_class)
+	tag = bow_str2type (rainbow_arg_state.printing_class);
+      if (tag == -1)
+	bow_error ("Argument to --print-doc-barrel, `%s', is not a tag\n"
+		   "Try `train', `test', `unlabeled', etc");
       for (di = 0; di < rainbow_doc_barrel->cdocs->length; di++)
 	{
 	  cdoc = bow_array_entry_at_index (rainbow_doc_barrel->cdocs, di);
-	  printf ("%s\n", cdoc->filename);
+	  if (rainbow_arg_state.printing_class == NULL
+	      || (tag >= 0 && cdoc->type == tag))
+	    printf ("%s\n", cdoc->filename);
 	}
       exit (0);
     }

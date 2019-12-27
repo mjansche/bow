@@ -48,30 +48,35 @@ static bow_files_source_type bow_test_files_source = bow_files_source_number;
 static bow_files_source_type bow_train_files_source = bow_files_source_remaining;
 static bow_files_source_type bow_unlabeled_files_source = bow_files_source_number;
 static bow_files_source_type bow_ignore_files_source = bow_files_source_number;
+static bow_files_source_type bow_validation_files_source = bow_files_source_number;
 
 /* The fraction used for selecting each type */
 static float bow_test_fraction;
 static float bow_train_fraction;
 static float bow_unlabeled_fraction;
 static float bow_ignore_fraction;
+static float bow_validation_fraction;
 
 /* The number for selecting each type for both num_per_class and number */
 static int bow_test_number = 0;
 static int bow_train_number;
 static int bow_unlabeled_number = 0;
 static int bow_ignore_number = 0;
+static int bow_validation_number = 0;
 
 /* The filename containing lists of documents for each type */
 static char *bow_test_filename;
 static char *bow_train_filename;
 static char *bow_unlabeled_filename;
 static char *bow_ignore_filename;
+static char *bow_validation_filename;
 
 /* The numbers to select from each class for fancy counts for each type*/
 static bow_split_fancy_count *bow_test_fancy_counts;
 static bow_split_fancy_count *bow_train_fancy_counts;
 static bow_split_fancy_count *bow_unlabeled_fancy_counts;
 static bow_split_fancy_count *bow_ignore_fancy_counts;
+static bow_split_fancy_count *bow_validation_fancy_counts;
 
 /* When using files to set the test/train split, compare filenames by
    using this many directory components as basename only, not their
@@ -84,6 +89,7 @@ enum {
   TRAIN_SOURCE,
   UNLABELED_SOURCE,
   IGNORE_SOURCE,
+  VALIDATION_SOURCE,
   SET_TEST_FILES_KEY,
   SET_TEST_FILES_USE_BASENAME_KEY
 };
@@ -106,6 +112,9 @@ static struct argp_option bow_split_options[] =
    "`0'."},
   {"ignore-set", IGNORE_SOURCE, "SOURCE", 0,
    "How to select the ignored documents.  Same format as --test-set.  Default is "
+   "`0'."},
+  {"validation-set", VALIDATION_SOURCE, "SOURCE", 0,
+   "How to select the validation documents.  Same format as --test-set.  Default is "
    "`0'."},
   {"test-percentage", 'p', "P", OPTION_HIDDEN,
    "Use P percent of the indexed documents as test data.  Default is 30."},
@@ -167,6 +176,13 @@ bow_split_parse_opt (int key, char *arg, struct argp_state *state)
       filename = &bow_ignore_filename;
       fancy_counts = &bow_ignore_fancy_counts;
       break;
+    case VALIDATION_SOURCE:
+      files_source = &bow_validation_files_source;
+      fraction = &bow_validation_fraction;
+      number = &bow_validation_number;
+      filename = &bow_validation_filename;
+      fancy_counts = &bow_validation_fancy_counts;
+      break;
     case 'p':
       bow_test_files_source = bow_files_source_fraction;
       bow_test_fraction = atof (arg) / 100.0;
@@ -189,7 +205,8 @@ bow_split_parse_opt (int key, char *arg, struct argp_state *state)
     }
   
   assert (key == TEST_SOURCE || key == TRAIN_SOURCE ||
-	  key == UNLABELED_SOURCE || key == IGNORE_SOURCE);
+	  key == UNLABELED_SOURCE || key == IGNORE_SOURCE ||
+	  key == VALIDATION_SOURCE);
 
   length = strlen(arg);
 
@@ -228,9 +245,10 @@ bow_split_parse_opt (int key, char *arg, struct argp_state *state)
       /* see how many classes we'll need to malloc for */
       for (charp=arg, num_entries = 0; *charp != '\0'; charp++)
 	{
-	  if (*charp == '=') 
+	  if (*charp == ',') 
 	    num_entries++;
 	}
+      num_entries = (num_entries + 1) / 2;
 
       /* malloc and initialize the space to store the counts */
       assert (num_entries > 0);
@@ -238,14 +256,14 @@ bow_split_parse_opt (int key, char *arg, struct argp_state *state)
       (*fancy_counts)[num_entries].class_name = NULL;
 
       /* extract the class num arg pairs */
-      strtok(arg, "[");
-      for (charp = strtok(NULL, "="), x=0; x < num_entries;
-	   x++, charp = strtok(NULL, "=")) 
+      arg++;
+      for (charp = strtok(arg, ","), x=0; x < num_entries;
+	   x++, charp = strtok(NULL, ",")) 
 	{
 	  (*fancy_counts)[x].class_name = charp;
 	  (*fancy_counts)[x].num_docs = atoi(strtok(NULL, ","));
 	}
-      assert(NULL == strtok(NULL, "="));
+      assert(NULL == strtok(NULL, ","));
     }
   else
     {
@@ -272,16 +290,16 @@ static struct argp_child bow_split_argp_child =
 
 
 
-/* Mark all cdoc's in BARREL to be of type BOW_DOC_UNTAGGED. */
+/* Mark all documents in the array DOCS to be of type BOW_DOC_UNTAGGED. */
 void
-bow_set_all_files_untagged (bow_barrel *barrel)
+bow_set_all_docs_untagged (bow_array *docs)
 {
   int i;
   bow_cdoc *doc;
 
-  for (i = 0; i < barrel->cdocs->length ; i++)
+  for (i = 0; i < docs->length ; i++)
     {
-      doc = bow_array_entry_at_index (barrel->cdocs, i);
+      doc = bow_array_entry_at_index (docs, i);
       doc->type = bow_doc_untagged;
     }
 }
@@ -290,17 +308,19 @@ bow_set_all_files_untagged (bow_barrel *barrel)
    indicated by TYPE.  The number of documents from each class are
    determined by the array NUM_PER_CLASS. */
 void
-bow_set_file_types_randomly_by_count_per_class (bow_barrel *barrel, 
-						int *num_per_class, int tag)
+bow_set_doc_types_randomly_by_count_per_class (bow_array *docs, 
+					       int num_classes,
+					       bow_int4str *classnames,
+					       int *num_per_class, int tag)
 {
   int ci, di;
   bow_cdoc *cdoc = NULL;
   /* All the below include only the test/model docs, not the ignore docs.*/
-  int num_classes = bow_barrel_num_classes (barrel);
   int *local_num_per_class;
   int total_num_to_tag;
   int num_tagged;
   int num_loops;
+  char *type_name = NULL;
 
   /* Seed the random number generator if it hasn't been already */
   bow_random_set_seed ();
@@ -314,6 +334,8 @@ bow_set_file_types_randomly_by_count_per_class (bow_barrel *barrel,
       local_num_per_class[ci] = num_per_class[ci];
       total_num_to_tag += num_per_class[ci];
     }
+
+  if (total_num_to_tag == 0) return;
 
 #if 0
   /* Print the number of documents in each class. */
@@ -329,9 +351,9 @@ bow_set_file_types_randomly_by_count_per_class (bow_barrel *barrel,
   for (num_tagged = 0, num_loops = 0; num_tagged < total_num_to_tag; 
        num_loops++)
     {
-      di = random() % barrel->cdocs->length;
+      di = random() % docs->length;
 
-      cdoc = bow_array_entry_at_index (barrel->cdocs, di);
+      cdoc = bow_array_entry_at_index (docs, di);
       assert (cdoc);
       if (cdoc->type == bow_doc_untagged
 	  && local_num_per_class[cdoc->class] > 0)
@@ -341,10 +363,38 @@ bow_set_file_types_randomly_by_count_per_class (bow_barrel *barrel,
 	  local_num_per_class[cdoc->class]--;
 	  assert (local_num_per_class[cdoc->class] >= 0);
 	}
-      if (num_loops > barrel->cdocs->length * 1000)
+      if (num_loops > docs->length * 1000)
 	bow_error ("Random number generator could not find enough "
 		   "model document indices with balanced classes");
     }
+
+  switch (tag)
+    {
+    case bow_doc_train:
+      type_name = "train";
+      break;
+    case bow_doc_test:
+      type_name = "test";
+      break;
+    case bow_doc_unlabeled:
+      type_name = "unlabeled";
+      break;
+    case bow_doc_ignore:
+      type_name = "ignore";
+      break;
+    case bow_doc_validation:
+      type_name = "validation";
+      break;
+    default:
+      bow_error ("No implementation for this type.");
+    }
+
+  bow_verbosify (bow_progress,
+		 "Randomly selected %d documents for the %s set:\n",
+		 total_num_to_tag, type_name);
+  for (ci = 0; ci < num_classes; ci++)
+    bow_verbosify (bow_progress, "  %5d : %s\n", num_per_class[ci],
+		   bow_int2str (classnames, ci));
 }
 
 
@@ -353,22 +403,25 @@ bow_set_file_types_randomly_by_count_per_class (bow_barrel *barrel,
    determined by attempting to match the proportion of classes among
    the non-ignore documents. */
 void
-bow_set_file_types_randomly_by_count (bow_barrel *barrel, int num, int tag)
+bow_set_doc_types_randomly_by_count (bow_array *docs, int num_classes,
+				     bow_int4str *classnames,
+				     int num, int tag)
 {
   int ci, di;
   bow_cdoc *cdoc;
-  int num_classes = bow_barrel_num_classes (barrel);
   int *num_per_class = alloca (num_classes * sizeof (int));
   int *num_docs_per_class = alloca (num_classes * sizeof (int));
   int total_num_docs = 0;
   int total;
 
+  if (num == 0) return;
+
   /* Find out the number of documents in each class. */
   for (ci = 0; ci < num_classes; ci++)
     num_docs_per_class[ci] = 0;
-  for (di = 0; di < barrel->cdocs->length ; di++)
+  for (di = 0; di < docs->length ; di++)
     {
-      cdoc = bow_array_entry_at_index (barrel->cdocs, di);
+      cdoc = bow_array_entry_at_index (docs, di);
       if (cdoc->type == bow_doc_ignore)
 	continue;
       assert (cdoc->class < num_classes);
@@ -383,17 +436,23 @@ bow_set_file_types_randomly_by_count (bow_barrel *barrel, int num, int tag)
     {
       num_per_class[ci] = ((float) num / (float) total_num_docs) * 
 	(float) num_docs_per_class[ci];
+      if (num_per_class[ci] == 0)
+	num_per_class[ci] = 1;
       total += num_per_class[ci];
     }
+
+  assert (total <= num);
+
   /* Add more to take care of round-off error. */
-  for (ci = 0; total < num; ci = (ci+1) % barrel->cdocs->length)
+  for (ci = 0; total < num; ci = (ci+1) % docs->length)
     {
       num_per_class[ci]++;
       total++;
     }
 
   /* Do it. */
-  bow_set_file_types_randomly_by_count_per_class (barrel, num_per_class, tag);
+  bow_set_doc_types_randomly_by_count_per_class (docs, num_classes, classnames,
+						 num_per_class, tag);
 }
 
 /* Randomly select a FRACTION of the untagged documents and label them
@@ -401,12 +460,13 @@ bow_set_file_types_randomly_by_count (bow_barrel *barrel, int num, int tag)
    class are determined by attempting to match the proportion of
    classes among the untagged documents. */
 void
-bow_set_file_types_randomly_by_fraction (bow_barrel *barrel, 
-					 double fraction, int type)
+bow_set_doc_types_randomly_by_fraction (bow_array *docs, int num_classes,
+					bow_int4str *classnames,
+					double fraction, int type)
 {
-  bow_set_file_types_randomly_by_count (barrel,
-					fraction * barrel->cdocs->length,
-					type);
+  bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
+				       fraction * docs->length,
+				       type);
 }
 
 
@@ -446,16 +506,16 @@ bow_basename (const char *str, int num_components)
    non-"untagged" type.  BARREL should be a doc barrel, not a class
    barrel. */
 void
-bow_set_files_to_type (bow_barrel *barrel, 
-		       const char *test_files_filename,
-		       int type)
+bow_set_docs_to_type (bow_array *docs, 
+		      const char *test_files_filename,
+		      int type)
 {
   bow_int4str *map;
   bow_cdoc *cdoc;
   int di;
-  int test_files_count = 0;
-  int model_files_count = 0;
+  int files_count = 0;
   const char *filename;
+  char *type_name = NULL;
 
   map = bow_int4str_new_from_string_file (test_files_filename);
   if (bow_test_set_files_use_basename)
@@ -480,31 +540,50 @@ bow_set_files_to_type (bow_barrel *barrel,
       map = map2;
     }  
   
-  for (di = 0; di < barrel->cdocs->length; di++)
+  for (di = 0; di < docs->length; di++)
     {
-      cdoc = bow_array_entry_at_index (barrel->cdocs, di);
-      assert (cdoc->type == bow_doc_untagged);
+      cdoc = bow_array_entry_at_index (docs, di);
       if (bow_test_set_files_use_basename)
 	filename = bow_basename (cdoc->filename, 
 				 bow_test_set_files_use_basename);
       else
 	filename = cdoc->filename;
+
       if (bow_str2int_no_add (map, filename) != -1)
 	{
 	  /* This filename is in the map; tag this cdoc. */
+	  if (cdoc->type != bow_doc_untagged)
+	    bow_error ("Duplicate tags requested for %s.\n", filename);
 	  cdoc->type = type;
+	  files_count++;
 	}
+    }
+  
+  switch (type)
+    {
+    case bow_doc_train:
+      type_name = "train";
+      break;
+    case bow_doc_test:
+      type_name = "test";
+      break;
+    case bow_doc_unlabeled:
+      type_name = "unlabeled";
+      break;
+    case bow_doc_ignore:
+      type_name = "ignore";
+      break;
+    case bow_doc_validation:
+      type_name = "validation";
+      break;
+    default:
+      bow_error ("No implementation for this type.");
     }
 
   bow_verbosify (bow_progress, 
-		 "Using %s, placed %d documents in the %s set, "
-		 "%d in model set.\n", 
-		 test_files_filename, test_files_count, model_files_count,
-		 (type == bow_doc_test
-		  ? "test"
-		  : (type == bow_doc_train
-		     ? "train"
-		     : "(unknown)")));
+		 "Using %s, placed %d documents in the %s set\n", 
+		 test_files_filename, files_count,
+		 type_name);
   bow_int4str_free (map);
   return;
 }
@@ -512,22 +591,51 @@ bow_set_files_to_type (bow_barrel *barrel,
 /* Postprocess the tags on documents by setting untagged documents to
    train or test, depending on context. */
 void
-bow_set_file_types_of_remaining (bow_barrel *barrel, int type)
+bow_set_doc_types_of_remaining (bow_array *docs, int type)
 {
   int di;
   bow_cdoc *cdoc;
+  char *type_name = NULL;
+  int num_found = 0;
 
-  for (di = 0; di < barrel->cdocs->length; di++)
+  for (di = 0; di < docs->length; di++)
     {
-      cdoc = bow_array_entry_at_index (barrel->cdocs, di);
+      cdoc = bow_array_entry_at_index (docs, di);
       if (cdoc->type == bow_doc_untagged)
+	{
 	  cdoc->type = type;
+	  num_found++;
+	}
     }
+
+  switch (type)
+    {
+    case bow_doc_train:
+      type_name = "train";
+      break;
+    case bow_doc_test:
+      type_name = "test";
+      break;
+    case bow_doc_unlabeled:
+      type_name = "unlabeled";
+      break;
+    case bow_doc_ignore:
+      type_name = "ignore";
+      break;
+    case bow_doc_validation:
+      type_name = "validation";
+      break;
+    default:
+      bow_error ("No implementation for this type.");
+    }
+
+  bow_verbosify (bow_progress, "Placed remaining %d documents in the %s set:\n",
+		 num_found, type_name);
 }
 
 /* Use the command line arguments to create the appropriate train/test split */
 void
-set_doc_types (bow_barrel *barrel)
+bow_set_doc_types (bow_array *docs, int num_classes, bow_int4str *classnames)
 {      
   int num_docs;
   int ti;
@@ -566,10 +674,16 @@ set_doc_types (bow_barrel *barrel)
 		bow_unlabeled_filename, 
 		bow_unlabeled_fancy_counts,
 		bow_doc_unlabeled},
+	       {bow_validation_files_source, 
+		bow_validation_fraction, 
+		bow_validation_number, 
+		bow_validation_filename, 
+		bow_validation_fancy_counts,
+		bow_doc_validation},
 	       {0,0,0,0,0,0}};
   
   /* First set all files to be untagged. */
-  bow_set_all_files_untagged (barrel);
+  bow_set_all_docs_untagged (docs);
 
   /* count the number of document types */
   for (num_types = 0; types[num_types].source; num_types++);
@@ -578,9 +692,9 @@ set_doc_types (bow_barrel *barrel)
   for (ti = 0; ti < num_types; ti++)
     {
       if (types[ti].source == bow_files_source_file)
-	bow_set_files_to_type (barrel,
-			       types[ti].filename,
-			       types[ti].doc_type);
+	bow_set_docs_to_type (docs,
+			      types[ti].filename,
+			      types[ti].doc_type);
     }
 
   /* Do any random splits to set document types */
@@ -588,36 +702,38 @@ set_doc_types (bow_barrel *barrel)
     {
       if (types[ti].source == bow_files_source_fraction)
 	{
-	  num_docs = (barrel->cdocs->length * types[ti].fraction);      
-	  bow_set_file_types_randomly_by_count (barrel, 
-						num_docs,
-						types[ti].doc_type);
+	  num_docs = (docs->length * types[ti].fraction);      
+	  bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
+					       num_docs,
+					       types[ti].doc_type);
 	}
       else if (types[ti].source == bow_files_source_number)
-	bow_set_file_types_randomly_by_count (barrel, 
-					      types[ti].number,
-					      types[ti].doc_type);
+	bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
+					     types[ti].number,
+					     types[ti].doc_type);
       else if (types[ti].source == bow_files_source_num_per_class)
 	{
 	  int ci;
 	  int *class_nums;
 
-	  class_nums = bow_malloc (sizeof (int) * bow_barrel_num_classes(barrel));
-	  for (ci = 0; ci < bow_barrel_num_classes(barrel); ci ++)
+	  class_nums = bow_malloc (sizeof (int) * num_classes);
+	  for (ci = 0; ci < num_classes; ci ++)
 	    class_nums[ci] = types[ti].number;
 	  
-	  bow_set_file_types_randomly_by_count_per_class (barrel, 
-							  class_nums, 
-							  types[ti].doc_type);
+	  bow_set_doc_types_randomly_by_count_per_class (docs, num_classes,
+							 classnames,
+							 class_nums, 
+							 types[ti].doc_type);
 	  bow_free(class_nums);
 	}
       else if (types[ti].source == bow_files_source_fancy_counts)
 	{
-	  int *counts = bow_malloc (sizeof (int) * bow_barrel_num_classes(barrel));
+	  int *counts = bow_malloc (sizeof (int) * num_classes);
 	  int ci;
 	  bow_split_fancy_count *class_count;
 
-	  for (ci = 0; ci < bow_barrel_num_classes(barrel); ci++)
+	  assert (classnames);
+	  for (ci = 0; ci < num_classes; ci++)
 	    counts[ci] = -1;
 
 	  for (class_count = types[ti].fancy_counts; 
@@ -626,27 +742,30 @@ set_doc_types (bow_barrel *barrel)
 	    {
 	      int class = -1;
 
-	      for (ci = 0; ci < bow_barrel_num_classes(barrel); ci++)
-		if (!strcmp(class_count->class_name, 
-			    bow_barrel_classname_at_index (barrel, ci)))
-		  {
-		    class = ci;
-		    break;
-		  }
-	      
+	      for (ci = 0; ci < num_classes; ci++)
+		{
+		  const char *name = bow_int2str (classnames, ci);
+		  if (!strcmp(class_count->class_name, name))
+		    {
+		      class = ci;
+		      break;
+		    }
+		}
+
 	      if (class == -1)
 		bow_error ("Unknown class %s.\n", class_count->class_name);
 	      
 	      counts[class] = class_count->num_docs;
 	    }
 
-	  for (ci = 0; ci < bow_barrel_num_classes(barrel); ci++)
+	  for (ci = 0; ci < num_classes; ci++)
 	    if (counts[ci] == -1)
 	      bow_error("Under-specified class counts");
 	  
-	  bow_set_file_types_randomly_by_count_per_class (barrel, 
-							  counts, 
-							  types[ti].doc_type);
+	  bow_set_doc_types_randomly_by_count_per_class (docs, num_classes,
+							 classnames,
+							 counts, 
+							 types[ti].doc_type);
 	  bow_free(counts);
 	}
     }
@@ -658,9 +777,17 @@ set_doc_types (bow_barrel *barrel)
 	{
 	  assert (num_remaining == 0);
 	  num_remaining = 1;
-	  bow_set_file_types_of_remaining (barrel, types[ti].doc_type);
+	  bow_set_doc_types_of_remaining (docs, types[ti].doc_type);
 	}
     }
+}
+
+/* Use the command line arguments to create the appropriate train/test split */
+void
+bow_set_doc_types_for_barrel (bow_barrel *barrel)
+{
+  bow_set_doc_types (barrel->cdocs, bow_barrel_num_classes (barrel), 
+		     barrel->classnames);
 }
 
 void _register_split_args () __attribute__ ((constructor));

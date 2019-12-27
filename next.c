@@ -236,18 +236,18 @@ bow_cdoc_is_ignore (bow_cdoc *cdoc)
   return(cdoc->type == bow_doc_ignore);
 }
 
-/* Return nonzero iff CDOC has type == IGNORED_MODEL */
-int 
-bow_cdoc_is_ignored_model (bow_cdoc *cdoc)
-{
-  return (cdoc->type == bow_doc_ignored_model);
-}
-
 /* Return nonzero iff CDOC has type == bow_doc_unlabeled */
 int 
 bow_cdoc_is_unlabeled (bow_cdoc *cdoc)
 {
   return (cdoc->type == bow_doc_unlabeled);
+}
+
+/* Return nonzero iff CDOC has type == bow_doc_validation */
+int 
+bow_cdoc_is_validation (bow_cdoc *cdoc)
+{
+  return (cdoc->type == bow_doc_validation);
 }
 
 int 

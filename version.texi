@@ -1,1 +1,1 @@
-@set BOWVERSION 0.8
+@set BOWVERSION 0.9

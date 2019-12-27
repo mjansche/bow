@@ -91,6 +91,7 @@ int hdb_open (char * dir, int no_create)
       fprintf (stderr, "hdb_open: %s has already been opened.  This system"
 	       " does\n  not support multiple databases being opened at"
 	       " once.\n", hdb_open_db);
+      free (fq_index); free (fq_barrel);
       return 0;
     }
 
@@ -101,6 +102,7 @@ int hdb_open (char * dir, int no_create)
 	{
 	  fprintf (stderr, "hdb_open: Not able to open %s: %s\n", fq_index,
 		   strerror (errno));
+	  free (fq_index); free (fq_barrel);
 	  return 0;
 	}
       /* Check for existence of database directory, create if necessary */
@@ -110,6 +112,7 @@ int hdb_open (char * dir, int no_create)
 	    {
 	      fprintf (stderr, "hdb_open: Not able to make directory %s: %s\n",
 		       dir, strerror (errno));
+	      free (fq_index); free (fq_barrel);
 	      return 0;
 	    }
 	}
@@ -117,12 +120,14 @@ int hdb_open (char * dir, int no_create)
 	{
 	  fprintf (stderr, "hdb_open: Stale %s file exists.  Please remove\n",
 		   hdb_barrel);
+	  free (fq_index); free (fq_barrel);
 	  return 0;
 	}
       /* Create a new index using Berkeley DB calls */
       if (! (HDB_HASH = dbopen (fq_index, O_RDWR|O_CREAT, 0644, DB_HASH, NULL)))
 	{
 	    fprintf (stderr, "hdb_open: Not able to create %s as DB file: %s\n", fq_index, strerror (errno));
+	    free (fq_index); free (fq_barrel);
 	    return 0;
 	}
       if (! (HDB_BARREL = open (fq_barrel, O_RDWR|O_CREAT, 0644)))
@@ -130,9 +135,11 @@ int hdb_open (char * dir, int no_create)
 	  fprintf (stderr, "hdb_open: Not able to create %s: %s\n", fq_barrel,
 		   strerror (errno));
 	  HDB_HASH->close (HDB_HASH);
+	  free (fq_index); free (fq_barrel);
 	  return 0;
 	}
       hdb_open_db = strdup (dir);
+      free (fq_index); free (fq_barrel);
       return 1;
     }
   
@@ -141,16 +148,19 @@ int hdb_open (char * dir, int no_create)
     {
       fprintf (stderr, "hdb_open: Not able to open %s as DB file: %s\n",
 	       fq_index, strerror (errno));
+      free (fq_index); free (fq_barrel);
       return 0;
     }
   if (! (HDB_BARREL = open (fq_barrel, O_RDWR, 0644)))
     {
       fprintf (stderr, "hdb_open: Not able to open %s for reading/writing: %s\n", fq_barrel, strerror (errno));
       HDB_HASH->close (HDB_HASH);
+      free (fq_index); free (fq_barrel);
       return 0;
     }
   
   hdb_open_db = strdup (dir);
+  free (fq_index); free (fq_barrel);
   return 1;
 }
 
@@ -264,6 +274,7 @@ char *hdb_get (char *key)
    str[dbt_data.size] = '\0';
 
    pos = atoi (str);
+   /*free (dbt_data.data);*/
    free (str);
 
    if (-1 == lseek (HDB_BARREL, pos, SEEK_SET))

@@ -26,10 +26,10 @@ Source code revision control
    `./configure.in' by typing (in the bow directory)
 
       autoconf
-      cd argp ; autoconf
+      (cd argp ; autoconf)
 
    You must have the autoconf program installed on your system.  It is
-   available from ftp://prep.ai.mit.edu/pub/gnu or its mirrors.
+   available from ftp://gnu.org/pub/gnu or its mirrors.
 
 
 Coding standards
@@ -37,7 +37,7 @@ Coding standards
 
     BOW coding follows the GNU coding standards.  The standards are
     described in a text file at 
-    ftp://prep.ai.mit.edu/pub/gnu/standards.text
+    ftp://ftp.gnu.org/pub/gnu/GNUinfo/standards/standards.text
 
     Please follow these standards in your code additions to BOW.
 

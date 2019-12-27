@@ -121,6 +121,7 @@ bow_wi2dvf_add_di_text_str (bow_wi2dvf **wi2dvf, int di, char *data,
       /* Increment our count of the number of words in this document. */
       num_words++;
     }
+  bow_default_lexer->close (bow_default_lexer, lex);
   return num_words;
 }
 

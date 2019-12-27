@@ -27,7 +27,7 @@
 
 /* Default value for option "naivebayes-m-est-m".  When zero, then use
    size-of-vocabulary instead. */
-static double naivebayes_argp_m_est_m = 0;
+double naivebayes_argp_m_est_m = 0;
 static int naivebayes_binary_scoring = 0;
 static int naivebayes_normalize_log = 0;
 static int naivebayes_rescale_scores = 1;
@@ -98,24 +98,6 @@ static struct argp_child naivebayes_argp_child =
 };
 
 /* End of command-line options specific to NaiveBayes */
-
-/* For changing weight of unseen words.
-   I really should implement `deleted interpolation' */
-/* M_EST_P summed over all words in the vocabulary must sum to 1.0! */
-#if 1
-/* This is the special case of the M-estimate that is `Laplace smoothing' */
-#define M_EST_M  (naivebayes_argp_m_est_m \
-		  ? naivebayes_argp_m_est_m \
-		  : barrel->wi2dvf->num_words)
-#define M_EST_P  (1.0 / barrel->wi2dvf->num_words)
-#else
-/* This is a version of M-estimates where the value of M depends on the
-   number of words in the class. */
-#define M_EST_M  (cdoc->word_count \
-		  ? (((double)barrel->wi2dvf->num_words) / cdoc->word_count) \
-		  : 1.0)
-#define M_EST_P  (1.0 / barrel->wi2dvf->num_words)
-#endif
 
 /* Defined in goodturing.c */
 extern int simple_good_turing (int length, int *freq, double *disc);
@@ -238,7 +220,7 @@ double
 bow_naivebayes_pr_wi_ci (bow_barrel *barrel,
 			 int wi, int ci,
 			 int loo_class,
-			 int loo_wi_count, int loo_w_count,
+			 float loo_wi_count, float loo_w_count,
 			 bow_dv **last_dv, int *last_dvi)
 {
   bow_dv *dv;
@@ -558,9 +540,10 @@ bow_naivebayes_set_weights (bow_barrel *barrel)
   /* Gather the word count here instead of directly of in CDOC->WORD_COUNT
      so we avoid round-off error with each increment.  Remember,
      CDOC->WORD_COUNT is a int! */
-  double num_words_per_ci[bow_barrel_num_classes (barrel)];
+  float num_words_per_ci[200];
   int barrel_is_empty = 0;
 
+  assert (bow_barrel_num_classes (barrel) < 200);
   /* We assume that we have already called BOW_BARREL_NEW_VPC() on
      BARREL, so BARREL already has one-document-per-class. */
 

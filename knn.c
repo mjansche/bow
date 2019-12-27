@@ -109,7 +109,7 @@ bow_knn_set_weights (bow_barrel *barrel)
   int dvi;			/* an index into the DV */
   int num_docs, total_model_docs;
 
-  /* We assumer we are dealing with the full document barrel - no 
+  /* We assume we are dealing with the full document barrel - no 
      whimpy vector-per-class stuff here. */
     
   assert (!strcmp (barrel->method->name, "knn"));
@@ -238,9 +238,12 @@ bow_knn_classification_barrel (bow_barrel *barrel)
 
 /* Set the weights for the query word vector according to the
    weighting scheme in query_weights */
-void bow_knn_query_set_weights(bow_wv *query_wv)
+void bow_knn_query_set_weights(bow_wv *query_wv, bow_barrel *barrel)
 {
   int wvi, max_tf;
+
+  /* null to statement to avoid compilation warning */
+  barrel = barrel;
 
   /* Pass one - set weights for b,l or n. Figure out the maximum
      word frequency of the document. */
@@ -416,11 +419,16 @@ bow_knn_get_k_best (bow_barrel *barrel, bow_wv *query_wv,
 
 	  /* Shift down all the bits of the array that need shifting */ 
           for (; (i > 0) && (scores[i - 1].weight < current_score); i--) 
-            scores[i] = scores[i-1]; 
+	    {
+	      scores[i].di = scores[i-1].di; 
+	      scores[i].weight = scores[i-1].weight; 
+	      scores[i].name = scores[i-1].name; 
+	    }
  
           /* Insert our new score */ 
           scores[i].weight = current_score; 
-          scores[i].di = current_di; 
+          scores[i].di = current_di;
+	  scores[i].name = doc->filename;
         } 
     } 
  
@@ -431,74 +439,81 @@ bow_knn_get_k_best (bow_barrel *barrel, bow_wv *query_wv,
 } 
 
 
+/* Get class scores using closest K neighbors.  */
 int
 bow_knn_score (bow_barrel *barrel, bow_wv *query_wv, 
-		      bow_score *bscores, int bscores_len,
-		      int loo_class)
+	       bow_score *bscores, int bscores_len,
+	       int loo_class)
 {
-  double *scores;		/* will become prob(class), indexed over CI */
-  int ci;			/* a "class index" (document index) */
-  int num_scores;		/* number of entries placed in SCORES */
-  bow_score *neighbours;        /* Place to hold the enarest neighbours */
-  int no_neighbours;
-  bow_cdoc *doc;
-  int ni;
+  int count;
+  int ni,ci;
+  double scores_sum = 0.0;
+  int num_scores;  
+  bow_score *neighbors;         /* Place to hold scores of nearest neighbors */
+  double *scores;
 
-  /* Get the neighbours */
-  neighbours = alloca (sizeof (bow_score) * knn_k);
-  no_neighbours = bow_knn_get_k_best(barrel, query_wv, neighbours, knn_k);
-
-  /* Allocate space to store scores for *all* classes (documents) */
-  /* XXX Hmmm - how many classes do we have? */
-  scores = alloca (bow_barrel_num_classes (barrel) * sizeof (double));
-
-  /* Loop over each entry in neighbours, putting its contribution in scores */
-  for (ni = 0; ni < no_neighbours; ni++)
+  /* This should be initialized in case BSCORES_LEN is larger than the number
+   * of classes in the barrel */
+  for (ci=0; ci < bscores_len; ci++)
     {
-      /* Get the class of this document */
-      doc = bow_cdocs_di2doc(barrel->cdocs, neighbours[ni].di);
-      scores[doc->class] += neighbours[ni].weight;
+      bscores[ci].weight = 0.0;
+      bscores[ci].di = 0;
+      bscores[ci].name = "default";
     }
 
-  /* Normalize the SCORES so they all sum to one. */
-  {
-    double scores_sum = 0;
-    for (ci = 0; ci < bow_barrel_num_classes (barrel); ci++)
-      scores_sum += scores[ci];
-    for (ci = 0; ci < bow_barrel_num_classes (barrel); ci++)
-      {
-	scores[ci] /= scores_sum;
-	/* assert (scores[ci] > 0); */
-      }
-  }
+  /* Get scores of neighbors */
+  neighbors = alloca (sizeof (bow_score) * knn_k);
+  count = bow_knn_get_k_best (barrel, query_wv, neighbors, knn_k);
 
-  /* Return the SCORES by putting them (and the `class indices') into
-     SCORES in sorted order. */
-  {
-    num_scores = 0;
-    for (ci = 0; ci < bow_barrel_num_classes (barrel); ci++)
-      {
-	if (num_scores < bscores_len
-	    || bscores[num_scores-1].weight < scores[ci])
-	  {
-	    /* We are going to put this score and CI into SCORES
-	       because either: (1) there is empty space in SCORES, or
-	       (2) SCORES[CI] is larger than the smallest score there
-	       currently. */
-	    int dsi;		/* an index into SCORES */
-	    if (num_scores < bscores_len)
-	      num_scores++;
-	    dsi = num_scores - 1;
-	    /* Shift down all the entries that are smaller than SCORES[CI] */
-	    for (; dsi > 0 && bscores[dsi-1].weight < scores[ci]; dsi--)
-	      bscores[dsi] = bscores[dsi-1];
-	    /* Insert the new score */
-	    bscores[dsi].weight = scores[ci];
-	    bscores[dsi].di = ci;
-	  }
-      }
-  }
+  /* Allocate space for class scores */
+  scores = alloca (bow_barrel_num_classes (barrel) * sizeof (double));
+  for (ci=0; ci < bow_barrel_num_classes (barrel); ci++)
+    scores[ci] = 0.0;
 
+  /* Put contributing document scores into class scores */
+  for (ni=0; ni < count; ni++)
+    {
+      /* Get the class of this document */
+      bow_cdoc *doc = bow_cdocs_di2doc (barrel->cdocs, neighbors[ni].di);
+      scores[doc->class] += neighbors[ni].weight;
+      scores_sum += neighbors[ni].weight;
+    }
+
+  /* Normalize scores */
+  for (ci=0; ci < bow_barrel_num_classes (barrel); ci++)
+    {
+      double tmp = scores[ci];
+      scores[ci] /= scores_sum;
+    }
+
+  num_scores = 0;
+
+  /* Put SCORES into BSCORES in sorted order */
+  /* Each round, find the best remainaing score and put it into bscores */
+  for (ci=0; ci < bow_barrel_num_classes (barrel); ci++)
+    {
+      if (num_scores < bscores_len
+	  || bscores[num_scores-1].weight < scores[ci])
+	{
+	  int dsi;
+	  /* We are going to put this score and class index into SCORES
+	   * because either 1) there is an empty space in SCORES, or 2)
+	   * SCORES[CI] is larger than the smallest score currently there */
+	  if (num_scores < bscores_len)
+	    num_scores++;
+	  dsi = num_scores - 1;
+	  /* Shift down all the entries that are smaller than SCORES[CI] */
+	  for (; dsi > 0 && bscores[dsi-1].weight < scores[ci]; dsi--)
+	    {
+	      bscores[dsi].weight = bscores[dsi-1].weight;
+	      bscores[dsi].name = bscores[dsi-1].name;
+	      bscores[dsi].di = bscores[dsi-1].di;
+	    }
+	  bscores[dsi].weight = scores[ci];
+	  bscores[dsi].di = ci;
+	  bscores[dsi].name = "default";
+	}
+    }
   return num_scores;
 }
 

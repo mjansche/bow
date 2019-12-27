@@ -26,7 +26,7 @@
 /* These next two macros are automatically maintained by the Makefile,
    in conjunction with the file ./Version. */
 #define BOW_MAJOR_VERSION 0
-#define BOW_MINOR_VERSION 8
+#define BOW_MINOR_VERSION 9
 #define BOW_VERSION BOW_MAJOR_VERSION.BOW_MINOR_VERSION
 
 #include <stdio.h>
@@ -648,10 +648,6 @@ char *bow_wv_sprintf (bow_wv *wv, unsigned int max_size_for_string);
 /* Print "word vector"'s actual words to a string. */
 char *bow_wv_sprintf_words (bow_wv *wv, unsigned int max_size_for_string);
 
-/* Assign the values of the "word vector entry's" WEIGHT field
-   equal to the COUNT. */
-void bow_wv_set_weights_to_count (bow_wv *wv);
-
 /* Assign a value to the "word vector's" NORMALIZER field, such that
    when all the weights in the vector are multiplied by the
    NORMALIZER, the Euclidian length of the vector will be one. */
@@ -690,25 +686,44 @@ typedef struct _bow_di2wv {
 /* We want a nice way of saying this is a training or test document, or do
    we ignore it for now. */
 typedef enum {
-  bow_doc_untagged,	/* Not yet assigned a tag */
   bow_doc_train,	/* Use this to calculate P(w|C) */
   bow_doc_test,		/* Classify these for test results */
   bow_doc_unlabeled,    /* the "unlabeled" docs in EM and active learning */
-  bow_doc_ignore,	/* docs left unused */
-  bow_doc_ignored_model, /* In EM these are for score->prob mapping */
-  bow_doc_unused_model,	/* In EM, labeled training docs excluded from model */
-  bow_doc_unused_ignore	/* In EM, unlabeled docs excluded from model */
+  bow_doc_untagged,	/* Not yet assigned a tag */
+  bow_doc_validation,   /* docs used for a validation set */
+  bow_doc_ignore	/* docs left unused */
 } bow_doc_type;
+
+#define bow_str2type(STR)			\
+((strcmp (STR, "train") == 0)			\
+ ? bow_doc_train				\
+ : ((strcmp (STR, "test") == 0)			\
+    ? bow_doc_test				\
+    : ((strcmp (STR, "unlabeled") == 0)		\
+       ? bow_doc_unlabeled			\
+       : ((strcmp (STR, "validation") == 0)	\
+	  ? bow_doc_validation			\
+	  : ((strcmp (STR, "ignore") == 0)	\
+	     ? bow_doc_ignore                   \
+	     : -1)))))
+
+/* A generic "document" entry, useful for setting document types.  
+   All other "document" entries should begin the same as this one. */
+typedef struct _bow_doc {
+  bow_doc_type type;
+  int class;
+  const char *filename;
+} bow_doc;
 
 /* A "document" entry useful for standard classification tasks. */
 typedef struct _bow_cdoc {
   bow_doc_type type;		/* Is this document part of the model to be
 				   built, a test document, or to be ignored */
-  float normalizer;		/* Multiply weights by this for normalizing */
-  int word_count;		/* Total number of words in this document */
-  float prior;			/* Prior probability of this class/doc */
-  const char *filename;		/* Where to find the original document */
   int class;			/* A classification label. */
+  const char *filename;		/* Where to find the original document */
+  int word_count;		/* Total number of words in this document */
+  float normalizer;		/* Multiply weights by this for normalizing */
+  float prior;			/* Prior probability of this class/doc */
   float *class_probs;           /* Probabilistic classification labels */
 } bow_cdoc;
 
@@ -1004,7 +1019,7 @@ typedef struct _bow_method {
   void (*vpc_set_priors)(bow_barrel *barrel, bow_barrel *doc_barrel);
   int (*score)(bow_barrel *barrel, bow_wv *query_wv, 
 	       bow_score *scores, int num_scores, int loo_class);
-  void (*wv_set_weights)(bow_wv *wv);
+  void (*wv_set_weights)(bow_wv *wv, bow_barrel *barrel);
   void (*wv_normalize_weights)(bow_wv *wv);
   void (*free_barrel)(bow_barrel *barrel);
   /* Parameters of the method. */
@@ -1032,7 +1047,7 @@ if ((*(BARREL)->method->normalize_weights))		\
 
 #define bow_wv_set_weights(WV,BARREL)		\
 if ((*(BARREL)->method->wv_set_weights))	\
-  ((*(BARREL)->method->wv_set_weights)(WV))
+  ((*(BARREL)->method->wv_set_weights)(WV, BARREL))
 
 #define bow_wv_normalize_weights(WV,BARREL)		\
 if (((*(BARREL)->method->wv_normalize_weights)))	\
@@ -1191,6 +1206,16 @@ bow_barrel *bow_barrel_copy (bow_barrel *barrel);
 /* Free the memory held by BARREL. */
 void bow_barrel_free (bow_barrel *barrel);
 
+/* Assign the values of the "word vector entry's" WEIGHT field
+   equal to the COUNT. */
+void bow_wv_set_weights_to_count (bow_wv *wv, bow_barrel *barrel);
+
+/* Assign weight values appropriate for the different event models.
+   For document, weights are 0/1.  For word, weights are same as
+   counts.  For doc-then-word, weights are normalized counts. 
+   Sets normalizer to be total number of words as appropriate for the 
+   event model.*/
+void bow_wv_set_weights_by_event_model (bow_wv *wv, bow_barrel *barrel);
 
 /* Assign the values of the "word vector entry's" WEIGHT field
    equal to the COUNT times the word's IDF, taken from the BARREL. */
@@ -1600,8 +1625,11 @@ void bow_barrel_normalize_weights_by_summing (bow_barrel *barrel);
 
 /* Creating and working with test sets. */
 
-/* Use the command line arguments to create the appropriate train/test split */
-void set_doc_types (bow_barrel *barrel);
+/* Use the state variables from command-line arguments --test-set,
+   --train-set, etc, to create the appropriate train/test split */
+void bow_set_doc_types (bow_array *docs, int num_classes, 
+			bow_int4str *classnames);
+void bow_set_doc_types_for_barrel (bow_barrel *barrel);
 
 /* This function sets up the data structure so we can step through the word
    vectors for each test document easily. */
@@ -1635,8 +1663,8 @@ int bow_cdoc_is_nontest (bow_cdoc *cdoc);
 /* Return nonzero iff CDOC has type == IGNORE */
 int bow_cdoc_is_ignore (bow_cdoc *cdoc);
 
-/* Return nonzero iff CDOC has type == IGNORED_MODEL */
-int bow_cdoc_is_ignored_model (bow_cdoc *cdoc);
+/* Return nonzero iff CDOC has type == VALIDATION */
+int bow_cdoc_is_validation (bow_cdoc *cdoc);
 
 /* Return nonzero iff CDOC has type == bow_doc_unlabeled */
 int bow_cdoc_is_unlabeled (bow_cdoc *cdoc);

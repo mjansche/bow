@@ -1,12 +1,7 @@
-This file documents the installation of the Bag Of Words Library,
-`libbow'.  Copyright (C) 1996, 1997 Andrew McCallum.  You may copy,
-distribute, and modify it freely as long as you preserve this copyright
-notice and permission notice.
-
 Installing `libbow'
 *******************
 
-   To compile and install `libbow':
+To compile and install `libbow':
 
   1. Configure the source for your system by typing
 

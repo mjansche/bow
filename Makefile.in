@@ -139,12 +139,6 @@ DEMO_C_FILES = \
 rainbow.c \
 arrow.c
 
-CROSSBOW_C_FILES = \
-hac.c \
-treenode.c
-
-CROSSBOW_O_FILES = $(CROSSBOW_C_FILES:.c=.o)
-
 OTHER_C_FILES = \
 kl-div.c
 
@@ -222,9 +216,6 @@ ALL_LIBS = $(LIBS) -L. -lbow -L./argp -largp -lm -ldb
 
 $(DEMO_EXECUTABLES): %: libbow.a argp/libargp.a %.o $(METHOD_O_FILES)
 	$(CC) $(CFLAGS) $@.o -o $@ $(METHOD_O_FILES) $(LDFLAGS) $(ALL_LIBS)
-
-crossbow: libbow.a argp/libargp.a crossbow.o $(CROSSBOW_O_FILES)
-	$(CC) $(CFLAGS) $@.o -o $@ $(CROSSBOW_O_FILES) $(LDFLAGS) $(ALL_LIBS)
 
 kl-div: libbow.a kl-div.o
 	$(CC) $(CFLAGS) kl-div.o -o $@ $(LDFLAGS) $(ALL_LIBS)

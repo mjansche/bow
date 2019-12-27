@@ -348,12 +348,88 @@ bow_wv_sprintf_words (bow_wv *wv, unsigned int max_size_for_string)
 /* Assign the values of the "word vector entry's" WEIGHT field
    equal to the COUNT. */
 void
-bow_wv_set_weights_to_count (bow_wv *wv)
+bow_wv_set_weights_to_count (bow_wv *wv, bow_barrel *barrel)
 {
   int wvi;
+ 
+  /* null statement to avoid compilation warning */
+  barrel = barrel;
 
   for (wvi = 0; wvi < wv->num_entries; wvi++)
     wv->entry[wvi].weight = wv->entry[wvi].count;
+}
+
+/* Assign weight values appropriate for the different event models.
+   For document, weights are 0/1.  For word, weights are same as
+   counts.  For doc-then-word, weights are normalized counts. 
+   Note that in this case, some weights may be zero.
+   Sets normalizer to be total number of words as appropriate for the 
+   event model.  Barrel should be the class barrel, so we can avoid
+   words that don't occur in the class barrel. */
+void
+bow_wv_set_weights_by_event_model (bow_wv *wv, bow_barrel *barrel)
+{
+  int wvi;
+  bow_dv *dv;
+  int total_words = 0;
+
+  if (bow_event_model == bow_event_document)
+    {
+      for (wvi = 0; wvi < wv->num_entries; wvi++)
+	{
+	  dv = bow_wi2dvf_dv (barrel->wi2dvf, wv->entry[wvi].wi);
+	  if (dv)
+	    {
+	      total_words++;
+	      wv->entry[wvi].weight = 1.0;
+	    }
+	  else
+	    wv->entry[wvi].weight = 0.0;
+	}
+      wv->normalizer = wv->num_entries;
+    }
+  else if (bow_event_model == bow_event_word)
+    {      
+      for (wvi = 0; wvi < wv->num_entries; wvi++)
+	{
+	  dv = bow_wi2dvf_dv (barrel->wi2dvf, wv->entry[wvi].wi);
+	  if (dv)
+	    {
+	      wv->entry[wvi].weight = wv->entry[wvi].count;
+	      total_words += wv->entry[wvi].count;
+	    }
+	  else
+	    wv->entry[wvi].weight = 0.0;
+	}
+      wv->normalizer = total_words;
+    }
+  else if (bow_event_model == bow_event_document_then_word)
+    {
+      for (wvi = 0; wvi < wv->num_entries; wvi++)
+	{
+	  /* For normalization, don't count words that
+	     don't appear in the class barrel */
+	  dv = bow_wi2dvf_dv (barrel->wi2dvf, wv->entry[wvi].wi);
+	  if (dv)
+	    {
+	      total_words += wv->entry[wvi].count;
+	      wv->entry[wvi].weight = 1.0;
+	    }
+	  else
+	    wv->entry[wvi].weight = 0.0;
+	}
+	 
+      for (wvi = 0; wvi < wv->num_entries; wvi++)
+	if (wv->entry[wvi].weight == 1.0)
+	  {
+	    wv->entry[wvi].weight = (float) wv->entry[wvi].count * 
+	      (float) bow_event_document_then_word_document_length / 
+	      (float) total_words;
+	  }
+      wv->normalizer = bow_event_document_then_word_document_length;      
+    }
+  else
+    bow_error ("No implementation for this event model");
 }
 
 /* Assign the values of the "word vector entry's" WEIGHT field

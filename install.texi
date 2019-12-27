@@ -2,10 +2,6 @@
 @include version.texi
 
 @ifset INSTALL_ONLY
-This file documents the installation of the Bag Of Words Library,
-@samp{libbow}.  Copyright (C) 1996, 1997 Andrew McCallum.  You
-may copy, distribute, and modify it freely as long as you preserve this
-copyright notice and permission notice.
 @chapter Installing @samp{libbow}
 @end ifset
 

@@ -1,7 +1,7 @@
 Bag Of Words Library README
 ***************************
 
-`libbow', version 0.8.
+`libbow', version 0.9.
 
    `Libbow' is a library of C code intended for writing statistical
 text-processing programs.  This distribution includes the library, as
@@ -72,17 +72,12 @@ Here are some examples:
 shell script `./demo/script' to see an annotated demonstration of the
 classifier in action.
 
-   The web page
-http://www.cs.cmu.edu/afs/cs.cmu.edu/project/theo-11/www/naive-bayes.html
-has a pointer to a "Gentle Introduction to Rainbow", as well as some
-sample UseNet text data.
+   More information and documentation is available at
+http://www.cs.cmu.edu/~mccallum/bow
 
 Rainbow improvements coming soon:
    Better documentation.
-   Better modularily of command-line options for changing parameters
-     of weight-setting methods.
    Incremental model training.
-   Better smoothing.  Good-Turing estimates, etc.
 
 Arrow
 =====

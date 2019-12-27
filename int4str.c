@@ -98,19 +98,18 @@ _str2id (const char *s)
       s++;
       c++;
     }
-  if (h == 0)
-    {
-      /* Never return 0, otherwise _str_hash_add() will infinite-loop */
-      h = 1;
-    }
-  else
-    {
-      if (h < 0)
-	h = -h;
-      /* If return value is too big then REHASH() can make it go negative,
-	 so here we use modulo to keep it a little small. */
-      h = h % (INT_MAX / 4);
-    }
+  /* If return value is too big then REHASH() can make it go negative,
+     so here we use modulo to keep it a little small.  */
+  h = h % (INT_MAX / 4);
+  /* Be sure to do this after the %-modulo above, because the largest
+     negative integer negated, it just again the largest negative
+     integer. */
+  if (h < 0)
+    h = -h;
+  /* Never return 0, otherwise _str_hash_add() will infinite-loop */
+  else if (h == 0)
+    h = 1;
+
   return h;
 }
 

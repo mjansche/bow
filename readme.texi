@@ -58,18 +58,14 @@ After you have compiled @samp{libbow} and @samp{rainbow}, you can run
 the shell script @file{./demo/script} to see an annotated demonstration
 of the classifier in action.
 
-The web page
-http://www.cs.cmu.edu/afs/cs.cmu.edu/project/theo-11/www/naive-bayes.html
-has a pointer to a ``Gentle Introduction to Rainbow'', as well as some
-sample UseNet text data.
+More information and documentation is available at
+http://www.cs.cmu.edu/~mccallum/bow
+
 
 @format
 Rainbow improvements coming soon:
    Better documentation.
-   Better modularily of command-line options for changing parameters
-     of weight-setting methods.
    Incremental model training.
-   Better smoothing.  Good-Turing estimates, etc.
 @end format
 
 

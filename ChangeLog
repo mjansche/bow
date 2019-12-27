@@ -1,4 +1,281 @@
+1998-09-28  Andrew McCallum  <mccallum@jprc.com>
+
+	* rainbow.c (rainbow_options): Add optional argument to
+	"print-doc-names" that specifies the document type (tag = train,
+	test,..) to print.
+	(rainbow_parse_opt): Handle it.
+	(main): Likewise.
+
+	* bow/libbow.h (bow_str2type): New macro.
+
+	* Makefile.in: Undo changes that added crossbow to the snapshot
+	distribution.  It's not yet ready to go out.
+	(LIBBOW_H_FILES): Remove bow/crossbow.h and bow/treenode.h.
+	(CROSSBOW_C_FILES): Remove variable.
+	(OTHER_C_FILES): Remove crossbow.c.
+	(all): Remove crossbow.
+	(DIST_FILES): Remove $(CROSSBOW_C_FILES).
+
+1998-09-28  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* knn.c (bow_knn_score): calculate and return class scores (same
+	as before last modification)
+
+	* rainbow.c (rainbow_query): always print class names instead of
+	relying on cdoc names
+
+1998-09-25  Andrew McCallum  <mccallum@jprc.com>
+
+	* int4str.c (_str2id): Fix bug whereby returned value may be
+	negative or zero! (Reported by Jason Rennie.)
+
+	* hem.c (crossbow_hem_full_em): Print the train- and test-pp for
+	the "No Shrinkage" case also.
+	(LOG_LOSS): New macro.
+	(crossbow_hem_fienberg_treenode): Conditioned on above macro,
+	implement lambda-calculation with a log log function.
+
+1998-09-24  Andrew McCallum  <mccallum@jprc.com>
+
+	* crossbow.c (CLASSES_FROM_DIRS): New macro.
+	(crossbow_index): In embedded function write_wv_to_fp() extract the
+	directory name from the FILENAME, and use it to determine the
+	class index of the DOC.  Count the number of classes from the
+	number of different dir names found in the embedded function.
+	(crossbow_classify): Temporarily use crossbow_hem_fienberg() instead
+	of crossbow_hem_full_em().
+
+	* hem.c (crossbow_hem_full_em): Instead of printing "Initial Flat
+	Distribution", print the more precise message "No Shrinkage".
+	(crossbow_hem_fienberg_treenode): New function.
+	(crossbow_hem_fienberg): New function.
+
+	* treenode.c (bow_treenode_set_lambdas_leaf_only): New function.
+	(bow_treenode_set_lambdas_leaf_only_all): New function.
+	* bow/treenode.h: Declare new functions.
+
+	* split.c (bow_set_doc_types_randomly_by_count_per_class): Print
+	the total number of documents tagged.
+
+1998-09-21  Andrew McCallum  <mccallum@jprc.com>
+
+	* bow/libbow.h (bow_doc_type): Reorder the enumeration so that the
+	numbers match those of old archived barrels.  (Bug reported by
+	Kamal Nigam and Jason Rennie.)
+
+1998-09-18  Andrew McCallum  <mccallum@jprc.com>
+
+	* hem.c (crossbow_hem_options): Explain more defaults.
+
+	* rainbow.c (rainbow_options): Rename "print-barrel" to
+	"print-matrix".  Leave "print-barrel" as a hidden alias.
+
+1998-09-17  Andrew McCallum  <mccallum@jprc.com>
+
+	* Makefile.in: Add crossbow the the snapshot distribution.
+	(OTHER_C_FILES): Add crossbow.c.
+	(LIBBOW_H_FILES): Add bow/crossbow.h and bow/treenode.h.
+	(DIST_FILES): Add $(CROSSBOW_C_FILES).
+	(all): Add crossbow.
+
+	* bow/libbow.h (bow_cdoc): Reorder the variables so that the order
+	of the first three matches that of crossbow_doc.
+	(bow_doc): Add CLASS and FILENAME elements.
+	* bow/crossbow.h (crossbow_doc): Reorder the variables so that the
+	order of the first three matches that of bow_cdoc.
+
+	* crossbow.c (main): Call bow_set_doc_types() only if not
+	indexing.
+	* hem.c: Turn of MN.  Use new bow_doc types instead of old
+	crossbow tags.
+	* mn.c (crossbow_hem_em_one_mn_iteration): Don't reset classes
+	distribution unless CROSSBOW_CLASSES_COUNT is greater than 1.
+
+	* rainbow.c: Fix some typos in calls to
+	bow_set_doc_types_for_barrel().
+	(rainbow_query): Remove use of knn_k.
+
+	* crossbow.c (crossbow_classnames): New global variable.
+	(crossbow_archive): Write it.
+	(crossbow_unarchive): Read it.
+	(crossbow_index): Initialize it.
+	(struct crossbow_arg_state): Remove test_fraction.
+	(crossbow_docs_split): Function removed.
+	(crossbow_classify): Don't call removed function.
+	(crossbow_options): "test-percentage" option removed.
+	(crossbow_parse_opt): No longer handle it.
+	(main): Call bow_set_doc_types() to do the test train splits.
+
+	* em.c (bow_em_new_vpc_with_weights): Comment out unused variables
+	to avoid warning.
+
+	* split.c: All function names with bow_set_files_, changed to
+	bow_set_doc_.  All functions that previously took a bow_barrel as
+	an argument now take only the pieces of the barrel they need---so
+	that crossbow can use these functions too.
+	(bow_set_doc_types_for_barrel): New function that works like old
+	bow_set_doc_types() function.
+	* bow/libbow.h (bow_set_doc_types): New function declaration.
+	(bow_set_doc_types_for_barrel): New function declaration.
+	* rainbow.c (main): Call bow_set_doc_types_for_barrel() instead
+	of set_doc_types().
+
+1998-09-17  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* knn.c: make KNN_K static (local); need to change bow_knn_score
+	so that it returns classes instead of k nearest documents
+
+	* rainbow.c (rainbow_query): set NUM_HITS_TO_SHOW to KNN_K if
+	method is "knn"
+
+	* knn.c (bow_knn_get_k_best): fixed a bug in document shifting
+	schema; return document score in bow_score array
+	(bow_knn_score): clear away lots 'o unnecessary junk; expect
+	calling function to allocate BSCORES; initialize BSCORES
+
+1998-09-15  Andrew McCallum  <mccallum@jprc.com>
+
+	* bow/libbow.h (bow_doc): New typedef.
+
+1998-09-14  Andrew McCallum  <mccallum@jprc.com>
+
+	* hem.c: Replace hem_ with crossbow_hem_.
+
+	* Makefile.in (CROSSBOW_C_FILES): Renamed hac.c to hem.c.
+	* hem.c: File renamed from hac.c.
+	* crossbow.c: Replaced hac_ with hem_.
+
+	* rainbow.c (rainbow_options): Changed "infogain-vector" to
+	"print-word-infogain".  Changed "infogain-pair-vector" to
+	"print-word-pair-infogain".  Changed "weight-vector" to
+	"print-word-weights".  Changed "foilgain-vector" to
+	"print-word-foilgain".
+	(main): Call set_doc_types() once at beginning, unless doing
+	RAINBOW_TESTING, which does its own call of this function.
+
+	* libbow.texi (Overview): Added rough notes from Devika
+	Subramanian.
+
+	* bow/libbow.h (BOW_MINOR_VERSION): Updated from 8 to 9.
+
+	* treenode.c hac.c crossbow.c bow/treenode.h: Changed treenode_ to
+	bow_treenode_ in all function names.
+
+1998-09-14  Kamal Nigam  <knigam@zeno.jprc.com>
+
+	* bow/libbow.h (bow_wv_set_weights_to_count): Changed prototype.
+	(bow_doc_type): Removed unused doc types and added validation type.
+	(bow_method): Change prototype so set weights takes two arguments.
+	(bow_wv_set_weights): Change prototype
+	(bow_wv_set_weights_to_count): Likewise.
+	(bow_wv_set_weights_by_event_model): New function.
+	(bow_cdoc_is_ignored_model): Removed.
+	(bow_cdoc_is_validation): New function.
+
+	* em.c (bow_em_event_model_type): Removed.  Superceded by libbow
+	event models.
+	(M_EST_M): Removed.
+	(M_EST_P): Removed.
+	(WORD_PRIOR_COUNT): Removed.
+	(bow_em_event_model): Removed.
+	(bow_em_calculating_perplexity): New global for perplexity calculating
+	hack.
+	(binary_pos_ci): New global for binary classification hack.
+	(em_halt_using_perplexity): New option variable.
+	(em_perplexity_docs): Likewise.
+	(em_perplexity_loo): Likewise.
+	(bow_em_anneal_normalizer): Likewise.
+	(em_options): Removed option --em-event-model.  New code for options
+	em-halt-using-perplexity em-anneal-normalizer em-print-perplexity.
+	(em_parse_opt): Likewise.
+	(bow_cdoc_is_multi_hump_doc): New function.
+	(bow_cdoc_is_train_or_unlabeled): New function.
+	(bow_em_perturb_weights): Set the random seed.
+	(bow_em_perturb_weights): Use the  real word_count in normalizer, not
+	the integral one.
+	(bow_em_new_vpc_with_weights): num_classes removed. binary_pos_ci
+	moved to be a global.  *_class_map variables removed.  Use the
+	real word_count in normalizer, not the integral one.  Remove
+	infogain pruning; do this in rainbow.c.  Change calculation of
+	word_count for documents to be correct.  Do not allow zero class
+	probs when randomly choosing them for the EM starting point.  Add
+	EM halting when the perplexity of some documents plateaus.  Create
+	dv's for all words in the vocabulary so perplexity calculation
+	does not get confused if words appear in only the doc barrel and
+	not the class barrel.  Use libbow document event model and
+	doc-then-word document length.  Use bow_em_set_weights (like
+	bow_naivebayes_set_weights).  Calculate and print perplexity if
+	necessary or requested.  Implement normalizer annealing.  Add
+	multi-hump EM more naturally into the code.  Don't free the
+	class_probs; may be used by LOO doc testing.  Update call to
+	bow_em_score.
+	(em_calculate_perplexity): New function.
+	(bow_em_test_accuracy): Update call to bow_em_score.
+	(bow_em_print_log_odds_ratio): Disable while normalizer is holding
+	word_count info.
+	(bow_em_set_priors_using_class_probs): Prime each class's count with
+	1.
+	(bow_em_pr_wi_ci): New function.
+	(bow_em_set_weights): New function.
+	(bow_em_score): New calling prototype to send loo class_probs pointer
+	as an int.  Use bow_em_pr_wi_ci with loo functionality.  Add
+	perplexity calculation hack to return perplexity of each class.
+	Use libbow event models implicitly through bow_em_pr_wi_ci
+	(bow_method_em): Change wv_set_weights to explicitly use the event
+	model.
+	
+	* naivebayes.c (naivebayes_argp_m_est_m): Remove static so em.c
+	can see.
+	(M_EST_M): Removed.
+	(M_EST_P): Removed.
+	(bow_naivebayes_pr_wi_ci): Changed loo_wi_count and loo_w_count to
+	floats to handle the document_then_word event model correctly.
+
+	* bow/naivebayes.h (naivebayes_argp_m_est_m): Add prototype so
+	em.c can use.
+
+	* wv.c (bow_wv_set_weights_to_count): Add argument to match method
+	prototype.
+	(bow_wv_set_weights_by_event_model): New function.
+
+	* split.c (bow_validation_files_source): New variable.
+	(bow_validation_fraction): New variable.
+	(bow_validation_number): New variable.
+	(bow_validation_filename): New variable.
+	(bow_validation_fancy_counts): New variable.
+	(bow_split_options): New option --validation-set
+	(bow_split_parse_opt): New option --validation-set
+	(bow_split_parse_opt): New format for fancy counts: all ',' as
+	delimiters.
+	(bow_set_file_types_randomly_by_count_per_class): Print nice message
+	to stderr.
+	(bow_set_file_types_randomly_by_count): Ensure get at least document
+	per class of training.
+	(bow_set_files_to_type): Update nice message for stderr.
+	(bow_set_file_types_of_remaining): Print nice message to stderr.
+	(set_doc_types): handle validation set also.
+
+	* rainbow.c (rainbow_test): Added special call for EM method to
+	correctly handle EM-style LOO scoring.
+
+	* next.c (bow_cdoc_is_ignored_model): Removed.
+	(bow_cdoc_is_validation): New function.
+
+	* knn.c (bow_knn_query_set_weights): Added argument to procedure
+	to be compliant with new prototype for method
+
+	* arrow.c (arrow_compare): Add argument to calls to
+	bow_wv_set_weights_to_count.
+
 1998-09-13  Andrew McCallum  <mccallum@jprc.com>
+
+	* NEWS: Update with some new features in version 0.9.
+	* Version (BOW_MINOR_VERSION): Changed from 8 to 9.
+	* readme.texi: Update list of coming rainbow improvements.  Update
+	web address for more information.
+	* HACKING: Update GNU URL's and add parens to argp autoconf
+	command.
+	* install.texi: Remove unnecessary copyright notice.
 
 	* Makefile.in (LIBBOW_H_FILES): Added bow/hdb.h.
 
@@ -689,7 +966,7 @@ Tue Aug  4 14:35:32 1998  Andrew's Laptop Account  <mccallum@jprc.com>
 1998-06-17  Andrew McCallum  <mccallum@jprc.com>
 
 	* crossbow.c: Completely re-written in preparation for
-	implementing Hofmann's clustering.
+	implementing hierarchical clustering.
 
 	* array.c (bow_array_init): Use bow_malloc instead of malloc.
 
