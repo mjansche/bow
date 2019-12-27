@@ -20,7 +20,6 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
 
 #include <bow/libbow.h>
-#include <bow/hdb.h>
 #include <netinet/in.h>		/* for machine-independent byte-order */
 #include <assert.h>
 

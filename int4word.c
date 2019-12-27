@@ -20,7 +20,6 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
 
 #include <bow/libbow.h>
-#include <bow/hdb.h>
 #include <assert.h>
 #include <stdio.h>
 
@@ -295,71 +294,6 @@ bow_words_keep_top_by_infogain (int num_words_to_keep,
   /* Replace the old map with the new map. */
   bow_words_set_map (new_map, 1);
   bow_free (wi2ig);
-}
-
-/* Add to the word occurrence counts reading all entries in HDB
-   database DIRNAME and parsing all the text files; skip any files
-   matching EXCEPTION_NAME. */
-int
-bow_words_add_occurrences_from_hdb (const char *dirname,
-				    const char *exception_name)
-{
-  int text_document_count = 0;
-  int total_word_count = 0;
-  char *filename, *data;
-
-  /* Open HDB database */
-  if (! hdb_open ((char *) dirname, 0))
-    {
-      bow_error ("bow_words_add_occurrences_from_hdb: Not able to open %s"
-		 " as an HDB\n  database\n", dirname);
-    }
-  bow_verbosify (bow_progress,
-		 "Counting words... files : unique-words :: "
-		 "                 ");
-  /* Loop through all filename/data pairs in the database */
-  while (hdb_each (&filename, &data, 0))
-    {
-      char word[BOW_MAX_WORD_LENGTH];
-      int wi;
-      bow_lex lex;
-
-      /* If the filename matches the exception name, return immediately. */
-      if (exception_name && !strcmp (filename, exception_name))
-	continue;
-
-      if (bow_str_is_text (data))
-	{
-	  lex.document = data;
-	  lex.document_length = strlen (data);
-	  lex.document_position = 0;
-	  
-	  /* Loop once for each lexical token in this document. */
-	  while (bow_default_lexer->get_word (bow_default_lexer, 
-					      &lex, word, 
-					      BOW_MAX_WORD_LENGTH))
-	    {
-	      /* Increment the word's occurrence count. */
-	      wi = bow_word2int_add_occurrence (word);
-	      if (wi < 0)
-		continue;
-	      /* Increment total word count */
-	      total_word_count++;
-	    }
-	  text_document_count++;
-	  if (text_document_count % 2 == 0)
-		bow_verbosify (bow_progress,
-			       "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
-			       "%6d : %6d", 
-			       text_document_count, bow_num_words ());
-	}
-      free (filename);
-      free (data);
-    }
-
-  hdb_close ();
-  bow_verbosify (bow_progress, "\n");
-  return total_word_count;
 }
 
 /* Add to the word occurrence counts by recursively decending directory 

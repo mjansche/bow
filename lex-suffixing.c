@@ -1,7 +1,15 @@
 #include <bow/libbow.h>
 #include <ctype.h>
 
+/* bow_default_lexer_suffixing should be an indirect lexer, with a
+   simple lexer as its underlying lexer.  However, I got lazy, and it
+   should be considered that the bow_default_lexer_simple is always
+   the underlying lexer */
+
+#define HEADER_TWICE 1
+
 static int suffixing_doing_headers;
+static int suffixing_appending_headers;
 static char suffixing_suffix[BOW_MAX_WORD_LENGTH];
 static int suffixing_suffix_length;
 
@@ -26,6 +34,7 @@ suffixing_snarf_suffix (bow_lex *lex)
   suffixing_suffix[1] = 'x';
   suffixing_suffix[2] = 'x';
   suffixing_suffix_length = 3;
+  /* Put characters into the suffix until we get to the colon */
   while (lex->document[lex->document_position] != ':')
     {
       assert (lex->document[lex->document_position] != '\n');
@@ -34,8 +43,12 @@ suffixing_snarf_suffix (bow_lex *lex)
       assert (suffixing_suffix_length < BOW_MAX_WORD_LENGTH);
     }
   suffixing_suffix[suffixing_suffix_length] = '\0';
+  /* Throw away everything else until end of string */
   i = 0;
-  while (lex->document[lex->document_position + i] != '\n')
+  while (lex->document[lex->document_position + i] != '\n'
+	 /* This second condition is necessary if we are going through
+	    the header twice (when HEADER_TWICE=1) */
+	 && lex->document[lex->document_position + i] != '\0')
     {
       i++;
       assert (lex->document_position + i < lex->document_length);
@@ -53,11 +66,13 @@ bow_lexer_suffixing_open_text_fp (bow_lexer *self,
 {
   bow_lex *ret;
 
-  ret = bow_lexer_simple_open_text_fp (self, fp, filename);
+  ret = bow_lexer_simple_open_text_fp ((bow_lexer*)bow_default_lexer_simple, 
+				       fp, filename);
 
   if (ret)
     {
       suffixing_doing_headers = 1;
+      suffixing_appending_headers = 1;
       suffixing_snarf_suffix (ret);
     }
   return ret;
@@ -72,11 +87,12 @@ bow_lexer_suffixing_open_str (bow_lexer *self, char *buf)
 {
   bow_lex *ret;
 
-  ret = bow_lexer_simple_open_str (self, buf);
+  ret = bow_lexer_simple_open_str ((bow_lexer*)bow_default_lexer_simple, buf);
 
   if (ret)
     {
       suffixing_doing_headers = 1;
+      suffixing_appending_headers = 1;
       suffixing_snarf_suffix (ret);
     }
   return ret;
@@ -89,8 +105,9 @@ bow_lexer_suffixing_postprocess_word (bow_lexer_simple *self, bow_lex *lex,
 {
   int len;
 
-  len = bow_lexer_simple_postprocess_word (self, lex, buf, buflen);
-  if (len != 0 && suffixing_doing_headers)
+  len = bow_lexer_simple_postprocess_word (bow_default_lexer_simple,
+					   lex, buf, buflen);
+  if (len != 0 && suffixing_doing_headers && suffixing_appending_headers)
     {
       strcat (buf, suffixing_suffix);
       len = strlen (buf);
@@ -101,7 +118,18 @@ bow_lexer_suffixing_postprocess_word (bow_lexer_simple *self, bow_lex *lex,
     {
       if (lex->document[lex->document_position + 1] == '\n')
 	{
-	  suffixing_doing_headers = 0;	  lex->document_position++;
+#if HEADER_TWICE
+	  if (!suffixing_appending_headers)
+	    suffixing_doing_headers = 0;
+	  else
+	    {
+	      lex->document_position = 0;
+	      suffixing_appending_headers = 0;
+	      suffixing_snarf_suffix (lex);
+	    }
+#else
+	  lex->document_position++;
+#endif
 	  suffixing_suffix[0] = '\0';
 	}
       else
@@ -128,11 +156,15 @@ bow_lexer_suffixing_get_word (bow_lexer *self, bow_lex *lex,
     {
       /* Hmm... this looks like a hack.  Shouldn't we have something like
 	 bow_default_lexer->get_word ? */
-      wordlen = bow_lexer_html_get_raw_word ((bow_lexer_simple*)self, 
+      wordlen = bow_lexer_html_get_raw_word ((bow_lexer_simple*)
+					     bow_default_lexer_simple, 
 					     lex, buf, buflen);
       if (wordlen == 0)
 	{
 	  if (suffixing_doing_headers)
+	    /* We are just at the end of the headers, not at the end
+               of the file.  bow_lexer_suffixing_postprocess_word()
+               will deal with this */
 	    buf[0] = '\0';
 	  else
 	    return 0;

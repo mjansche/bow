@@ -19,7 +19,6 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111, USA */
 
 #include <bow/libbow.h>
-#include <bow/hdb.h>
 
 static int _bow_barrel_version = -1;
 #define BOW_DEFAULT_BARREL_VERSION 3
@@ -55,11 +54,13 @@ bow_barrel_new (int word_capacity,
   bow_barrel *ret;
 
   ret = bow_malloc (sizeof (bow_barrel));
+  ret->method = (bow_argp_method 
+		 ? : bow_method_at_name (bow_default_method_name));
   ret->cdocs = bow_array_new (class_capacity, entry_size, free_func);
   ret->wi2dvf = bow_wi2dvf_new (word_capacity);
   ret->classnames = NULL;
-  ret->method = (bow_argp_method 
-		 ? : bow_method_at_name (bow_default_method_name));
+  /* return a document barrel by default */
+  ret->is_vpc = 0;
   return ret;
 }
 
@@ -91,97 +92,6 @@ bow_barrel_add_document (bow_barrel *barrel,
 }
 
 /* Add statistics to the barrel BARREL by indexing all the documents
-   in HDB database DIRNAME.  Return the number of additional
-   documents indexed. */
-int
-bow_barrel_add_from_hdb (bow_barrel *barrel, 
-			 const char *dirname, 
-			 const char *except_name,
-			 const char *classname)
-{
-  int text_file_count, binary_file_count;
-  int class;
-  char *filename, *data;
- 
-  if (!(barrel->classnames))
-    barrel->classnames = bow_int4str_new (0);
-  class = bow_str2int (barrel->classnames, classname);
-  bow_verbosify (bow_progress,
-		 "Gathering stats... files : unique-words :: "
-		 "                 ");
-  text_file_count = binary_file_count = 0;
-
-  /* Open HDB database */
-  if (! hdb_open ((char *)dirname, 0))
-    {
-      bow_error ("bow_words_add_occurrences_from_hdb: Not able to open %s"
-		 " as an HDB\n  database\n", dirname);
-    }
-
-  /* Loop through all filename/data pairs in the database */
-  while (hdb_each (&filename, &data, 0))
-    {
-      bow_cdoc cdoc;
-      bow_cdoc *cdocp;
-      int di;			/* a document index */
-      int num_words;
-
-      /* If the filename matches the exception name, return immediately. */
-      if (except_name && !strcmp (filename, except_name))
-	continue;
-
-      if (bow_str_is_text (data))
-	{
-	  /* The file contains text; snarf the words and put them in
-	     the WI2DVF map. */
-	  cdoc.type = bow_doc_train;
-	  cdoc.class = class;
-	  /* Set to one so bow_infogain_per_wi_new() works correctly
-	     by default. */
-	  cdoc.prior = 1.0f;
-	  assert (cdoc.class >= 0);
-	  cdoc.filename = strdup (filename);
-	  assert (cdoc.filename);
-	  cdoc.class_probs = NULL;
-	  /* Add the CDOC to CDOCS, and determine the "index" of this
-             document. */
-	  di = bow_array_append (barrel->cdocs, &cdoc);
-	  /* Add all the words in this document. */
-	  /*
-	    num_words = bow_wi2dvf_add_di_text_fp (&(barrel->wi2dvf), di, fp,
-						 filename);
-	  */
-	  num_words = bow_wi2dvf_add_di_text_str (&(barrel->wi2dvf), di, data,
-						  filename);
-	  /* Fill in the new CDOC's idea of WORD_COUNT */
-	  cdocp = bow_array_entry_at_index (barrel->cdocs, di);
-	  cdocp->word_count = num_words;
-	  text_file_count++;
-	}
-      else
-	{
-	  bow_verbosify (bow_progress,
-			 "\nFile `%s' skipped because not text\n",
-			 filename);
-	  binary_file_count++;
-	}
-      bow_verbosify (bow_progress,
-		     "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
-		     "%6d : %8d", 
-		     text_file_count, bow_num_words ());
-      free (filename);
-      free (data);
-    }
-  hdb_close ();
-
-  bow_verbosify (bow_progress, "\n");
-  if (binary_file_count > text_file_count)
-    bow_verbosify (bow_quiet,
-		   "Found mostly binary files, which were ignored.\n");
-  return text_file_count;
-}
-
-/* Add statistics to the barrel BARREL by indexing all the documents
    found when recursively decending directory DIRNAME.  Return the number
    of additional documents indexed. */
 int
@@ -192,6 +102,50 @@ bow_barrel_add_from_text_dir (bow_barrel *barrel,
 {
   int text_file_count, binary_file_count;
   int class;
+
+#ifdef VPC_ONLY
+  /* Used when we are building a class barrel */
+  bow_cdoc cdoc;
+  bow_cdoc *cdocp;
+  int word_count = 0;
+  int di;
+
+  /* Function used to build a multinomial vpc barrel without building a
+   * document barrel */
+  int class_barrel_index_file (const char *filename, void *context)
+    {
+      FILE *fp;
+      int num_words;
+
+      /* If the filename matches the exception name, return immediately. */
+      if (except_name && !strcmp (filename, except_name))
+	return 0;
+
+      if (!(fp = fopen (filename, "r")))
+	bow_error ("Couldn't open file `%s' for reading.", filename);
+      if (bow_fp_is_text (fp))
+	{
+	  /* Add all the words in this document. */
+	  num_words = bow_wi2dvf_add_di_text_fp (&(barrel->wi2dvf), di, fp,
+						 filename);
+	  word_count += num_words;
+	  text_file_count++;
+	}
+      else
+	{
+	  bow_verbosify (bow_progress,
+			 "\nFile `%s' skipped because not text\n",
+			 filename);
+	  binary_file_count++;
+	}
+      fclose (fp);
+      bow_verbosify (bow_progress,
+		     "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
+		     "%6d : %8d", 
+		     text_file_count, bow_num_words ());
+      return 1;
+    }
+#endif
 
   int barrel_index_file (const char *filename, void *context)
     {
@@ -249,10 +203,41 @@ bow_barrel_add_from_text_dir (bow_barrel *barrel,
   if (!(barrel->classnames))
     barrel->classnames = bow_int4str_new (0);
   class = bow_str2int (barrel->classnames, classname);
+
+#ifdef VPC_ONLY
+  /* If we are building a class barrel, make one cdoc per class */
+  if (barrel->is_vpc)
+    {
+      cdoc.type = bow_doc_train;
+      cdoc.class = class;
+      cdoc.filename = strdup (classname);
+      cdoc.word_count = 0; /* Number of documents in this class */
+      cdoc.normalizer = -1.0f;
+      cdoc.prior = 1.0f; /* Need to set this later... */
+      cdoc.class_probs = NULL;
+
+      /* Add the CDOC to CDOCS, and determine the "index" of this
+	 "document." */
+      di = bow_array_append (barrel->cdocs, &cdoc);
+    }
+#endif
+	 
   bow_verbosify (bow_progress,
 		 "Gathering stats... files : unique-words :: "
 		 "                 ");
   text_file_count = binary_file_count = 0;
+#ifdef VPC_ONLY
+  /* Call our special function for building a class barrel rather than
+   * a document barrel.  When finished, set the priors and word counts */
+  if (barrel->is_vpc)
+    {
+      bow_map_filenames_from_dir (class_barrel_index_file, 0, dirname, "");
+      cdocp = bow_array_entry_at_index (barrel->cdocs, di);
+      cdocp->prior = (float) text_file_count;
+      cdocp->word_count = word_count;
+    }
+  else    
+#endif
   bow_map_filenames_from_dir (barrel_index_file, 0, dirname, "");
   bow_verbosify (bow_progress, "\n");
   if (binary_file_count > text_file_count)

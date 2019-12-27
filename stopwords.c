@@ -1,6 +1,6 @@
 /* Builtin stoplist words (from SMART) */
 
-/* Copyright (C) 1997 Andrew McCallum
+/* Copyright (C) 1997, 1998 Andrew McCallum
 
    Written by:  Andrew Kachites McCallum <mccallum@cs.cmu.edu>
 
@@ -547,5 +547,69 @@ char *_bow_builtin_stopwords[] =
   "yourselves",
   "z",
   "zero",
+  NULL
+};
+
+char *_bow_builtin_stopwords_shorter[] = 
+{
+  "about",
+  "all",
+  "am",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+
+  "be",
+  "been",
+  "but",
+  "by",
+
+  "can",
+  "cannot",
+
+  "did",
+  "do",
+  "does",
+  "doing",
+  "done",
+
+
+  "for",
+  "from",
+
+  "had",
+  "has",
+  "have",
+  "having",
+
+  "if",
+  "in",
+  "is",
+  "it",
+  "its",
+
+  "of",
+  "on",
+
+  "that",
+  "the",
+  "they",
+  "these",
+  "this",
+  "those",
+  "to",
+  "too",
+
+  "want",
+  "wants",
+  "was",
+  "what",
+  "which",
+  "will",
+  "with",
+  "would",
+
   NULL
 };

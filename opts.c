@@ -62,7 +62,7 @@ bow_smoothing bow_smoothing_method = bow_smoothing_laplace;
 int bow_prune_words_by_doc_count_n = 0;
 
 /* Random seed to use for srand, if not equal to -1 */
-int bow_split_seed = -1;
+int bow_random_seed = -1;
 
 /* What "event-model" we will use for the probabilistic models. */
 bow_event_models bow_event_model = bow_event_word;
@@ -123,10 +123,12 @@ static struct argp_option bow_options[] =
    "The number of decimal digits to print when displaying document scores"},
   {"random-seed", SPLIT_SEED, "NUM", 0,
    "The non-negative integer to use for seeding the random number generator"},
+#if HAVE_HDB
   {"hdb", HDB_KEY, 0, 0,
    "Assume ARG... names are HDB databases.  May not be used with "
    "--lex-pipe-command.  Only useful with --index option.  Currently only "
    "works with rainbow and arrow"},
+#endif
 
   {0, 0, 0, 0,
    "Lexing options", 2},
@@ -242,23 +244,24 @@ parse_bow_opt (int opt, char *arg, struct argp_state *state)
       break;
     case SPLIT_SEED:
       /* Set the seed for the random number generator */
-      bow_split_seed = atoi (optarg);
-      if (bow_split_seed < 0)
+      bow_random_seed = atoi (optarg);
+      if (bow_random_seed < 0)
 	{
 	  fprintf (stderr,
 		   "--split-seed: Seed must be non-negative.\n");
 	  return ARGP_ERR_UNKNOWN;
 	}
       break;
+#if HAVE_HDB
     case HDB_KEY:
       bow_hdb = 1;
       if (bow_lex_pipe_command)
 	bow_error ("--hdb and --lex-pipe-command options cannot be used in"
 		   " conjunction\n");
       break;
+#endif
       
       /* Lexing options. */
-
     case 'h':
       /* Avoid lexing news/mail headers by scanning fwd until two newlines */
       bow_default_lexer->document_start_pattern = "\n\n";
@@ -480,7 +483,7 @@ _help_filter (int key, const char *text, void *input)
   /* Add the names of the available methods to the help text. */
   if (key == 'm')
     {
-      static const len = 1024;
+      static const int len = 1024;
       char methodnames[len];
       int i;
       bow_method *m;

@@ -275,7 +275,7 @@ bow_int4str_new_from_string_file (const char *filename)
 {
   FILE *fp;
   bow_int4str *map;
-  const static int BUFLEN = 1024;
+  static const int BUFLEN = 1024;
   char buf[BUFLEN];
   int reading_numbers = 0;
 

@@ -260,10 +260,12 @@ arrow_index (int argc, char *argv[])
     {
       /* Parse all the documents to get word occurrence counts. */
       for (argi = arrow_arg_state.non_option_argi; argi < argc; argi++)
+#if HAVE_HDB
 	if (bow_hdb)
 	  bow_words_add_occurrences_from_hdb (argv[argi], "");
 	else
-	  bow_words_add_occurrences_from_text_dir (argv[argi], "");
+#endif
+          bow_words_add_occurrences_from_text_dir (argv[argi], "");
       bow_words_remove_occurrences_less_than
 	(bow_prune_vocab_by_occur_count_n);
       /* Now insist that future calls to bow_word2int*() will not
@@ -273,9 +275,11 @@ arrow_index (int argc, char *argv[])
 
   arrow_barrel = bow_barrel_new (0, 0, sizeof (bow_cdoc), 0);
   for (argi = arrow_arg_state.non_option_argi; argi < argc; argi++)
+#if HAVE_HDB
     if (bow_hdb)
       bow_barrel_add_from_hdb (arrow_barrel, argv[argi], 0, argv[argi]);
     else
+#endif
       bow_barrel_add_from_text_dir (arrow_barrel, argv[argi], 0, argv[argi]);
   if (bow_argp_method)
     arrow_barrel->method = bow_argp_method;

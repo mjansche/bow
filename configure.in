@@ -17,6 +17,24 @@ AC_PROG_CPP
 # Find some installation programs
 AC_PROG_INSTALL
 AC_PROG_RANLIB
+AC_PROG_YACC
+
+# Needed by Solaris machines (most other machines have socket stuff in libc)
+AC_CHECK_LIB(socket,main)
+
+# Needed by hdb.c
+AC_CHECK_FUNCS(strerror)
+
+# Needed by random.c
+AC_CHECK_FUNCS(gettimeofday)
+AC_CHECK_FUNCS(random)
+
+# Needed by lex-simple.c
+AC_CHECK_FUNCS(setenv)
+
+# Needed in various files
+AC_CHECK_FUNCS(strchr)
+AC_CHECK_FUNCS(strrchr)
 
 # Needed by weight.c
 AC_CHECK_FUNCS(log2f)

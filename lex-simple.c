@@ -84,7 +84,11 @@ bow_lexer_simple_open_text_fp (bow_lexer *self,
       lseek (fileno (fp), ftell (fp), SEEK_SET);
       /* Set the environment variable RAINBOW_LEX_FILENAME to the
 	 fully qualified pathname of the file being read. */
+#ifdef HAVE_SETENV /* for SunOS */
       setenv ("RAINBOW_LEX_FILENAME", filename, 1);
+#else
+      bow_error ("setenv() not defined!  lex-pipe-command cannot be used on this platform!");
+#endif
       fp = popen (redirected_command, "r");
       if (!fp)
 	bow_error ("Could not create pipe to `%s'\n", bow_lex_pipe_command);

@@ -37,6 +37,7 @@ INSTALL_DATA = @INSTALL_DATA@
 MAKEINFO = makeinfo
 TEXI2DVI = texi2dvi
 PERL = @PERL@
+YACC = @YACC@
 
 CC = @CC@
 
@@ -63,9 +64,8 @@ infodir = $(prefix)/info
 
 include $(srcdir)/Version
 
-LIBBOW_H_FILES = \
+STANDARD_LIBBOW_H_FILES = \
 bow/em.h \
-bow/hdb.h \
 bow/kl.h \
 bow/knn.h \
 bow/libbow.h \
@@ -73,7 +73,9 @@ bow/naivebayes.h \
 bow/prind.h \
 bow/tfidf.h
 
-LIBBOW_C_FILES = \
+LIBBOW_H_FILES = $(STANDARD_LIBBOW_H_FILES)
+
+STANDARD_LIBBOW_C_FILES = \
 array.c \
 barrel.c \
 bitvec.c \
@@ -85,7 +87,6 @@ error.c \
 evi.c \
 foilgain.c \
 goodturing.c \
-hdb.c \
 heap.c \
 info_gain.c \
 int4docn.c \
@@ -118,6 +119,8 @@ wicoo.c \
 wi2dvf.c \
 wv.c
 
+LIBBOW_C_FILES = $(STANDARD_LIBBOW_C_FILES)
+
 $(LIBBOW_C_FILES): $(LIBBOW_H_FILES)
 
 LIBBOW_O_FILES = $(LIBBOW_C_FILES:.c=.o)
@@ -134,7 +137,7 @@ METHOD_C_FILES = $(STANDARD_METHOD_C_FILES)
 METHOD_O_FILES = $(METHOD_C_FILES:.c=.o)
 
 
-# Other name ideas: longbow, archer, shoelace,...
+# Other name ideas: longbow, flint, shoelace, bowtie, ...
 DEMO_C_FILES = \
 rainbow.c \
 arrow.c
@@ -167,8 +170,8 @@ readme.texi \
 version.texi
 
 DIST_FILES = \
-$(LIBBOW_C_FILES) \
-$(LIBBOW_H_FILES) \
+$(STANDARD_LIBBOW_C_FILES) \
+$(STANDARD_LIBBOW_H_FILES) \
 $(STANDARD_METHOD_C_FILES) \
 $(DEMO_C_FILES) \
 $(PERL_FILES) \
@@ -192,6 +195,10 @@ mkinstalldirs
 ALL_CPPFLAGS = $(CPPFLAGS) $(INCLUDEFLAGS) -I$(srcdir) -I$(srcdir)/argp $(DEFS)
 ALL_CFLAGS = $(CFLAGS)
 
+# This must go BEFORE Makefile.preamble is included (when compiling HDB
+# libdb must be added to ALL_LIBS)
+ALL_LIBS = $(LIBS) -L. -lbow -L./argp -largp -lm
+
 -include Makefile.preamble
 
 # Rules
@@ -212,12 +219,12 @@ libbow.a: $(LIBBOW_O_FILES) $(METHOD_O_FILES)
 argp/libargp.a:
 	cd argp ; $(MAKE) libargp.a
 
-ALL_LIBS = $(LIBS) -L. -lbow -L./argp -largp -lm -ldb
-
 $(DEMO_EXECUTABLES): %: libbow.a argp/libargp.a %.o $(METHOD_O_FILES)
 	$(CC) $(CFLAGS) $@.o -o $@ $(METHOD_O_FILES) $(LDFLAGS) $(ALL_LIBS)
 
-kl-div: libbow.a kl-div.o
+# kl-div doesn't actually depend on libargp, but we need ALL_LIBS so that
+# libdb will be used when we compile in HDB
+kl-div: libbow.a kl-div.o argp/libargp.a
 	$(CC) $(CFLAGS) kl-div.o -o $@ $(LDFLAGS) $(ALL_LIBS)
 
 # A special executable for loading into Lisp (for Kamal)

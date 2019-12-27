@@ -72,6 +72,7 @@ enum {
   HIDE_VOCAB_IN_FILE_KEY,
   HIDE_VOCAB_INDICES_IN_FILE_KEY,
   TEST_ON_TRAINING_KEY,
+  VPC_ONLY_KEY
 };
 
 static struct argp_option rainbow_options[] =
@@ -85,6 +86,13 @@ static struct argp_option rainbow_options[] =
   {"index-printed-barrel", INDEX_PRINTED_BARREL_KEY, "FORMAT", 0,
    "Read document/word statistics from a file in the format produced by "
    "--print-barrel=FORMAT.  See --print-barrel for details about FORMAT."},
+#if VPC_ONLY
+  {"vpc-only", VPC_ONLY_KEY, 0, 0,
+   "Only create a vector-per-class barrel.  Do not create a document barrel.  "
+   "Useful for creating barrels to be used with --query-server.  "
+   "NOTE: This is a hack which assumes multinomial and a naive Bayes-like "
+   "method.  Not meant for general purpose usage!"},
+#endif
 
   {0, 0, 0, 0,
    "For doing document classification using the data structures "
@@ -216,6 +224,10 @@ struct rainbow_arg_state
   const char *barrel_printing_format;
   const char *hide_vocab_indices_filename;
   int test_on_training;
+#if VPC_ONLY
+  /* Set if we only want to build a class barrel */
+  int vpc_only;
+#endif
 } rainbow_arg_state;
 
 static error_t
@@ -239,6 +251,11 @@ rainbow_parse_opt (int key, char *arg, struct argp_state *state)
       rainbow_arg_state.what_doing = rainbow_indexing;
       rainbow_arg_state.barrel_printing_format = arg;
       break;
+#if VPC_ONLY
+    case VPC_ONLY_KEY:
+      rainbow_arg_state.vpc_only = 1;
+      break;
+#endif
     case 'r':
       rainbow_arg_state.repeat_query = 1;
       break;
@@ -507,7 +524,8 @@ rainbow_unarchive ()
   rainbow_doc_barrel = bow_barrel_new_from_data_fp (fp);
   /* Don't close it because bow_wi2dvf_dv will still need to read it. */
 
-  if (rainbow_doc_barrel->classnames == NULL)
+  /* Only do this if the document barrel exists */
+  if (rainbow_doc_barrel && rainbow_doc_barrel->classnames == NULL)
     {
       int i;
       bow_cdoc *cdoc;
@@ -547,6 +565,10 @@ rainbow_index (int num_classes, const char *classdir_names[],
 	bow_free_barrel (rainbow_doc_barrel);
       /* Index all the documents. */
       rainbow_doc_barrel = bow_barrel_new (0, 0, sizeof (bow_cdoc), NULL);
+#if VPC_ONLY
+      if (rainbow_arg_state.vpc_only)
+	rainbow_doc_barrel->is_vpc = 1;
+#endif VPC_ONLY
       if (bow_argp_method)
 	rainbow_doc_barrel->method = bow_argp_method;
       else
@@ -555,6 +577,7 @@ rainbow_index (int num_classes, const char *classdir_names[],
 	{
 	  bow_verbosify (bow_progress, "Class `%s'\n  ", 
 			 filename_to_classname (classdir_names[class_index]));
+#if HAVE_HDB
 	  if (bow_hdb)
 	    {
 	      /* Gathers stats on all documents in HDB database */
@@ -569,6 +592,7 @@ rainbow_index (int num_classes, const char *classdir_names[],
 			       classdir_names[class_index]);
 	    }
 	  else
+#endif
 	    /* This function traverses the class directory
 	       gathering word/document stats.  Return the number of
 	       documents indexed.  This gathers stats on individual
@@ -598,10 +622,12 @@ rainbow_index (int num_classes, const char *classdir_names[],
 			 "Class `%s'\n  ", 
 			 filename_to_classname
 			 (classdir_names[class_index]));
+#if HAVE_HDB
 	  if (bow_hdb)
 	    bow_words_add_occurrences_from_hdb
 	      (classdir_names[class_index], "");
 	  else
+#endif
 	    bow_words_add_occurrences_from_text_dir
 	      (classdir_names[class_index], "");
 	}
@@ -641,6 +667,59 @@ rainbow_index (int num_classes, const char *classdir_names[],
 	  do_indexing ();
 	}
     }
+
+#if VPC_ONLY
+  /* Weights have been calculated - all that is left to do is to calculate
+   * priors */
+  if (rainbow_arg_state.vpc_only)
+    {
+      bow_cdoc *cdocp;
+      double prior_sum = 0.0;
+      int num_classes = bow_barrel_num_classes (rainbow_doc_barrel);
+      int ci;
+      /* Normalize the class priors */
+      for (ci=0; ci < num_classes; ci++)
+	{
+	  cdocp = bow_array_entry_at_index (rainbow_doc_barrel->cdocs, ci);
+	  prior_sum += cdocp->prior;
+	}
+      if (prior_sum)
+	for (ci=0; ci < num_classes; ci++)
+	  {
+	    cdocp = bow_array_entry_at_index (rainbow_doc_barrel->cdocs, ci);
+	    cdocp->prior = cdocp->prior / prior_sum;
+	  }
+      else
+	bow_verbosify (bow_progress, "WARNING: All classes have zero prior\n");
+      /* Recalculate word counts for each class */
+      {
+	bow_wv *wv = NULL;
+	int wvi;
+	bow_cdoc *cdoc;
+	int di;
+	bow_dv_heap *heap = bow_test_new_heap (rainbow_doc_barrel);
+	while ((di = bow_heap_next_wv (heap, rainbow_doc_barrel, &wv,
+				       bow_cdoc_yes)) != -1)
+	  {
+	    cdoc = bow_array_entry_at_index (rainbow_doc_barrel->cdocs, di);
+	    cdoc->word_count = 0;
+	    for (wvi = 0; wvi < wv->num_entries; wvi++)
+	      {
+		if (bow_wi2dvf_dv (rainbow_doc_barrel->wi2dvf,
+				   wv->entry[wvi].wi))
+		  cdoc->word_count += wv->entry[wvi].count;
+	      }
+	  }
+      }
+      /* We have been (secretly) using the doc_barrel as a class barrel
+       * all along.  Set doc_barrel to NULL so that an empty file is
+       * written to disk.  This will keep future executions from
+       * attempting to recalculate the class_barrel */
+      rainbow_class_barrel = rainbow_doc_barrel;
+      rainbow_doc_barrel = NULL;
+      return;
+    }
+#endif
 
   /* Combine the documents into class statistics. */
   rainbow_class_barrel = 
@@ -735,10 +814,14 @@ rainbow_query (FILE *in, FILE *out)
 
   /* (Re)set the weight-setting method, if requested with a `-m' on
      the command line. */
-  if (bow_argp_method)
-    rainbow_doc_barrel->method = bow_argp_method;
-  else
-    rainbow_doc_barrel->method = rainbow_default_method;
+  /* If we don't have the document barrel, we can't do this... */
+  if (rainbow_doc_barrel)
+    {
+      if (bow_argp_method)
+	rainbow_doc_barrel->method = bow_argp_method;
+      else
+	rainbow_doc_barrel->method = rainbow_default_method;
+    }
 
   if (bow_prune_vocab_by_infogain_n)
     {
@@ -762,10 +845,12 @@ rainbow_query (FILE *in, FILE *out)
     }
 
   /* Re-build the rainbow_class_barrel, if necessary */
-  if (rainbow_doc_barrel->method != rainbow_class_barrel->method
-      || rainbow_arg_state.vocab_map
-      || rainbow_arg_state.hide_vocab_map
-      || bow_prune_vocab_by_infogain_n)
+  /* Make sure that we have the document barrel */
+  if (rainbow_doc_barrel &&
+      (rainbow_doc_barrel->method != rainbow_class_barrel->method
+       || rainbow_arg_state.vocab_map
+       || rainbow_arg_state.hide_vocab_map
+       || bow_prune_vocab_by_infogain_n))
     {
       bow_free_barrel (rainbow_class_barrel);
       rainbow_class_barrel = 
@@ -773,8 +858,12 @@ rainbow_query (FILE *in, FILE *out)
     }
 
   /* Get the best matching documents. */
-  bow_wv_set_weights (query_wv, rainbow_doc_barrel);
-  bow_wv_normalize_weights (query_wv, rainbow_doc_barrel);
+  /* Only modify weights if we have the document barrel */
+  if (rainbow_doc_barrel)
+    {
+      bow_wv_set_weights (query_wv, rainbow_doc_barrel);
+      bow_wv_normalize_weights (query_wv, rainbow_doc_barrel);
+    }
   actual_num_hits = bow_barrel_score  (rainbow_class_barrel, query_wv,
 				       hits, num_hits_to_show, -1);
 
@@ -1262,6 +1351,7 @@ rainbow_test_files (FILE *out_fp, const char *test_dirname)
       return process_wv (filename, query_wv, context);
     }
 
+#if HAVE_HDB
   /* This is used for the case that we are dealing with HDB files.
      At this point, the fulltext of the file has already been retrieved
      and is passed in as DATA. */
@@ -1278,6 +1368,7 @@ rainbow_test_files (FILE *out_fp, const char *test_dirname)
 	query_wv = bow_wv_new_from_lex (&lex);
       return process_wv (filename, query_wv, context);
     }
+#endif
 
   hits = alloca (sizeof (bow_score) * num_hits_to_retrieve);
 
@@ -1298,9 +1389,11 @@ rainbow_test_files (FILE *out_fp, const char *test_dirname)
       current_ci = class_cdoc->class;
       current_class = bow_barrel_classname_at_index (rainbow_doc_barrel, ci);
       /* Test each document in that diretory. */
+#if HAVE_HDB
       if (bow_hdb)
 	bow_map_filenames_from_hdb (test_hdb_file, 0, dir, "");
       else
+#endif
 	bow_map_filenames_from_dir (test_file, 0, dir, "");
     }
 }
@@ -1409,6 +1502,9 @@ main (int argc, char *argv[])
   rainbow_arg_state.barrel_printing_format = NULL;
   rainbow_arg_state.hide_vocab_indices_filename = NULL;
   rainbow_arg_state.test_on_training = 0;
+#ifdef VPC_ONLY
+  rainbow_arg_state.vpc_only = 0;
+#endif
   
   /* Parse the command-line arguments. */
   argp_parse (&rainbow_argp, argc, argv, 0, 0, &rainbow_arg_state);
@@ -1467,7 +1563,8 @@ main (int argc, char *argv[])
     rainbow_doc_barrel->method = bow_argp_method;
 
   /* Make the test/train split */
-  if (rainbow_arg_state.what_doing != rainbow_testing)
+  /* Don't touch anything if we don't have the document barrel */
+  if (rainbow_doc_barrel && rainbow_arg_state.what_doing != rainbow_testing)
     bow_set_doc_types_for_barrel (rainbow_doc_barrel);
 
   /* Do things that update their own class/word weights. */
@@ -1580,10 +1677,12 @@ main (int argc, char *argv[])
       bow_cdoc *cdoc;
 
       if (rainbow_arg_state.printing_class)
-	tag = bow_str2type (rainbow_arg_state.printing_class);
-      if (tag == -1)
-	bow_error ("Argument to --print-doc-barrel, `%s', is not a tag\n"
-		   "Try `train', `test', `unlabeled', etc");
+	{
+	  tag = bow_str2type (rainbow_arg_state.printing_class);
+	  if (tag == -1)
+	    bow_error ("Argument to --print-doc-names, `%s', is not a tag\n"
+		       "Try `train', `test', `unlabeled', etc");
+	}
       for (di = 0; di < rainbow_doc_barrel->cdocs->length; di++)
 	{
 	  cdoc = bow_array_entry_at_index (rainbow_doc_barrel->cdocs, di);
@@ -1632,13 +1731,14 @@ main (int argc, char *argv[])
     }
 
   /* Re-build the rainbow_class_barrel, if necessary */
-  if (rainbow_doc_barrel->method != rainbow_class_barrel->method
+  if (rainbow_doc_barrel &&
+      (rainbow_doc_barrel->method != rainbow_class_barrel->method
       || rainbow_arg_state.vocab_map
       || rainbow_arg_state.hide_vocab_map
       || bow_prune_vocab_by_infogain_n
       || bow_prune_words_by_doc_count_n
       || bow_prune_vocab_by_occur_count_n
-      || 1)
+      || 1))
     {
       bow_free_barrel (rainbow_class_barrel);
       rainbow_class_barrel = 

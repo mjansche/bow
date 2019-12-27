@@ -52,10 +52,27 @@
 #define ntohs(a) (a)
 #endif
 
-#if 1
+#ifdef __linux__
 #undef assert
 #define assert(expr)   \
-((void) ((expr) || (bow_error ("Assertion failed %s:%d:" __STRING(expr) __FILE__, __LINE__), NULL)))
+((void) ((expr) || (bow_error ("Assertion failed %s:%d:" __STRING(expr), __FILE__, __LINE__), NULL)))
+#endif
+
+#ifndef HAVE_SRANDOM /* for SunOS */
+#undef srandom
+#define srandom srand
+#endif
+
+#ifndef HAVE_RANDOM /* for SunOS */
+#undef random
+#define random rand
+#endif
+
+#ifndef HAVE_STRCHR
+#define strchr index
+#endif
+#ifndef HAVE_STRRCHR
+#define strrchr rindex
 #endif
 
 #if !PATH_MAX			/* for SunOS */
@@ -583,6 +600,31 @@ bow_wa *bow_wa_new (int capacity);
 
 /* Add a new word and score to the array */
 int bow_wa_append (bow_wa *wa, int wi, float score);
+
+/* Add a score to the array.  If there is already an entry for WI, the
+   SCORE gets added to WI's current score.  If WI is not already in
+   the array, then this function behaves like bow_wa_append(). */
+int bow_wa_add (bow_wa *wa, int wi, float score);
+
+/* Add a score to the array.  If there is already an entry for WI at
+   the end, the SCORE gets added to WI's current score.  If WI is
+   greater than the WI at the end, then this function behaves like
+   bow_wa_append(), otherwise an error is raised. */
+int bow_wa_add_to_end (bow_wa *wa, int wi, float score);
+
+/* Add to WA all the WI/WEIGHT entries from WA2.  Uses bow_wa_add(). */
+int bow_wa_union (bow_wa *wa, bow_wa *wa2);
+
+/* Return a new array containing only WI entries that are in both 
+   WA1 and WA2. */
+bow_wa *bow_wa_intersection (bow_wa *wa1, bow_wa *wa2);
+
+/* Add weights to WA1 for those entries appearing in WA2 */
+int bow_wa_overlay (bow_wa *wa1, bow_wa *wa2);
+
+/* Return a new array containing only WI entries that are in WA1 but
+   not in WA2. */
+bow_wa *bow_wa_diff (bow_wa *wa1, bow_wa *wa2);
 
 /* Sort the word array. */
 void bow_wa_sort (bow_wa *wa);
@@ -1816,7 +1858,7 @@ extern int bow_smoothing_goodturing_k;
 extern int bow_prune_words_by_doc_count_n;
 
 /* Random seed to use for srand, if not equal to -1 */
-extern int bow_split_seed;
+extern int bow_random_seed;
 
 /* What "event-model" we will use for the probabilistic models. */
 typedef enum {

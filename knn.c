@@ -481,10 +481,7 @@ bow_knn_score (bow_barrel *barrel, bow_wv *query_wv,
 
   /* Normalize scores */
   for (ci=0; ci < bow_barrel_num_classes (barrel); ci++)
-    {
-      double tmp = scores[ci];
-      scores[ci] /= scores_sum;
-    }
+    scores[ci] /= scores_sum;
 
   num_scores = 0;
 

@@ -38,7 +38,7 @@ bow_wa_new (int capacity)
   return ret;
 }
 
-/* Add a new word and score to the array */
+/* Add a new word and score to the array. */
 int
 bow_wa_append (bow_wa *wa, int wi, float score)
 {
@@ -52,6 +52,112 @@ bow_wa_append (bow_wa *wa, int wi, float score)
   wa->length++;
   assert (wa->length < wa->size);
   return wa->length;
+}
+
+/* Add a score to the array.  If there is already an entry for WI, the
+   SCORE gets added to WI's current score.  If WI is not already in
+   the array, then this function behaves like bow_wa_append(). */
+int
+bow_wa_add (bow_wa *wa, int wi, float score)
+{
+  int i;
+  for (i = 0; i < wa->length; i++)
+    {
+      if (wa->entry[i].wi == wi)
+	{
+	  wa->entry[i].weight += score;
+	  goto add_done;
+	}
+    }
+  bow_wa_append (wa, wi, score);
+ add_done:
+  return wa->length;
+}
+
+/* Add a score to the array.  If there is already an entry for WI at
+   the end, the SCORE gets added to WI's current score.  If WI is
+   greater than the WI at the end, then this function behaves like
+   bow_wa_append(), otherwise an error is raised. */
+int
+bow_wa_add_to_end (bow_wa *wa, int wi, float score)
+{
+  int last_i = wa->length - 1;
+  if (wa->length == 0
+      || wa->entry[last_i].wi < wi)
+    {
+      bow_wa_append (wa, wi, score);
+    }
+  else
+    {
+      assert (wa->entry[wa->length-1].wi == wi);
+      wa->entry[last_i].weight += score;
+    }
+  return wa->length;
+}
+
+int
+bow_wa_weight (bow_wa *wa, int wi, float *weight)
+{
+  int i;
+  for (i = 0; i < wa->length; i++)
+    {
+      if (wa->entry[i].wi == wi)
+	{
+	  *weight = wa->entry[i].weight;
+	  return 1;
+	}
+    }
+  return 0;
+}
+
+/* Add to WA all the WI/WEIGHT entries from WA2.  Uses bow_wa_add(). */
+int
+bow_wa_union (bow_wa *wa, bow_wa *wa2)
+{
+  int i;
+  for (i = 0; i < wa2->length; i++)
+    bow_wa_add (wa, wa2->entry[i].wi, wa2->entry[i].weight);
+  return wa->length;
+}
+
+/* Return a new array containing only WI entries that are in both 
+   WA1 and WA2. */
+bow_wa *
+bow_wa_intersection (bow_wa *wa1, bow_wa *wa2)
+{
+  int i;
+  float weight1;
+  bow_wa *ret = bow_wa_new (0);
+  for (i = 0; i < wa2->length; i++)
+    if (bow_wa_weight (wa1, wa2->entry[i].wi, &weight1))
+      bow_wa_add (ret, wa2->entry[i].wi, wa2->entry[i].weight + weight1);
+  return ret;
+}
+
+/* Add weights to WA1 for those entries appearing in WA2 */
+int
+bow_wa_overlay (bow_wa *wa1, bow_wa *wa2)
+{
+  int i;
+  float weight2;
+  for (i = 0; i < wa1->length; i++)
+    if (bow_wa_weight (wa2, wa1->entry[i].wi, &weight2))
+      wa1->entry[i].weight += weight2;
+  return wa1->length;
+}
+
+/* Return a new array containing only WI entries that are in WA1 but
+   not in WA2. */
+bow_wa *
+bow_wa_diff (bow_wa *wa1, bow_wa *wa2)
+{
+  int i;
+  float weight;
+  bow_wa *ret = bow_wa_new (0);
+  for (i = 0; i < wa1->length; i++)
+    if (!bow_wa_weight (wa2, wa1->entry[i].wi, &weight))
+      bow_wa_add (ret, wa1->entry[i].wi, wa1->entry[i].weight);
+  return ret;
 }
 
 static int

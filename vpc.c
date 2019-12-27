@@ -56,6 +56,8 @@ bow_barrel_new_vpc (bow_barrel *doc_barrel)
 			       doc_barrel->cdocs->free_func);
   vpc_barrel->method = doc_barrel->method;
   vpc_barrel->classnames = bow_int4str_new (0);
+  /* Make sure to set the VPC indicator */
+  vpc_barrel->is_vpc = 1;
 
   bow_verbosify (bow_progress, "Making vector-per-class... words ::       ");
 

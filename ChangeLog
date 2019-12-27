@@ -1,3 +1,317 @@
+1998-11-05  Andrew McCallum  <mccallum@justresearch.com>
+
+	* rainbow.c (main): Fix handling of TAG in doc name printing.
+
+	* split.c (bow_files_source_type): Added two new types:
+	bow_files_source_fraction_remaining, and
+	bow_files_source_number_remaining.
+	(bow_split_options): Update documentation.
+	(bow_split_parse_opt): Handle new source types.
+	(bow_set_doc_types_randomly_by_count): New option
+	TAKE_PROPORTION_FROM_REMAINING.  Revert to per-1998-10-21 behavior
+	if this is zero.
+	(bow_set_doc_types_randomly_by_fraction_remaining): New function.
+	(bow_set_doc_types): Change the order of operations slightly.  Instead
+	of doing all non-filename options together, do first the options
+	that specify the number of documents per class, then do the ones
+	that select the number of documents per class randomly according
+	to some proportion.
+
+1998-11-01  Andrew McCallum  <mccallum@justresearch.com>
+
+	* pv.c (bow_pv_write_unsigned_int): Make it a static inline
+	function, for speed.
+	(bow_pv_read_unsigned_int): Likewise.
+	(bow_pv_write_next_di_pi): Likewise.
+	(bow_pv_read_next_di_pi): Likewise.
+
+	* archer.c (archer_index): Pass just a filename, not a directory
+	name to bow_wi2pv_new().
+	(archer_query_hits_matching_sequence): New argument SUFFIX_STRING.
+	All callers changed.  Properly tell the difference between a word
+	that doesn't appear and a stopword.  Make a little more efficient.
+	(archer_query): Parse things like `title:foo'.
+	(archer_query_serve_one_query): Process special comands like ,HITS
+	before any query, not just the first.
+	(archer_options): Remove "compare" option.
+
+1998-10-21  Andrew McCallum  <mccallum@justresearch.com>
+
+	* split.c (bow_set_doc_types_randomly_by_count): When determining
+	how many documents are available, instead of skipping only the
+	ignore documents, skip all the non-untagged documents.  This fixes
+	a bug whereby there are not enough documents left to label.  Don't
+	arbitrarily add one to the number of document to be tagged when
+	the ratio-indicated number is zero.  When adding more documents to
+	the per-class counts to be tagged, make sure there are untagged
+	documents available in that class.
+
+1998-10-16  Andrew McCallum  <mccallum@justresearch.com>
+
+	* rainbow-h.c: All these changes actually made on or before Jun 26
+	1998.
+	(hier_barrel): Add di4filename.  Change CLASS_WORD_COUNT and
+	DOC_WORD_COUNTS from ints to floats.
+	(hier_barrel_new): Initialize di4filename.
+	(hier_barrel_set_class_word_count): Use the CDOC->NORMALIZER instead
+	of the CDOC->WORD_COUNT.
+	(hier_barrel_set_class_word_count): New function.  Commented out.
+	(hier_barrel_set_class_barrel_cdoc_normalizer_to_word_count): New
+	function. 
+	(hier_barrel_total_of_cdoc_word_counts): Function removed.
+	(hier_barrel_correct_cdoc_prior): Set the CDOC->NORMALIZER in the
+	class barrel, so we can use them to reset the WORD_COUNT's.  Do it
+	by calling new function.
+	(hier_barrel_set_class_model_from_new_class_wi2dvf): Call new function.
+	(hier_barrel_free): Free HBARREL->NEW_CLASS_WI2DVF.
+	(rainbowh_set_total_num_words): Remove function.
+	(hier_barrel_prob_wi_in_ci_local): Make some changes for full_em.
+	(hier_barrel_prob_wi_local): Likewise.
+	(hier_barrel_calc_lambda_one_iteration): Add #error.
+	(hier_barrel_all_reset_doc_word_count_from_loo_doc_wi2dvf): New
+	function. 
+	(hier_barrel_calc_lambdas_all_nodes): Do more updates at top of
+	while() loop and add comments.
+	(rainbowh_unarchive): Deal with di4filename.
+
+1998-10-15  Andrew McCallum  <mccallum@justresearch.com>
+
+	* archer.c (archer_query_serve_one_query): When forking, in the
+	child, reopen the wi2pv PV FILE* so we get our own lseek()
+	position.
+	* bow/archer.h (bow_wi2pv_reopen_pv): Declare new function.
+	* wi2pv.c (bow_wi2pv_reopen_pv): New function.
+
+	* dice.c: New file.
+
+	* hem.c (SHRINK_WITH_UNIFORM_ONLY): New macro.
+	(PRINT_WORD_DISTS): New macro.
+	(iteration_limit): New variable.  (temporary).
+	(crossbow_hem_full_em): Use SHRINK_WITH_UNIFORM_ONLY and
+	PRINT_WORD_DISTS.  Use iteration_limit.
+	(crossbow_hem_fienberg_treenode): Use SHRINK_WITH_UNIFORM_ONLY and
+	PRINT_WORD_DISTS.  Also print results with several fixed lambdas.
+
+	* crossbow.c (struct crossbow_arg_state): New member
+	PRINT_FILE_PREFIX.
+	(main): Initialize new member.
+	(crossbow_print_word_probabilities): New function (not complete).
+	(crossbow_options): New option "print-word-probabilities".
+	(crossbow_parse_opt): Handle it.
+
+	* treenode.c (bow_treenode_free_loo): No longer declared static.
+	(bow_treenode_free_loo_all): New function.
+	(bow_treenode_set_new_words_to_zero): New function.
+	(bow_treenode_print_all_word_probabilities_all): New function.
+	* bow/treenode.h: Declare new functions.
+
+	* kl-div.c (main): Handle new command-line argument -l, for "Larry
+	Wasserman's Loss function".  Implement it.
+
+	* archer.c (archer_query_hits_matching_sequence): Change scaler.
+	(archer_query): Make a local copy of ARCHER_ARG_STATE.QUERY_STRING and
+	replace the trailing newline and carriage return with \0.
+
+	* archer.c (archer_query_hits_matching_sequence): Add 1 to avoid
+	dividing by zero.
+
+1998-10-15  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* Makefile.preamble (-DVPC_ONLY): new define
+
+	* vpc.c (bow_barrel_new_vpc): set IS_VPC to 1
+
+	* rainbow.c (rainbow_index): allow possibility of building only
+	class barrel in order to reduce memory consumption; add checks to
+	make sure that rainbow_doc_barrel is not NULL before we try to use it
+	(rainbow_options): add vpc-only option
+
+	* hdb-bow.c (bow_barrel_add_from_hdb): if barrel has is_vpc set,
+	build a multinomial class barrel instead of a document barrel
+
+	* barrel.c (bow_barrel_add_from_text_dir): if barrel has is_vpc
+	set, build a multinomial class barrel instead of a document barrel
+	(bow_barrel_new): set IS_VPC to 0
+
+1998-10-14  Andrew McCallum  <mccallum@justresearch.com>
+
+	* hem.c (crossbow_hem_unlabeled_perplexity): New function.
+	(crossbow_hem_labeled_perplexity): New function.
+	(crossbow_hem_place_labeled_data): Clear old data and LOO info before
+	placing the new.  Use new functions.
+
+	* archer.c (archer_query_hits_matching_wi): New function.
+	(archer_query_hits_matching_sequence): Use it.  Improve efficiency of
+	wi2pv searching.  Use new bow_wa function.
+	(archer_query): Remove trailing \n from query terms.
+	* wa.c (bow_wa_add_to_end): New function.
+	* bow/libbow.h: Declare new function.
+
+	* archer.c (archer_query_hits_matching_sequence): Change the
+	weight-setting method to encourage documents that have all query
+	term to be ranked above documents that have many repetitions of a
+	few terms.
+	(archer_query): Fix it so it works with queries that don't have a
+	+term.  Free all the temporary space that was allocated.  Print
+	the +terms as well as the others.
+
+	* wi2pv.c (bow_wi2pv_new): Instead of saving an absolute pathname
+	(and allowing the PV_FILENAME argument to contain '/'s), expect
+	PV_FILENAME to be just a filename, and save it only.  Use
+	BOW_DATA_DIR as the directory location in which to place the
+	PV_FILENAME.
+	(bow_wi2pv_new_from_filename): Support the new behavior of
+	bow_wi2pv_new.  (Although old models are temporarily supported by
+	use of a hack.)
+
+	* naivebayes.c (bow_naivebayes_set_weights): Remove restriction
+	that we have less than 200 classes.
+
+	* archer.c (archer_query): Combine results of query terms more
+	efficiently.  Print the words that occur in each hit.  Currently
+	only works if there is a +term.
+
+1998-10-13  Andrew McCallum  <mccallum@justresearch.com>
+
+	* archer.c (archer_query_hits_matching_sequence): Remove yyparse
+	code.  Add code to parse +, - and "" in C.  Gather results in
+	various bow_wa arrays, and combine them with the correct
+	semantics.
+	* Makefile.local (archer): Remove dependence on query* files.
+
+	* wa.c (bow_wa_weight): New function.
+	(bow_wa_union): New function.
+	(bow_wa_intersection): New function.
+	(bow_wa_overlay): New function.
+	(bow_wa_diff): New function.
+	* bow/libbow.h: Declare new functions.
+
+	* lex-suffixing.c: Whenever calling *lexer_simple_* functions,
+	pass BOW_DEFAULT_LEXER_SIMPLE instead of SELF.
+	(HEADER_TWICE): New macro.  When this macro is non-zero, read the
+	headers twice, once adding the suffixes, once not.
+
+1998-10-13  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* configure.in: AC_HAVE_LIBRARY(socket) changed to
+	AC_CHECK_LIB(socket,main)
+
+1998-10-09  Peter Su  <Peter Su <psu@jprc.com>>
+
+	* configure.in: added check for YACC
+	* query.h: New file. header file for query demo.
+	* Makefile.in: Added rules for building query demo
+	* query_main.c: New file, short demo for parser
+	* query_lex.l: New file
+	* query_parse.y: New file for parsing boolean queries
+
+1998-10-08  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* Makefile.in: define ALL_LIBS before Makefile.preamble is
+	included
+	* Makefile.in (kl-div): don't use ALL_LIBS; kl-div doesn't depend
+	on libargp
+	* Makefile.in: do STANDARD_ trick with LIBBOW_C_FILES and
+	LIBBOW_H_FILES to exclude HDB stuff from distribution
+	* configure.in: Add check for -lsocket.  Needed for Solaris
+	* opts.c: add #if HAVE_HDB checks
+	* rainbow.c: add #if HAVE_HDB checks
+	* arrow.c: add #if HAVE_HDB checks
+	* Makefile.in: Remove all mentionings of HDB
+	* int4word.c (bow_words_add_occurrences_from_hdb): moved to
+	hdb-bow.c
+	* docnames.c (bow_map_filenames_from_hdb): moved to hdb-bow.c
+	* hdb-bow.c: new file
+	* barrel.c (bow_barrel_add_from_hdb): move to hdb-bow.c
+	* Makefile.preamble: add HDB-specific compilation definitions
+
+1998-10-08  Andrew McCallum  <mccallum@jprc.com>
+
+	* bow/libbow.h (bow_random_seed): Renamed from bow_split_seed.
+	* random.c (bow_random_set_seed): Rename bow_split_seed to
+	bow_random_seed.
+	* opts.c (parse_bow_opt): Rename bow_split_seed to
+	bow_random_seed.
+
+	* hem.c (crossbow_hem_create_children_for_node): Use
+	bow_treenode_set_new_words_from_perturbed_words() instead of the
+	previous direct use of bow_random_double.
+	(crossbow_hem_classification_perplexity): New function.
+	(crossbow_hem_em_one_iteration): When calculating perplexity, and
+	adding the contribution from this leaf, don't add it if
+	LEAF_MEMBERSHIP[LI] is zero.  This avoid adding infinity.
+	(crossbow_hem_cluster): After perturbing the leaves (which happens
+	after EM convergence), don't smooth the new WORDS distribution.
+	Previously called ...set_words_from_new_words_all() with alpha=1.
+	(crossbow_hem_full_em): When printing "pp", use "classification
+	perplexity" instead of "perplexity".
+
+1998-10-07  Andrew McCallum  <mccallum@jprc.com>
+
+	* archer.c (archer_print_word_stats): New function.
+	(archer_options): New command-line argument "print-word-stats".
+	(archer_parse_opt): Handle it.
+	(main): Check to see if WHAT_DOING is NULL, and complain if so.
+	* wi2pv.c (bow_wi2pv_print_stats): New function.
+	* bow/archer.h: Declare new function.
+
+	* wi2pv.c (bow_wi2pv_new): Convert PV_FILENAME to an absolute
+	pathname before saving it.  This way, an archived model can be
+	used when running archer from a different CWD from which the index
+	was built.
+
+	* stopwords.c (_bow_builtin_stopwords_shorter): New global
+	variable.
+
+1998-10-06  Andrew McCallum  <mccallum@jprc.com>
+
+	* wa.c (bow_wa_add): New function.
+	(bow_wa_add_wa): New function.
+	* bow/libbow.h: Declare new functions.
+
+	* wi2pv.c (bow_wi2pv_wi_count): New function.
+	* bow/archer.h: Declare new functions.
+
+	* pv.c (bow_pv_next_di_pi): Exchange the order of "end of PV
+	checking" and "unnext checking" to fix bug whereby BOW_PV_REWIND()
+	wasn't working.
+
+	* archer.c: Make is work as a server over a socket, like arrow.
+	Separate the query handling into two functions, in preparation for
+	having a query parser.
+
+	* Makefile.local (archer): New target.
+	* pv.c, wi2pv.c, archer.c, bow/archer.h: New files.  Wow, all this
+	code written in just 4 hours.
+
+1998-09-30  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* configure.in: new compatibility checks
+	* split.c (bow_split_parse_opt): use strchr instead of index
+	(STANDARDS suggests strchr)
+	* em.c, mix.c, active.c: change "//" to "/* */" (some older compilers
+	don't know about //)
+	* split.c (bow_split_parse_opt): use hack if index() doesn't exist
+	* em.c (random01): removed; replaced calls with bow_random_01
+	(random_double): removed; replaced calls with bow_random_double
+	* active.c (active_select_stream_kl): use bow_random_double where
+	appropriate.
+	* random.c: check for gettimeofday() and RAND_MAX.  Use simple
+	workarounds if not defined
+	* lex-simple.c (bow_lexer_simple_open_text_fp) [!HAVE_SETENV]:
+	complain and die.
+	* bow/libbow.h [__linux__]: redefine assert (re-definition
+	on SunOS causes problems)
+	(assert): insert comma bettween __STRING(expr) and __FILE__
+	to prevent nastiness.  Must have been inadvertently removed earlier.
+	[!HAVE_STRCHR, !HAVE_STRRCHR]: redefine as index, rindex
+	[!HAVE_RANDOM, !HAVE_SRANDOM]: redefine as rand, srand.
+	
+1998-09-29  Jason Rennie  <jrennie@cyclone.jprc.com>
+
+	* hdb.c [!HAVE_STRERROR]: redefine as ""
+	* configure.in: check for strerror
+
 1998-09-28  Andrew McCallum  <mccallum@jprc.com>
 
 	* rainbow.c (rainbow_options): Add optional argument to

@@ -540,10 +540,9 @@ bow_naivebayes_set_weights (bow_barrel *barrel)
   /* Gather the word count here instead of directly of in CDOC->WORD_COUNT
      so we avoid round-off error with each increment.  Remember,
      CDOC->WORD_COUNT is a int! */
-  float num_words_per_ci[200];
+  float num_words_per_ci[bow_barrel_num_classes (barrel)];
   int barrel_is_empty = 0;
 
-  assert (bow_barrel_num_classes (barrel) < 200);
   /* We assume that we have already called BOW_BARREL_NEW_VPC() on
      BARREL, so BARREL already has one-document-per-class. */
 

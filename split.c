@@ -29,8 +29,10 @@
 /* Different ways of specifying how to do the split */
 typedef enum {
   bow_files_source_file = 10,     /* get docs for a type from a file */
-  bow_files_source_fraction,       /* do a random fraction split of docs */
+  bow_files_source_fraction,      /* do a random fraction split of docs */
+  bow_files_source_fraction_remaining, /* random fraction of untagged docs */
   bow_files_source_number,        /* do a random number split of docs */
+  bow_files_source_number_remaining, /* ditto, but proportions from untagged */
   bow_files_source_remaining,     /* use remaining docs for a file type */
   bow_files_source_num_per_class, /* pick a random number from each class */
   bow_files_source_fancy_counts   /* pick the random number specified for each class */
@@ -99,17 +101,30 @@ static struct argp_option bow_split_options[] =
   {0, 0, 0, 0,
    "Splitting options:", 10},
   {"test-set", TEST_SOURCE, "SOURCE", 0,
-   "How to select the testing documents.  A number between 0 and 1 inclusive "
-   "with a decimal point indicates a random fraction of all documents.  A number "
-   "with no decimal point indicates the number of documents to select randomly.  "
-   "`remaining' indicates to take all untagged documents.  Anything else is "
-   "interpreted as a filename listing documents to select.  Default is `0.3'."},
+   "How to select the testing documents.  "
+   "A number between 0 and 1 inclusive "
+   "with a decimal point indicates a random fraction of all documents.  "
+   "The number of documents selected from each class is determined "
+   "by attempting to match the proportions of the non-ignore documents; "
+   "however, if the number is followed by an `r' (for `remaining'), "
+   "then it attempts to match the proportions of the thus-far "
+   "untagged documents instead.  "
+   "A number with no decimal point indicates the number of documents "
+   "to select randomly.  "
+   "A suffix of `r' can be used similarly to above.  "
+   "(The above selection methods are actually run last, which is "
+   "important since this effects the meaning of `remaining'.)  "
+   "Alternatively, a suffix of `pc' indicates the number of documents "
+   "per-class to tag.  "
+   "`remaining' selects all documents that remain untagged at the end.  "
+   "Anything else is interpreted as a filename listing documents to select.  "
+   "Default is `0.3'."},
   {"train-set", TRAIN_SOURCE, "SOURCE", 0,
    "How to select the training documents.  Same format as --test-set.  Default is "
    "`remaining'."},
   {"unlabeled-set", UNLABELED_SOURCE, "SOURCE", 0,
-   "How to select the unlabeled documents.  Same format as --test-set.  Default is "
-   "`0'."},
+   "How to select the unlabeled documents.  Same format as --test-set.  "
+   "Default is `0'."},
   {"ignore-set", IGNORE_SOURCE, "SOURCE", 0,
    "How to select the ignored documents.  Same format as --test-set.  Default is "
    "`0'."},
@@ -130,7 +145,7 @@ static struct argp_option bow_split_options[] =
    OPTION_ARG_OPTIONAL,
    "When using files to specify doc types, compare only the last N "
    "components the doc's pathname.  That is use the filename and "
-   "the last N-1 directory names.  If N is not specified, it default to 1."},
+   "the last N-1 directory names.  If N is not specified, it defaults to 1."},
   {"testing-files-use-basename", SET_TEST_FILES_USE_BASENAME_KEY, "N",
    OPTION_ALIAS | OPTION_HIDDEN | OPTION_ARG_OPTIONAL},
   {0,0}
@@ -225,9 +240,26 @@ bow_split_parse_opt (int key, char *arg, struct argp_state *state)
       *fraction = atof(arg);
       assert (*fraction >= 0 && *fraction <= 1);
     }
+  else if (length == strspn(arg, "0123456789r")
+	   && length > 1
+	   && strchr(arg, 'r') == arg + length - 1)
+    {
+      *files_source = bow_files_source_number_remaining;
+      *number = atoi(arg);
+    }
   else if (length > 2 && 
-	   index(arg, 'p') == arg + length - 2 &&
-	   index(arg, 'c') == arg + length - 1 &&
+	   strchr(arg, 'r') == arg + length - 1 &&
+	   strspn(arg, ".0123456789r"))
+    {
+      char buf[length];
+      *files_source = bow_files_source_fraction_remaining;
+      memcpy (buf, arg, length-1);
+      buf[length-1] = '\0';
+      *fraction = atof(buf);
+    }
+  else if (length > 2 && 
+	   strchr(arg, 'p') == arg + length - 2 &&
+	   strchr(arg, 'c') == arg + length - 1 &&
 	   strspn(arg, "0123456789pc"))
     {
       *files_source = bow_files_source_num_per_class;
@@ -347,7 +379,7 @@ bow_set_doc_types_randomly_by_count_per_class (bow_array *docs,
   fprintf (stderr, "\n");
 #endif
 
-  /* Now loop until we have created a test set of size num_test */
+  /* Now loop until we have tagged a set of size num_test */
   for (num_tagged = 0, num_loops = 0; num_tagged < total_num_to_tag; 
        num_loops++)
     {
@@ -399,13 +431,16 @@ bow_set_doc_types_randomly_by_count_per_class (bow_array *docs,
 
 
 /* Randomly select NUM untagged documents and label them with tag
-   indicated by TAG.  The number of documents from each class are
-   determined by attempting to match the proportion of classes among
-   the non-ignore documents. */
+   indicated by TAG.  If TAKE_PROPORTION_FROM_REMAINING is non-zero,
+   then the number of documents from each class are determined by
+   attempting to match the proportion of classes among the so-far
+   untagged documents; otherwise, it attempts to match the proportion
+   of the non-ignore documents. */
 void
 bow_set_doc_types_randomly_by_count (bow_array *docs, int num_classes,
 				     bow_int4str *classnames,
-				     int num, int tag)
+				     int num, int tag,
+				     int take_proportion_from_remaining)
 {
   int ci, di;
   bow_cdoc *cdoc;
@@ -422,7 +457,9 @@ bow_set_doc_types_randomly_by_count (bow_array *docs, int num_classes,
   for (di = 0; di < docs->length ; di++)
     {
       cdoc = bow_array_entry_at_index (docs, di);
-      if (cdoc->type == bow_doc_ignore)
+      if (cdoc->type == bow_doc_ignore
+	  || (take_proportion_from_remaining
+	      && cdoc->type != bow_doc_untagged))
 	continue;
       assert (cdoc->class < num_classes);
       num_docs_per_class[cdoc->class]++;
@@ -436,8 +473,9 @@ bow_set_doc_types_randomly_by_count (bow_array *docs, int num_classes,
     {
       num_per_class[ci] = ((float) num / (float) total_num_docs) * 
 	(float) num_docs_per_class[ci];
-      if (num_per_class[ci] == 0)
-	num_per_class[ci] = 1;
+      /* Note that NUM_PER_CLASS[CI] may be zero here.  Don't just
+         arbitrarily set it zero to 1, because NUM_DOCS_PER_CLASS[CI]
+         may also be zero. */
       total += num_per_class[ci];
     }
 
@@ -446,8 +484,11 @@ bow_set_doc_types_randomly_by_count (bow_array *docs, int num_classes,
   /* Add more to take care of round-off error. */
   for (ci = 0; total < num; ci = (ci+1) % docs->length)
     {
-      num_per_class[ci]++;
-      total++;
+      if (num_per_class[ci] < num_docs_per_class[ci])
+	{
+	  num_per_class[ci]++;
+	  total++;
+	}
     }
 
   /* Do it. */
@@ -460,13 +501,49 @@ bow_set_doc_types_randomly_by_count (bow_array *docs, int num_classes,
    class are determined by attempting to match the proportion of
    classes among the untagged documents. */
 void
-bow_set_doc_types_randomly_by_fraction (bow_array *docs, int num_classes,
+bow_set_doc_types_randomly_by_fraction_remaining (bow_array *docs, 
+						  int num_classes,
+						  bow_int4str *classnames,
+						  double fraction, int type)
+{
+  int di, untagged_doc_count = 0;
+  bow_cdoc *cdoc;
+
+  assert (fraction <= 1.0); for (di = 0; di < docs->length ; di++)
+    {
+      cdoc = bow_array_entry_at_index (docs, di);
+      if (cdoc->type == bow_doc_untagged)
+	untagged_doc_count++;
+    }
+
+  bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
+				       fraction * untagged_doc_count,
+				       type, 1);
+}
+
+/* Randomly select a FRACTION of the non-ignore documents and label
+   them with tag indicated by TYPE.  The number of documents from each
+   class are determined by attempting to match the proportion of
+   classes among the untagged documents. */
+void
+bow_set_doc_types_randomly_by_fraction (bow_array *docs, 
+					int num_classes,
 					bow_int4str *classnames,
 					double fraction, int type)
 {
+  int di, non_ignore_doc_count = 0;
+  bow_cdoc *cdoc;
+
+  for (di = 0; di < docs->length ; di++)
+    {
+      cdoc = bow_array_entry_at_index (docs, di);
+      if (cdoc->type != bow_doc_ignore)
+	non_ignore_doc_count++;
+    }
+
   bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
-				       fraction * docs->length,
-				       type);
+				       fraction * non_ignore_doc_count,
+				       type, 0);
 }
 
 
@@ -637,7 +714,7 @@ bow_set_doc_types_of_remaining (bow_array *docs, int type)
 void
 bow_set_doc_types (bow_array *docs, int num_classes, bow_int4str *classnames)
 {      
-  int num_docs;
+  /* int num_docs; */
   int ti;
   int num_types;
   int num_remaining = 0;
@@ -688,7 +765,7 @@ bow_set_doc_types (bow_array *docs, int num_classes, bow_int4str *classnames)
   /* count the number of document types */
   for (num_types = 0; types[num_types].source; num_types++);
 
-  /* Set document types based on input files first */
+  /* First, set document types based on input files */
   for (ti = 0; ti < num_types; ti++)
     {
       if (types[ti].source == bow_files_source_file)
@@ -697,21 +774,10 @@ bow_set_doc_types (bow_array *docs, int num_classes, bow_int4str *classnames)
 			      types[ti].doc_type);
     }
 
-  /* Do any random splits to set document types */
+  /* Second, set document types based on specific numbers per class */
   for (ti = 0; ti < num_types; ti++)
     {
-      if (types[ti].source == bow_files_source_fraction)
-	{
-	  num_docs = (docs->length * types[ti].fraction);      
-	  bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
-					       num_docs,
-					       types[ti].doc_type);
-	}
-      else if (types[ti].source == bow_files_source_number)
-	bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
-					     types[ti].number,
-					     types[ti].doc_type);
-      else if (types[ti].source == bow_files_source_num_per_class)
+      if (types[ti].source == bow_files_source_num_per_class)
 	{
 	  int ci;
 	  int *class_nums;
@@ -767,6 +833,36 @@ bow_set_doc_types (bow_array *docs, int num_classes, bow_int4str *classnames)
 							 counts, 
 							 types[ti].doc_type);
 	  bow_free(counts);
+	}
+    }
+
+  /* Third and last, do any random class-proportioned splits to set
+     document types */
+  for (ti = 0; ti < num_types; ti++)
+    {
+      if (types[ti].source == bow_files_source_fraction)
+	{
+	  bow_set_doc_types_randomly_by_fraction
+	    (docs, num_classes, classnames, types[ti].fraction,
+	     types[ti].doc_type);
+	}
+      else if (types[ti].source == bow_files_source_fraction_remaining)
+	{
+	  bow_set_doc_types_randomly_by_fraction_remaining
+	    (docs, num_classes, classnames, types[ti].fraction,
+	     types[ti].doc_type);
+	}
+      else if (types[ti].source == bow_files_source_number)
+	{
+	  bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
+					       types[ti].number,
+					       types[ti].doc_type, 0);
+	}
+      else if (types[ti].source == bow_files_source_number_remaining)
+	{
+	  bow_set_doc_types_randomly_by_count (docs, num_classes, classnames,
+					       types[ti].number,
+					       types[ti].doc_type, 1);
 	}
     }
 

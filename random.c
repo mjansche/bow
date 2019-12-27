@@ -28,7 +28,6 @@
 /* non-zero if the random number generator is already seeded */
 static int already_seeded = 0;
 
-
 /* This function seeds the random number generator if needed.  Call
    before and random number generator usage, instead of srand */
 void
@@ -36,7 +35,8 @@ bow_random_set_seed ()
 {
   if (!already_seeded)
     {
-      if (bow_split_seed == -1)
+      if (bow_random_seed == -1)
+#ifdef HAVE_GETTIMEOFDAY /* for SunOS */
 	{
 	  struct timeval tv;
 	  struct timezone tz;
@@ -44,10 +44,13 @@ bow_random_set_seed ()
 	  
 	  gettimeofday (&tv, &tz);
 	  seed = tv.tv_usec;
-	  srand(seed);
+	  srandom (seed);
 	}
+#else
+        srandom (time (NULL));
+#endif
       else
-	srand(bow_split_seed);
+	srandom (bow_random_seed);
 
       already_seeded = 1;
     }
@@ -64,7 +67,11 @@ bow_random_double (double low, double high)
 
   assert (high - low > 0);
   r = random();
+#ifdef RAND_MAX /* for SunOS */
   rd = ((double)r) / ((double)RAND_MAX);
+#else
+  rd = ((double)r) / ((double)2147483647);
+#endif  
   rd *= (high - low);
   rd += low;
   return rd;
