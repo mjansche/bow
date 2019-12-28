@@ -4,6 +4,9 @@
  * pass through some function here */
 #include <bow/svm.h>
 
+#include <float.h>
+#define MAXFLOAT FLT_MAX
+
 #if !HAVE_SQRTF
 #define sqrtf sqrt
 #endif
@@ -262,6 +265,7 @@ error_t svm_parse_opt (int key, char *arg, struct argp_state *state) {
       kernel = svm_kernel_fisher;
       break;
     default:
+      break;
     }
     break;
   case AL_TEST_IN_TRAIN_ARG:

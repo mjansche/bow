@@ -23,8 +23,6 @@
 #endif
 
 #define ARGP_EI
-#undef __OPTIMIZE__
-#define __OPTIMIZE__
 #include "argp.h"
 
 /* Add weak aliases.  */

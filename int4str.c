@@ -89,12 +89,12 @@ bow_int2str (bow_int4str *map, int index)
 
 /* Extract and return a (non-unique) integer `id' from string S. */
 static unsigned
-_str2id (const unsigned char *s)
+_str2id (const char *s)
 {
   unsigned h;
 
   for (h = 0; *s; s++)
-    h = 131*h + *s;
+    h = 131*h + (unsigned char) *s;
 
   /* Never return 0, otherwise _str_hash_add() will infinite-loop */
   //assert (h != 0);

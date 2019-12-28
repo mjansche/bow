@@ -55,7 +55,7 @@ bow_verbosify (int verbosity_level, const char *format, ...)
   return ret;
 }
 
-volatile void
+void
 _bow_error (const char *format, ...)
 {
   va_list ap;

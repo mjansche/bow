@@ -37,7 +37,6 @@
 #include <sys/types.h>		/* for netinet/in.h on SunOS */
 #include <sys/stat.h>
 #include <netinet/in.h>		/* for machine-independent byte-order */
-#include <malloc.h>		/* for malloc() and friends. */
 #include <stdlib.h>             /* For malloc() etc. on DEC Alpha */
 #include <string.h>		/* for strlen() on DEC Alpha */
 #include <limits.h>		/* for PATH_MAX and SHRT_MAX and friends */
@@ -1343,7 +1342,7 @@ if (((*(BARREL)->method->wv_normalize_weights)))	\
 #include <bow/kl.h>
 #include <bow/em.h>
 #include <bow/knn.h>
-struct argp_child;		/* forward declare this type */
+#include <argp.h>
 
 /* Associate method M with the string NAME, so the method structure
    can be retrieved later with BOW_METHOD_AT_NAME().  Set the group
@@ -1628,7 +1627,7 @@ int bow_verbosify (int verbosity_level, const char *format, ...);
   {							\
     abort ();						\
   }}) 
-volatile void _bow_error (const char *format, ...);
+void _bow_error (const char *format, ...);
 
 
 

@@ -101,7 +101,7 @@ all: libbow.a $(DEMO_EXECUTABLES) $(PERL_RUNNABLE_FILES) kl-div
 # Pattern rule
 ALL_CPPFLAGS = $(CPPFLAGS) $(INCLUDEFLAGS) -Ibow -I$(srcdir) -I$(srcdir)/argp $(DEFS)
 ALL_CFLAGS = $(CFLAGS)
-ALL_LIBS = $(LIBS) -L. -lbow -L./argp -largp -lm -lcrypt
+ALL_LIBS = $(LIBS) -L. -lbow -L./argp -largp -lm
 
 
 # Libbow section
@@ -363,7 +363,7 @@ archer: libbow.a argp/libargp.a archer.o $(ARCHER_O_FILES)
 	$(CC) $(CFLAGS) -o $@ archer.o $(ARCHER_O_FILES) $(LDFLAGS) $(ALL_LIBS)
 
 archer.o: archer.c
-	$(CC) -c $(ALL_CPPFLAGS) $(ALL_CFLAGS) -o archer.o archer.c
+	$(CC) -c $(ALL_CPPFLAGS) $(ALL_CFLAGS) -o $@ $<
 
 ARCHER_DIST_FILES = \
 archer.c \
